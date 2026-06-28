@@ -3,24 +3,26 @@ const IS_DEV = process.env.APP_VARIANT === 'development';
 
 export default {
   expo: {
-    name: IS_DEV ? "Flux (Dev)" : "Flux",
-    slug: "flux",
+    name: IS_DEV ? "Netflix Pro (Dev)" : "Netflix Pro",
+    slug: "netflix-pro",
     version: packageJson.version,
     orientation: "default",
     icon: IS_DEV ? "./assets/icon-dev.png" : "./assets/icon.png",
-    userInterfaceStyle: "automatic",
+    userInterfaceStyle: "dark",
     newArchEnabled: true,
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
-      backgroundColor: "#000000"
+      backgroundColor: "#141414"
     },
     ios: {
       supportsTablet: true,
-      bundleIdentifier: IS_DEV ? "me.byteful.flux.dev" : "me.byteful.flux",
+      bundleIdentifier: IS_DEV ? "com.netflixpro.dev" : "com.netflixpro.app",
       buildNumber: packageJson.version,
       infoPlist: {
-        CFBundleDisplayName: IS_DEV ? "Flux (Dev)" : "Flux",
+        CFBundleDisplayName: IS_DEV ? "Netflix Pro (Dev)" : "Netflix Pro",
+        CFBundleName: "Netflix Pro",
+        CFBundleIdentifier: IS_DEV ? "com.netflixpro.dev" : "com.netflixpro.app",
         UIBackgroundModes: ["audio", "processing"],
         NSAppTransportSecurity: {
           NSAllowsArbitraryLoads: true,
@@ -45,9 +47,9 @@ export default {
       versionName: packageJson.version,
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#000000"
+        backgroundColor: "#141414"
       },
-      package: IS_DEV ? "me.byteful.flux.dev" : "me.byteful.flux",
+      package: IS_DEV ? "com.netflixpro.dev" : "com.netflixpro.app",
       permissions: [
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.SET_ORIENTATION",
@@ -55,7 +57,8 @@ export default {
       ]
     },
     web: {
-      favicon: "./assets/favicon.png"
+      favicon: "./assets/favicon.png",
+      name: "Netflix Pro"
     },
     plugins: [
       "expo-screen-orientation",
@@ -74,12 +77,9 @@ export default {
       ],
     ],
     assetBundlePatterns: ["**/*"],
-    owner: "bytefuls",
+    owner: "Zapier-codes",
     extra: {
-      buildDate: new Date().toISOString(),
-      eas: {
-        projectId: "95d18493-36d1-4188-b99d-e76d6bdc446e"
-      }
+      buildDate: new Date().toISOString()
     }
   }
 };
