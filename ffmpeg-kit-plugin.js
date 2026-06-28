@@ -3,10 +3,10 @@ const path = require('path');
 const { withPlugins, withDangerousMod, withAppBuildGradle, withProjectBuildGradle } = require('@expo/config-plugins');
 const { mergeContents } = require('@expo/config-plugins/build/utils/generateCode');
 
-const withFfmpegKitIos = (config: any, { iosUrl }: { iosUrl: string }) => {
+const withFfmpegKitIos = (config, { iosUrl }) => {
   return withDangerousMod(config, [
     'ios',
-    async (cfg: any) => {
+    async (cfg) => {
       const { platformProjectRoot } = cfg.modRequest;
       const podspecPath = path.join(platformProjectRoot, 'ffmpeg-kit-ios-full-gpl.podspec');
       const podspec = `
@@ -38,10 +38,10 @@ end
   ]);
 };
 
-const withFfmpegKitAndroid = (config: any, { androidUrl }: { androidUrl: string }) => {
+const withFfmpegKitAndroid = (config, { androidUrl }) => {
   config = withDangerousMod(config, [
     'android',
-    async (cfg: any) => {
+    async (cfg) => {
       const { platformProjectRoot } = cfg.modRequest;
       const ffmpegKitBuildGradlePath = path.join(
         platformProjectRoot,
@@ -52,7 +52,7 @@ const withFfmpegKitAndroid = (config: any, { androidUrl }: { androidUrl: string 
         'build.gradle'
       );
       if (fs.existsSync(ffmpegKitBuildGradlePath)) {
-        let buildGradle: string = fs.readFileSync(ffmpegKitBuildGradlePath, 'utf-8');
+        let buildGradle = fs.readFileSync(ffmpegKitBuildGradlePath, 'utf-8');
         const originalDependency = /implementation 'com\.arthenica:ffmpeg-kit-'.*/;
         const replacement = `implementation(name: 'ffmpeg-kit-full-gpl', ext: 'aar')`;
         if (buildGradle.match(originalDependency)) {
@@ -64,8 +64,8 @@ const withFfmpegKitAndroid = (config: any, { androidUrl }: { androidUrl: string 
     },
   ]);
 
-  config = withAppBuildGradle(config, (cfg: any) => {
-    let buildGradle: string = cfg.modResults.contents;
+  config = withAppBuildGradle(config, (cfg) => {
+    let buildGradle = cfg.modResults.contents;
     const appFlatDirLibsPath = '${projectDir}/../libs';
     const appFlatDirRepo = `
   repositories {
@@ -96,14 +96,14 @@ const withFfmpegKitAndroid = (config: any, { androidUrl }: { androidUrl: string 
     return cfg;
   });
 
-  config = withProjectBuildGradle(config, (cfg: any) => {
-    let buildGradle: string = cfg.modResults.contents;
+  config = withProjectBuildGradle(config, (cfg) => {
+    let buildGradle = cfg.modResults.contents;
     const projectFlatDirLibsPath = '$rootDir/libs';
     const flatDirString = `        flatDir { dirs "${projectFlatDirLibsPath}" }`;
     if (!buildGradle.match(/flatDir\s*\{[\s\S]*?dirs\s*['"]\$rootDir\/libs['"]/)) {
       const match = buildGradle.match(/(allprojects\s*\{\s*repositories\s*\{)/);
       if (match) {
-        const insertionPoint = match.index! + match[0].length;
+        const insertionPoint = match.index + match[0].length;
         buildGradle = buildGradle.substring(0, insertionPoint) + '\n' + flatDirString + buildGradle.substring(insertionPoint);
       }
     }
@@ -114,12 +114,12 @@ const withFfmpegKitAndroid = (config: any, { androidUrl }: { androidUrl: string 
   return config;
 };
 
-module.exports = (config: any, options: { iosUrl: string; androidUrl: string } = { iosUrl: '', androidUrl: '' }) => {
+module.exports = (config, options = { iosUrl: '', androidUrl: '' }) => {
   const { iosUrl, androidUrl } = options;
   if (!iosUrl) throw new Error('FFmpeg Kit plugin requires "iosUrl" option.');
   if (!androidUrl) throw new Error('FFmpeg Kit plugin requires "androidUrl" option.');
   return withPlugins(config, [
-    (config: any) => withFfmpegKitIos(config, { iosUrl }),
-    (config: any) => withFfmpegKitAndroid(config, { androidUrl }),
+    (config) => withFfmpegKitIos(config, { iosUrl }),
+    (config) => withFfmpegKitAndroid(config, { androidUrl }),
   ]);
 };

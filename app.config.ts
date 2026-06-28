@@ -69,7 +69,7 @@ export default {
       "expo-secure-store",
       "expo-background-task",
       [
-        './ffmpeg-kit-plugin.ts',
+        './ffmpeg-kit-plugin.js',
         {
           iosUrl: 'https://github.com/NooruddinLakhani/ffmpeg-kit-ios-full-gpl/archive/refs/tags/latest.zip',
           androidUrl: 'https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar',
