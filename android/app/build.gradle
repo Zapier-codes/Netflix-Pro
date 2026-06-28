@@ -82,12 +82,6 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-// @generated begin ffmpeg-kit-app-flatdir-repo - expo prebuild (DO NOT MODIFY) sync-ae0e37be262a58a7e096e8225f0bcd1809031702
-
-  repositories {
-      flatDir { dirs "${projectDir}/../libs" }
-  }
-// @generated end ffmpeg-kit-app-flatdir-repo
     ndkVersion rootProject.ext.ndkVersion
 
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -159,9 +153,7 @@ android {
 }
 
 dependencies {
-// @generated begin ffmpeg-kit-dependencies - expo prebuild (DO NOT MODIFY) sync-a5229c3d4e2b5066875d0730760b813572be7886
-  implementation(name: 'ffmpeg-kit-full-gpl', ext: 'aar')
-// @generated end ffmpeg-kit-dependencies
+    implementation 'com.arthenica:ffmpeg-kit-full-gpl:6.0-2'
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
