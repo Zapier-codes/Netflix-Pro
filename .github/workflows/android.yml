@@ -1,4 +1,4 @@
-﻿name: Android CI/CD
+﻿name: Android Build
 
 on:
   push:
@@ -43,13 +43,17 @@ jobs:
     - name: Install dependencies
       run: npm ci
     
-    - name: Build Development APK
+    - name: Build Android APK
       run: |
         cd android
         chmod +x gradlew
         ./gradlew assembleDebug --stacktrace
+      env:
+        NODE_ENV: development
+        APP_VARIANT: development
     
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: app-debug

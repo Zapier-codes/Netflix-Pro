@@ -1,4 +1,4 @@
-const packageJson = require('./package.json');
+﻿const packageJson = require('./package.json');
 const IS_DEV = process.env.APP_VARIANT === 'development';
 
 export default {
@@ -21,10 +21,7 @@ export default {
       buildNumber: packageJson.version,
       infoPlist: {
         CFBundleDisplayName: IS_DEV ? "Flux (Dev)" : "Flux",
-        UIBackgroundModes: [
-          "audio",
-          "processing"
-        ],
+        UIBackgroundModes: ["audio", "processing"],
         NSAppTransportSecurity: {
           NSAllowsArbitraryLoads: true,
           NSAllowsArbitraryLoadsForMedia: true,
@@ -62,26 +59,21 @@ export default {
     },
     plugins: [
       "expo-screen-orientation",
-      [
-        "expo-video",
-        {
-          "supportsBackgroundPlayback": true,
-          "supportsPictureInPicture": true
-        }
-      ],
+      ["expo-video", {
+        "supportsBackgroundPlayback": true,
+        "supportsPictureInPicture": true
+      }],
       "expo-secure-store",
       "expo-background-task",
       [
-        './ffmpeg-kit-plugin.js',
+        './ffmpeg-kit-plugin.ts',
         {
           iosUrl: 'https://github.com/NooruddinLakhani/ffmpeg-kit-ios-full-gpl/archive/refs/tags/latest.zip',
           androidUrl: 'https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar',
         },
       ],
     ],
-    assetBundlePatterns: [
-      "**/*"
-    ],
+    assetBundlePatterns: ["**/*"],
     owner: "bytefuls",
     extra: {
       buildDate: new Date().toISOString(),
