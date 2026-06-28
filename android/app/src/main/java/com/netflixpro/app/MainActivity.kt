@@ -1,4 +1,4 @@
-package me.byteful.flux
+package com.netflixpro.app
 
 import android.os.Build
 import android.os.Bundle
