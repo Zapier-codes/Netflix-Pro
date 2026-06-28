@@ -420,4 +420,44 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-# End of https://www.toptal.com/developers/gitignore/api/windows,linux,macos,git,visualstudiocode,node,reactnative
+# End of https://www.toptal.com/developers/gitignore/api/windows,linux,macos,git,visualstudiocode,node,reactnative# TypeScript
+*.tsbuildinfo
+dist/
+lib/
+
+# Coverage
+coverage/
+*.lcov
+
+# Build output
+build/
+.nyc_output/
+
+# Expo
+.expo/
+expo-env.d.ts
+
+# TypeScript cache
+*.tsbuildinfo
+# TypeScript
+*.tsbuildinfo
+dist/
+lib/
+
+# Coverage
+coverage/
+*.lcov
+
+# Build output
+build/
+.nyc_output/
+
+# Expo
+.expo/
+expo-env.d.ts
+
+# TypeScript cache
+*.tsbuildinfo
+
+# ESLint
+.eslintcache

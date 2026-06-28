@@ -1,0 +1,47 @@
+﻿name: React Native TypeScript CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        lfs: true
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Type check
+      run: npm run type-check
+    
+    - name: Lint code
+      run: npm run lint
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: coverage/
+        if-no-files-found: ignore
