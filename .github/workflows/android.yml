@@ -1,74 +1,212 @@
-﻿name: Android Build
+﻿name: Android CI/CD
 
+# ─────────────────────────────────────────────
+# TRIGGER STRATEGY:
+#   PR         → JS/TS checks only (fast, no native build)
+#   push main  → JS checks + Expo Dev Client APK build
+#   dispatch   → manual trigger, same as push main
+# ─────────────────────────────────────────────
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  # ─────────────────────────────────────────────
+  # JOB 1: JS/TS checks — runs on ALL triggers
+  # ─────────────────────────────────────────────
+  js-checks:
+    name: JS/TS Checks
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        lfs: true
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18.x'
-        cache: 'npm'
-    
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'zulu'
-        java-version: '17'
-    
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-    
-    - name: Install Android SDK components
-      run: |
-        sdkmanager "platforms;android-34" "build-tools;34.0.0"
-    
-    - name: Create local.properties
-      run: |
-        echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-    
-    - name: Generate debug keystore
-      run: |
-        keytool -genkeypair \
-          -v \
-          -keystore android/app/debug.keystore \
-          -storepass android \
-          -alias androiddebugkey \
-          -keypass android \
-          -keyalg RSA \
-          -keysize 2048 \
-          -validity 10000 \
-          -dname "CN=Android Debug,O=Android,C=US"
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Build Android APK
-      run: |
-        cd android
-        chmod +x gradlew
-        ./gradlew assembleDebug --stacktrace
-      env:
-        NODE_ENV: development
-        APP_VARIANT: development
-    
-    - name: Upload APK
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: android/app/build/outputs/apk/debug/*.apk
-        retention-days: 30
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # JOB 2: Expo Dev Client APK — push to main only
+  #
+  # Produces an ABI-split Expo Dev Client APK.
+  # This APK:
+  #   - Contains the full native layer (expo-dev-client, reanimated, etc.)
+  #   - Does NOT embed the JS bundle — connects to Metro at runtime
+  #   - Shows the shake menu, supports hot reload and fast refresh
+  #   - Is installed once on a device; JS changes don't need a rebuild
+  #
+  # To use after installing:
+  #   npx expo start --dev-client
+  #   Then open the app and enter your machine's Metro URL
+  # ─────────────────────────────────────────────
+  android-dev-client:
+    name: Expo Dev Client APK
+    runs-on: ubuntu-latest
+    needs: js-checks
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      # ── 1. FREE DISK SPACE ──────────────────────────────────────────────
+      - name: Free disk space
+        run: |
+          echo "── Disk before cleanup ──"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk/ndk
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo apt-get clean
+          echo "── Disk after cleanup ──"
+          df -h
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      # ── 2. NODE ─────────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      # ── 3. JAVA ─────────────────────────────────────────────────────────
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # ── 4. GRADLE CACHE ─────────────────────────────────────────────────
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.gradle/configuration-cache
+          key: gradle-${{ runner.os }}-jdk17-${{ hashFiles('android/**/*.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-jdk17-
+            gradle-${{ runner.os }}-
+
+      # ── 5. NODE_MODULES CACHE ───────────────────────────────────────────
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── 6. ANDROID SDK ──────────────────────────────────────────────────
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK components
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Create local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+
+      # ── 7. KEYSTORE ─────────────────────────────────────────────────────
+      - name: Generate debug keystore
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore android/app/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      # ── 8. BUILD EXPO DEV CLIENT APK ────────────────────────────────────
+      # assembleDebug is correct for Expo Dev Client because:
+      #   - The 'debug' variant is listed in react { debuggableVariants }
+      #     by default, which tells the React Native Gradle plugin to
+      #     SKIP embedding the JS bundle. The app launches and immediately
+      #     looks for a Metro bundler to connect to.
+      #   - APP_VARIANT=development tells your app.config.js / app.json
+      #     to use the development flavor (different bundle ID, icon, name
+      #     if you have that set up via EAS / expo-constants).
+      #   - expo-dev-client (already in your package.json) is autolinked
+      #     into the native layer, providing the shake menu, dev tools,
+      #     and the launcher screen for choosing a Metro server.
+      #
+      # ABI splits produce one lightweight APK per architecture — no fat APK.
+      - name: Build Expo Dev Client APKs
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --parallel \
+            --build-cache \
+            --configuration-cache \
+            --stacktrace
+        env:
+          APP_VARIANT: development
+          NODE_ENV: development
+          # Explicitly tell React Native Gradle plugin not to bundle JS.
+          # This is the default for debug variants but we set it explicitly
+          # so it's never accidentally overridden.
+          REACT_NATIVE_BUNDLE_JS: false
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      # ── 9. UPLOAD ALL SPLIT APKs ────────────────────────────────────────
+      - name: Upload Dev Client APKs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-client-apks-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      # ── 10. SIZE + DISK REPORT ──────────────────────────────────────────
+      - name: Report APK sizes
+        if: success()
+        run: |
+          echo "── Dev Client APK sizes ──"
+          ls -lh android/app/build/outputs/apk/debug/*.apk
+
+      - name: Disk usage report
+        if: always()
+        run: df -h
