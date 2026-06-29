@@ -5,42 +5,17 @@ export default {
   expo: {
     name: IS_DEV ? "Netflix Pro (Dev)" : "Netflix Pro",
     slug: "netflix-pro",
+    scheme: IS_DEV ? "netflixpro-dev" : "netflixpro",
     version: packageJson.version,
     orientation: "default",
     icon: IS_DEV ? "./assets/icon-dev.png" : "./assets/icon.png",
     userInterfaceStyle: "dark",
     newArchEnabled: true,
+    platforms: ["android"],
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
       backgroundColor: "#141414"
-    },
-    ios: {
-      supportsTablet: true,
-      bundleIdentifier: IS_DEV ? "com.netflixpro.dev" : "com.netflixpro.app",
-      buildNumber: packageJson.version,
-      infoPlist: {
-        CFBundleDisplayName: IS_DEV ? "Netflix Pro (Dev)" : "Netflix Pro",
-        CFBundleName: "Netflix Pro",
-        CFBundleIdentifier: IS_DEV ? "com.netflixpro.dev" : "com.netflixpro.app",
-        UIBackgroundModes: ["audio", "processing"],
-        NSAppTransportSecurity: {
-          NSAllowsArbitraryLoads: true,
-          NSAllowsArbitraryLoadsForMedia: true,
-          NSAllowsArbitraryLoadsInWebContent: true,
-          NSExceptionDomains: {
-            "vidsrc.me": {
-              "NSIncludesSubdomains": true,
-              "NSExceptionAllowsInsecureHTTPLoads": true
-            },
-            "vidsrc.su": {
-              "NSIncludesSubdomains": true,
-              "NSExceptionAllowsInsecureHTTPLoads": true
-            }
-          }
-        },
-        "ITSAppUsesNonExemptEncryption": false
-      }
     },
     android: {
       versionCode: packageJson["version-iteration"],
