@@ -38,7 +38,20 @@ jobs:
     
     - name: Create local.properties
       run: |
-        echo "sdk.dir=" > android/local.properties
+        echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+    
+    - name: Generate debug keystore
+      run: |
+        keytool -genkeypair \
+          -v \
+          -keystore android/app/debug.keystore \
+          -storepass android \
+          -alias androiddebugkey \
+          -keypass android \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -dname "CN=Android Debug,O=Android,C=US"
     
     - name: Install dependencies
       run: npm ci
@@ -48,6 +61,9 @@ jobs:
         cd android
         chmod +x gradlew
         ./gradlew assembleDebug --stacktrace
+      env:
+        NODE_ENV: development
+        APP_VARIANT: development
     
     - name: Upload APK
       if: success()
