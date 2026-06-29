@@ -82,6 +82,13 @@ jobs:
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
+      - name: Download ffmpeg-kit AAR
+        run: |
+          mkdir -p android/libs
+          curl -L "https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar" \
+            -o android/libs/ffmpeg-kit-full-gpl.aar
+          echo "AAR downloaded: $(du -sh android/libs/ffmpeg-kit-full-gpl.aar)"
+
       - name: Build APK
         run: |
           cd android
