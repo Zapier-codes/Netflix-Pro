@@ -36,6 +36,7 @@ export default {
       name: "Netflix Pro"
     },
     plugins: [
+      "expo-font",
       "expo-screen-orientation",
       ["expo-video", {
         "supportsBackgroundPlayback": true,
