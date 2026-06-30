@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 // Zustand Stores
 import { useAppStore, useContinueWatching, useWatchHistory, useRecentlyWatched } from '../../store/zustand';
-import { useTheme } from '../../contexts/ThemeContext';
+import { AnimatedHeader } from "../../components/header/AnimatedHeader";`nimport { useContent } from "../../hooks/content/useContent";`nimport { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
 // Components
@@ -73,7 +73,7 @@ const HomeScreen = ({ navigation }) => {
   const [recommendedTVShows, setRecommendedTVShows] = useState<TVShow[]>([]);
   const [genreMedia, setGenreMedia] = useState<Record<string, any[]>>({});
   const [featuredContent, setFeaturedContent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { rows, isLoading, refetch } = useContent();
   const [refreshing, setRefreshing] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
@@ -427,5 +427,6 @@ const styles = StyleSheet.create({
 });
 
 export default HomeScreen;
+
 
 

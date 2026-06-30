@@ -17,7 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 // Zustand Stores
 import { useAppStore } from '../../store/zustand';
-import { useTheme } from '../../contexts/ThemeContext';
+import { useSearchPreloader } from "../../hooks/content/useContent";`nimport { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
 // API
@@ -31,7 +31,7 @@ const SearchScreen = ({ navigation }) => {
   const { showToast } = useAlert();
   const { networkStatus } = useAppStore();
 
-  const [query, setQuery] = useState('');
+  const { trendingSearches, categories, loading: preloadLoading } = useSearchPreloader();`n  const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [noResults, setNoResults] = useState(false);
@@ -328,3 +328,4 @@ const styles = StyleSheet.create({
 });
 
 export default SearchScreen;
+

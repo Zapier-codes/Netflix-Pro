@@ -6,11 +6,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '../contexts/ThemeContext';
+import { AnimatedHeader } from '../components/header/AnimatedHeader';
 
 // Screens
 import HomeScreen from '../screens/home/HomeScreen';
 import SearchScreen from '../screens/search/SearchScreen';
-import DownloadsScreen from '../screens/downloads/DownloadsScreen';
+import LibraryScreen from '../screens/library/LibraryScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 import DetailsScreen from '../screens/details/DetailsScreen';
 import VideoPlayerScreen from '../screens/player/VideoPlayerScreen';
@@ -35,24 +36,19 @@ const TabNavigator = () => {
         tabBarInactiveTintColor: colors.tabBarInactive,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string = 'home';
-
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Search') {
-            iconName = focused ? 'search' : 'search-outline';
-          } else if (route.name === 'Downloads') {
-            iconName = focused ? 'download' : 'download-outline';
+          } else if (route.name === 'Library') {
+            iconName = focused ? 'library' : 'library-outline';
           } else if (route.name === 'Settings') {
             iconName = focused ? 'settings' : 'settings-outline';
           }
-
           return <Ionicons name={iconName as any} size={size} color={color} />;
         },
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Search" component={SearchScreen} />
-      <Tab.Screen name="Downloads" component={DownloadsScreen} />
+      <Tab.Screen name="Library" component={LibraryScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
