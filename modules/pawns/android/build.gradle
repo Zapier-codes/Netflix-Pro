@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.library'
+    id 'kotlin-android'
+    id 'expo-module-gradle-plugin'
+}
+
+android {
+    compileSdk 36
+    namespace "expo.modules.mavin.pawns"
+
+    defaultConfig {
+        minSdk 24
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+            java.srcDirs = ['src/main/java']
+            res.srcDirs = ['src/main/res']
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+}
+
+dependencies {
+    implementation files('libs/internet-sharing-1.8.1.aar')
+    implementation files('libs/pawns-ndk-1.8.1.aar')
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.20'
+}

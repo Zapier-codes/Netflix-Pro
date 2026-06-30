@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -252,7 +252,7 @@ const DownloadsScreen = () => {
                 <View style={[styles.storageBarFill, { width: `${Math.min(100, storagePercentage)}%` }]} />
               </View>
               <Text style={styles.storageText}>
-                {formatFileSize(storageUsed)} used • {formatFileSize(availableStorage)} available
+                {formatFileSize(storageUsed)} used â€¢ {formatFileSize(availableStorage)} available
               </Text>
             </View>
           )}

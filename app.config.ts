@@ -1,6 +1,10 @@
 ﻿const packageJson = require('./package.json');
 const IS_DEV = process.env.APP_VARIANT === 'development';
 
+console.log('[CONFIG] Loading app.config.ts...');
+console.log('[CONFIG] IS_DEV:', IS_DEV);
+console.log('[CONFIG] Package version:', packageJson.version);
+
 export default {
   expo: {
     name: IS_DEV ? "Netflix Pro (Dev)" : "Netflix Pro",
@@ -12,6 +16,8 @@ export default {
     userInterfaceStyle: "dark",
     newArchEnabled: true,
     platforms: ["android"],
+    // ⚠️ THIS IS CRITICAL - Added entryPoint
+    entryPoint: "./App.tsx",
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
@@ -59,3 +65,6 @@ export default {
     }
   }
 };
+
+
+

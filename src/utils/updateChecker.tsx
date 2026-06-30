@@ -1,9 +1,9 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 import { Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-const GITHUB_API_URL = 'https://api.github.com/repos/byteful/Flux/releases/latest';
+const GITHUB_API_URL = 'https://api.github.com/repos/byteful/Netflix Pro/releases/latest';
 const CURRENT_VERSION = Constants.expoConfig?.version;
 
 const CHECK_FOR_UPDATES_KEY = '@check_for_updates_enabled';
@@ -61,11 +61,11 @@ export const checkForUpdates = async (showAlert = true) => {
     if (isDifferentVersion(CURRENT_VERSION, latestVersionFromGitHub)) {
       Alert.alert(
         'Update Available',
-        `A new version of Flux (${latestVersionFromGitHub}) is available. You are currently on ${CURRENT_VERSION}.`,
+        `A new version of Netflix Pro (${latestVersionFromGitHub}) is available. You are currently on ${CURRENT_VERSION}.`,
         [
           {
             text: 'Open Update Page',
-            onPress: () => Linking.openURL('https://flux.byteful.me').catch(err => console.error("Couldn't load page", err)),
+            onPress: () => Linking.openURL('https://Netflix Pro.byteful.me').catch(err => console.error("Couldn't load page", err)),
           },
           { text: 'Later', style: 'cancel' },
         ]

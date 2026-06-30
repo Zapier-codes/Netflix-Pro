@@ -1,0 +1,67 @@
+import React, { useEffect, useState } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
+
+console.log('[APP] 📱 App loading...');
+
+const AppNavigator = React.lazy(() => {
+  console.log('[APP] 🔄 Loading AppNavigator...');
+  return import('./src/navigation/AppNavigator');
+});
+
+export default function App() {
+  console.log('[APP] 🎨 Rendering...');
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    console.log('[APP] 🔄 Initializing...');
+    const init = async () => {
+      try {
+        // Simulate loading
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setIsReady(true);
+        console.log('[APP] ✅ Ready!');
+      } catch (error) {
+        console.error('[APP] ❌ Error:', error);
+      }
+    };
+    init();
+  }, []);
+
+  if (!isReady) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#E50914" />
+        <Text style={styles.text}>Loading...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="light" />
+      <React.Suspense fallback={
+        <View style={styles.container}>
+          <Text style={styles.text}>Loading Navigation...</Text>
+        </View>
+      }>
+        <AppNavigator />
+      </React.Suspense>
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#141414',
+  },
+  text: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginTop: 20,
+  },
+});

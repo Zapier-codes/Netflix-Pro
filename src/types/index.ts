@@ -1,50 +1,55 @@
 ﻿// src/types/index.ts
-export interface MediaItem {
-  id: string | number;
+export interface Movie {
+  id: number;
   title: string;
-  posterPath?: string;
-  backdropPath?: string;
-  overview?: string;
-  releaseDate?: string;
-  voteAverage?: number;
-  mediaType?: 'movie' | 'tv' | 'sport';
+  overview: string;
+  poster_path: string;
+  backdrop_path: string;
+  vote_average: number;
+  vote_count: number;
+  release_date: string;
+  genre_ids: number[];
 }
 
-export interface VideoSource {
-  url: string;
-  quality?: string;
-  type?: 'hls' | 'mp4' | 'dash';
-  headers?: Record<string, string>;
+export interface TVShow {
+  id: number;
+  name: string;
+  overview: string;
+  poster_path: string;
+  backdrop_path: string;
+  vote_average: number;
+  vote_count: number;
+  first_air_date: string;
+  genre_ids: number[];
 }
 
-export interface SubtitleTrack {
+export interface StreamSource {
+  name: string;
   url: string;
-  language: string;
-  code: string;
+  quality: string;
+  referer?: string;
+}
+
+export interface ContentRow {
+  id: string;
+  title: string;
+  type: 'trending' | 'top_rated' | 'popular' | 'upcoming' | 'now_playing' | 'genre';
+  content: (Movie | TVShow)[];
 }
 
 export interface DownloadItem {
   id: string;
   title: string;
+  mediaType: 'movie' | 'tv';
+  tmdbId: string;
+  season?: number;
+  episode?: number;
+  posterPath: string;
   progress: number;
-  status: 'pending' | 'downloading' | 'completed' | 'failed';
-  url: string;
-  localPath?: string;
-  size?: number;
-}
-
-export interface StreamSource {
-  url: string;
-  quality: string;
-  format: string;
-  headers?: Record<string, string>;
-}
-
-export interface Episode {
-  id: string;
-  season: number;
-  episode: number;
-  title: string;
-  overview?: string;
-  stillPath?: string;
+  status: 'queued' | 'downloading' | 'paused' | 'completed' | 'failed';
+  filePath?: string;
+  fileSize?: number;
+  queuedAt: string;
+  startedAt?: string;
+  completedAt?: string;
 }

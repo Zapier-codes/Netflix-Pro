@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -368,7 +368,7 @@ const HomeScreen = () => {
       <Animated.View style={[styles.animatedContainer, animatedStyle]}>
 
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Flux</Text>
+          <Text style={styles.headerTitle}>Netflix Pro</Text>
         </View>
 
         {isOffline && (

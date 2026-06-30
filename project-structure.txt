@@ -40,7 +40,7 @@
           📄 AndroidManifest.xml
             📁 me/
               📁 byteful/
-                📁 flux/
+                📁 Netflix Pro/
                   📄 MainActivity.kt
                   📄 MainApplication.kt
             📁 drawable/
@@ -98,9 +98,9 @@
     📄 CNAME
     📄 index.html
     📄 style.css
-    📁 Flux/
-    📁 Flux.xcodeproj/
-    📁 Flux.xcworkspace/
+    📁 Netflix Pro/
+    📁 Netflix Pro.xcodeproj/
+    📁 Netflix Pro.xcworkspace/
     📄 .xcode.env
     📄 ffmpeg-kit-ios-full-gpl.podspec
     📄 Podfile
@@ -109,8 +109,8 @@
       📁 Images.xcassets/
       📁 Supporting/
       📄 AppDelegate.swift
-      📄 Flux-Bridging-Header.h
-      📄 Flux.entitlements
+      📄 Netflix Pro-Bridging-Header.h
+      📄 Netflix Pro.entitlements
       📄 Info.plist
       📄 PrivacyInfo.xcprivacy
       📄 SplashScreen.storyboard
@@ -129,7 +129,7 @@
       📁 xcshareddata/
       📄 project.pbxproj
         📁 xcschemes/
-          📄 Flux.xcscheme
+          📄 Netflix Pro.xcscheme
       📄 contents.xcworkspacedata
     📄 ffmpeg-kit-react-native+6.0.2.patch
     📁 api/

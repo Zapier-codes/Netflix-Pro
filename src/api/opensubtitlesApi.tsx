@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 
 const API_KEY = '9xkBmnpMy7D3wP9HoxSifWGwJidqY7eO'; // It's free. I don't care that it's public.
 const API_URL = 'https://api.opensubtitles.com/api/v1';
@@ -8,7 +8,7 @@ const opensubtitlesApi = axios.create({
   headers: {
     'Api-Key': API_KEY,
     'Content-Type': 'application/json',
-    'User-Agent': 'Flux/1.0',
+    'User-Agent': 'Netflix Pro/1.0',
     'Accept': 'application/json'
   }
 });

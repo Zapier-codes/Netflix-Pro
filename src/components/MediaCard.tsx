@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { StyleSheet, Image, TouchableOpacity, Dimensions, View, Text, Alert } from 'react-native';
 import { getImageUrl } from '../api/tmdbApi';
 import ImagePlaceholder from './ImagePlaceholder';

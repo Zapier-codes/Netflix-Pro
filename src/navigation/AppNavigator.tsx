@@ -1,172 +1,104 @@
-import React, { useState, useEffect } from 'react';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
-import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
+﻿// src/navigation/AppNavigator.tsx
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import networkMonitor from '../services/downloadManager/NetworkMonitor';
 
-import HomeScreen from '../screens/HomeScreen';
-import VideoPlayerScreen from '../screens/VideoPlayerScreen';
-import DetailScreen from '../screens/DetailScreen';
-import SearchScreen from '../screens/SearchScreen';
-import DownloadsScreen from '../screens/DownloadsScreen';
-import SettingsScreen from '../screens/SettingsScreen';
-import SportStreamsScreen from '../screens/SportStreamsScreen';
+import { useTheme } from '../contexts/ThemeContext';
 
-const Stack = createStackNavigator();
+// Screens
+import HomeScreen from '../screens/home/HomeScreen';
+import SearchScreen from '../screens/search/SearchScreen';
+import DownloadsScreen from '../screens/downloads/DownloadsScreen';
+import SettingsScreen from '../screens/settings/SettingsScreen';
+import DetailsScreen from '../screens/details/DetailsScreen';
+import VideoPlayerScreen from '../screens/player/VideoPlayerScreen';
+
+const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const MainTabs = ({ route }) => {
-  const initialRoute = route?.params?.initialRoute || 'Home';
+const TabNavigator = () => {
+  const { colors } = useTheme();
 
   return (
     <Tab.Navigator
-      initialRouteName={initialRoute}
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#000',
-          borderTopColor: '#222',
+          backgroundColor: colors.tabBarBackground,
+          borderTopColor: colors.border,
+          height: 60,
+          paddingBottom: 8,
         },
-        tabBarActiveTintColor: '#fff',
-        tabBarInactiveTintColor: '#777',
-        tabBarLabelStyle: {
-          fontSize: 12,
+        tabBarActiveTintColor: colors.tabBarActive,
+        tabBarInactiveTintColor: colors.tabBarInactive,
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName: string = 'home';
+
+          if (route.name === 'Home') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'Search') {
+            iconName = focused ? 'search' : 'search-outline';
+          } else if (route.name === 'Downloads') {
+            iconName = focused ? 'download' : 'download-outline';
+          } else if (route.name === 'Settings') {
+            iconName = focused ? 'settings' : 'settings-outline';
+          }
+
+          return <Ionicons name={iconName as any} size={size} color={color} />;
         },
-      }}
+      })}
     >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Search"
-        component={SearchScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Downloads"
-        component={DownloadsScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="download" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings" color={color} size={size} />
-          )
-        }}
-      />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Search" component={SearchScreen} />
+      <Tab.Screen name="Downloads" component={DownloadsScreen} />
+      <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 };
 
-const MainStack = ({ initialRoute }) => {
-  return (
-    <Stack.Navigator
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: '#000',
-          borderBottomWidth: 0,
-          shadowOpacity: 0,
-          elevation: 0,
-        },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-        cardStyleInterpolator: CardStyleInterpolators.forFadeFromBottomAndroid,
-        cardStyle: { backgroundColor: '#000' },
-      }}
-    >
-      <Stack.Screen
-        name="MainTabs"
-        component={MainTabs}
-        options={{ headerShown: false }}
-        initialParams={{ initialRoute }}
-      />
-      <Stack.Screen
-        name="VideoPlayer"
-        component={VideoPlayerScreen}
-        options={{ headerShown: false, autoHideHomeIndicator: true, gestureEnabled: false }}
-      />
-      <Stack.Screen
-        name="DetailScreen"
-        component={DetailScreen}
-        options={({ route }) => ({
-          title: route.params?.title || 'Details',
-          headerBackTitle: '',
-        })}
-      />
-      <Stack.Screen
-        name="SportStreams"
-        component={SportStreamsScreen}
-        options={({ route }) => ({
-          title: route.params?.sportName || 'Live Streams',
-          headerBackTitle: '',
-        })}
-      />
-    </Stack.Navigator>
-  );
-};
-
 const AppNavigator = () => {
-  const [initialRoute, setInitialRoute] = useState('Home');
-  const [isReady, setIsReady] = useState(false);
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        await networkMonitor.start();
-        const networkState = networkMonitor.getState();
-        if (!networkState.isConnected) {
-          setInitialRoute('Downloads');
-        }
-      } catch (error) {
-        console.warn('Network monitor init error:', error);
-      }
-      setIsReady(true);
-    };
-    init();
-  }, []);
-
-  if (!isReady) {
-    return (
-      <View style={navStyles.loadingContainer}>
-        <ActivityIndicator size="large" color="#E50914" />
-      </View>
-    );
-  }
+  const { colors } = useTheme();
 
   return (
-    <NavigationContainer theme={DarkTheme}>
-      <MainStack initialRoute={initialRoute} />
+    <NavigationContainer>
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: colors.surface,
+          },
+          headerTintColor: colors.text,
+          headerBackTitleVisible: false,
+          contentStyle: {
+            backgroundColor: colors.background,
+          },
+        }}
+      >
+        <Stack.Screen
+          name="MainTabs"
+          component={TabNavigator}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DetailScreen"
+          component={DetailsScreen}
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="VideoPlayer"
+          component={VideoPlayerScreen}
+          options={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        />
+      </Stack.Navigator>
     </NavigationContainer>
   );
 };
-
-const navStyles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
 
 export default AppNavigator;

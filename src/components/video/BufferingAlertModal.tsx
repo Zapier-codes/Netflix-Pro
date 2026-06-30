@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 const BufferingAlertModal = ({ visible, onKeepBuffering, onRetryExtraction }) => {

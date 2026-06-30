@@ -1,20 +1,20 @@
-# Flux 🎬
+﻿# Netflix Pro ðŸŽ¬
 
-Flux is a cross-platform mobile video streaming application built with React Native and Expo for iOS and Android.
+Netflix Pro is a cross-platform mobile video streaming application built with React Native and Expo for iOS and Android.
 
 > [!TIP]
-> **To sideload this app, go to https://flux.byteful.me**
+> **To sideload this app, go to https://Netflix Pro.byteful.me**
 
 ## Overview
 
-Flux provides a seamless experience for browsing and watching movies and TV shows. It leverages the power of the **TMDB API** for rich metadata (summaries, posters, ratings, etc.) and integrates with the **Vidsrc API** to fetch streamable video links.
+Netflix Pro provides a seamless experience for browsing and watching movies and TV shows. It leverages the power of the **TMDB API** for rich metadata (summaries, posters, ratings, etc.) and integrates with the **Vidsrc API** to fetch streamable video links.
 
-The application is entirely client-side, meaning no backend server is required for scraping or data processing. Flux handles everything directly on the device, offering a user-friendly interface with features designed for media consumption.
+The application is entirely client-side, meaning no backend server is required for scraping or data processing. Netflix Pro handles everything directly on the device, offering a user-friendly interface with features designed for media consumption.
 
 > [!WARNING]
 > This application is developed for personal use and educational purposes. Due to its nature of accessing potentially copyrighted content via third-party APIs, it will **not** be published on the official App Store or Google Play Store as it may violate their terms of service.
 
-## Features ✨
+## Features âœ¨
 
 *   **Cross-Platform:** Runs on both iOS and Android using a single codebase thanks to React Native and Expo.
 *   **Rich Metadata:** Fetches detailed information about movies and TV shows from TMDB.
@@ -24,13 +24,13 @@ The application is entirely client-side, meaning no backend server is required f
 *   **Client-Side:** No need for a dedicated server; all processing happens within the app.
 *   **Clean UI:** Designed with a focus on usability and a pleasant viewing experience.
 
-## Demo 🎥
+## Demo ðŸŽ¥
 
 https://github.com/user-attachments/assets/725196be-83ae-4b81-be00-90f0dbb7a05e
 
-## Getting Started 🚀
+## Getting Started ðŸš€
 
-Pre-built APKs and IPAs are available on the [Releases](https://github.com/byteful/Flux/releases) tab. If you want to build from source, follow the instructions below.
+Pre-built APKs and IPAs are available on the [Releases](https://github.com/byteful/Netflix Pro/releases) tab. If you want to build from source, follow the instructions below.
 
 ### Prerequisites
 
@@ -49,14 +49,14 @@ Pre-built APKs and IPAs are available on the [Releases](https://github.com/bytef
   - Android SDK (installed via Android Studio setup wizard)
   - Android SDK Build-Tools
   - Android NDK
-- Java Development Kit (JDK 17) — bundled with recent Android Studio versions
+- Java Development Kit (JDK 17) â€” bundled with recent Android Studio versions
 - `ANDROID_HOME` environment variable set to your SDK path
 
 ### Clone & Install
 
 ````bash
-git clone https://github.com/byteful/Flux.git
-cd Flux/app
+git clone https://github.com/byteful/Netflix Pro.git
+cd Netflix Pro/app
 npm install
 ````
 
@@ -99,7 +99,7 @@ npx expo prebuild
 
 4. **Build a release IPA via Xcode:**
 
-    Open `ios/Flux.xcworkspace` in Xcode, select your signing team under **Signing & Capabilities**, choose your device or "Any iOS Device", then go to **Product > Archive**.
+    Open `ios/Netflix Pro.xcworkspace` in Xcode, select your signing team under **Signing & Capabilities**, choose your device or "Any iOS Device", then go to **Product > Archive**.
 
 ### Building for Android
 
@@ -127,7 +127,7 @@ npx expo prebuild
     The output APK is located at `android/app/build/outputs/apk/release/app-release.apk`.
 
     > [!WARNING]
-    > The release build is currently signed with the debug keystore. For distribution, generate a proper keystore — see the [React Native signing guide](https://reactnative.dev/docs/signed-apk-android).
+    > The release build is currently signed with the debug keystore. For distribution, generate a proper keystore â€” see the [React Native signing guide](https://reactnative.dev/docs/signed-apk-android).
 
 ### Starting the Dev Server
 
@@ -144,7 +144,7 @@ npm run start:dev
 ````
 
 
-## TO-DO 📝
+## TO-DO ðŸ“
 
 -   [ ] Watch party system
 -   [ ] 'Skip Intro' button
@@ -156,10 +156,10 @@ npm run start:dev
 -   [x] Implement search functionality.
 -   [x] Add user preferences/settings screen.
 
-## Disclaimer ⚠️
+## Disclaimer âš ï¸
 
-As mentioned, Flux accesses third-party APIs (TMDB, Vidsrc) to fetch metadata and streaming links. The availability and legality of content depend entirely on these external services. This app is intended for personal and educational use only. I am not responsible for how the application is used or for the content accessed through it.
+As mentioned, Netflix Pro accesses third-party APIs (TMDB, Vidsrc) to fetch metadata and streaming links. The availability and legality of content depend entirely on these external services. This app is intended for personal and educational use only. I am not responsible for how the application is used or for the content accessed through it.
 
-## Suggestions and Bug Reports 🐞
+## Suggestions and Bug Reports ðŸž
 
 Please don't hesitate to open an issue if you have a suggestion or find a bug. While primarily maintained for personal use, contributions and feedback to improve the app for others are welcome!

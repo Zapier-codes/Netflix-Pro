@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -663,7 +663,7 @@ const SettingsScreen = () => {
               <View style={styles.watchHistoryContainer}>
                 <Text style={styles.settingTitle}>Downloaded Content</Text>
                 <Text style={styles.watchHistoryCount}>
-                  {totalDownloadsCount} {totalDownloadsCount === 1 ? 'item' : 'items'} • {formatFileSize(downloadStorageUsed)}
+                  {totalDownloadsCount} {totalDownloadsCount === 1 ? 'item' : 'items'} â€¢ {formatFileSize(downloadStorageUsed)}
                 </Text>
               </View>
             </View>

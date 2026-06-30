@@ -1,0 +1,42 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    compileSdk 34
+    namespace "expo.modules.mavinengine"
+
+    defaultConfig {
+        minSdk 24
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation project(':expo-modules-core')
+    
+    compileOnly "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
+
+    // NewPipe Extractor - YouTube metadata extraction only
+    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.0'
+
+    // OkHttp for network requests
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    
+    // Coroutines for async operations
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+}

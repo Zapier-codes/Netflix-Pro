@@ -1,4 +1,4 @@
-class StreamProcessor {
+﻿class StreamProcessor {
   constructor(sourceName, timeoutInSeconds) {
     this.sourceName = sourceName;
     this.timeoutInSeconds = timeoutInSeconds;
@@ -149,8 +149,8 @@ class StreamProcessor {
             if (streamFoundAndPosted) return;
             try {
               const iframeWindow = frame.contentWindow;
-              if (iframeWindow && iframeWindow.document && !iframeWindow.SKIP_FLUX_INJECTION) {
-                iframeWindow.SKIP_FLUX_INJECTION = true;
+              if (iframeWindow && iframeWindow.document && !iframeWindow.SKIP_Netflix Pro_INJECTION) {
+                iframeWindow.SKIP_Netflix Pro_INJECTION = true;
                 const scriptEl = iframeWindow.document.createElement('script');
                 scriptEl.textContent = '(function() {' +
                   'const IFRAME_SOURCE_NAME = "' + CURRENT_SOURCE_NAME + '";' +

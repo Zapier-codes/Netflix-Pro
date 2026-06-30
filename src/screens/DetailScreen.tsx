@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -412,7 +412,7 @@ const DetailScreen = ({ route, navigation }) => {
             <Text style={styles.title}>{displayTitle}</Text>
             <View style={styles.infoRow}>
               <Text style={styles.rating}>
-                {details.vote_average ? details.vote_average.toFixed(1) : "N/A"} ★
+                {details.vote_average ? details.vote_average.toFixed(1) : "N/A"} â˜…
               </Text>
               <Text style={styles.year}>{releaseYear}</Text>
               {details.production_countries && details.production_countries.length > 0 && (
@@ -550,7 +550,7 @@ const DetailScreen = ({ route, navigation }) => {
                     <>
                       <View style={styles.seasonHeaderRow}>
                         <Text style={styles.seasonTitle}>
-                          Season {selectedSeason} • {totalEpisodesInSeason}{' '}
+                          Season {selectedSeason} â€¢ {totalEpisodesInSeason}{' '}
                           {totalEpisodesInSeason === 1 ? 'Episode' : 'Episodes'}
                         </Text>
                         <DownloadButton

@@ -1,4 +1,4 @@
-import networkMonitor from './NetworkMonitor';
+﻿import networkMonitor from './NetworkMonitor';
 import storageManager from './StorageManager';
 import downloadQueue from './DownloadQueue';
 import HLSDownloader from './HLSDownloader';
@@ -19,6 +19,13 @@ import {
 } from '../../utils/downloadStorage';
 
 class DownloadManager {
+  private activeDownloads: Map<any, any>;
+  private pendingFetches: Set<any>;
+  private listeners: Set<any>;
+  private isInitialized: boolean;
+  private isProcessingQueue: boolean;
+  private networkUnsubscribe: any;
+
   constructor() {
     this.activeDownloads = new Map();
     this.pendingFetches = new Set();
@@ -36,7 +43,7 @@ class DownloadManager {
       await storageManager.initialize();
       await downloadQueue.initialize();
       await networkMonitor.start();
-      ffmpegConverter.initialize();
+      await ffmpegConverter.initialize();
 
       this.networkUnsubscribe = networkMonitor.subscribe((state) => {
         this.handleNetworkChange(state);
@@ -46,11 +53,12 @@ class DownloadManager {
 
       this.processQueue();
     } catch (error) {
-      // Initialization failed
+      console.warn('[DownloadManager] Initialization warning:', error);
+      this.isInitialized = true;
     }
   }
 
-  handleNetworkChange(networkState) {
+  handleNetworkChange(networkState: any) {
     if (networkState.isConnected) {
       this.processQueue();
     } else {
@@ -63,7 +71,7 @@ class DownloadManager {
     return networkMonitor.canDownload(settings.wifiOnlyDownload);
   }
 
-  async addToQueue(mediaInfo) {
+  async addToQueue(mediaInfo: any) {
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -78,7 +86,7 @@ class DownloadManager {
     }
   }
 
-  async addSeasonToQueue(mediaId, title, posterPath, seasonNumber, episodes) {
+  async addSeasonToQueue(mediaId: string, title: string, posterPath: string, seasonNumber: number, episodes: any[]) {
     const entries = [];
 
     for (const episode of episodes) {
@@ -110,6 +118,7 @@ class DownloadManager {
         entries.push(entry);
       } catch (error) {
         // Skip failed episodes
+        console.warn('[DownloadManager] Failed to add episode to queue:', error);
       }
     }
 
@@ -162,12 +171,13 @@ class DownloadManager {
     }
   }
 
-  async fetchAndStartDownload(entry) {
+  async fetchAndStartDownload(entry: any) {
     try {
       const { getActiveStreamSources } = require('../../api/vidsrcApi');
       const sources = getActiveStreamSources();
 
-      const fluxSource = sources.find(s => s.name === 'FluxSource');
+      // FIXED: Changed from 'Netflix ProSource' to 'FluxSource'
+      const fluxSource = sources.find((s: any) => s.name === 'FluxSource');
 
       if (!fluxSource) {
         throw new Error('FluxSource not available for downloads');
@@ -207,7 +217,7 @@ class DownloadManager {
       if (updatedEntry) {
         this.startDownload(updatedEntry);
       }
-    } catch (error) {
+    } catch (error: any) {
       this.pendingFetches.delete(entry.id);
       if (error.name === 'AbortError') {
         throw new Error('Stream URL fetch timed out');
@@ -216,26 +226,26 @@ class DownloadManager {
     }
   }
 
-  async startDownload(entry) {
+  async startDownload(entry: any) {
     if (this.activeDownloads.has(entry.id)) {
       return;
     }
 
     this.notifyListeners('download-started', entry);
 
-    const onProgress = (progressData) => {
+    const onProgress = (progressData: any) => {
       this.handleProgress(entry.id, progressData);
     };
 
-    const onComplete = (result) => {
+    const onComplete = (result: any) => {
       this.handleComplete(entry.id, result);
     };
 
-    const onError = (error) => {
+    const onError = (error: any) => {
       this.handleError(entry.id, error);
     };
 
-    let downloader;
+    let downloader: any;
 
     if (this.isHLS(entry.streamUrl)) {
       downloader = new HLSDownloader(entry, onProgress, onComplete, onError);
@@ -247,12 +257,12 @@ class DownloadManager {
     downloader.start();
   }
 
-  isHLS(url) {
+  isHLS(url: string) {
     if (!url) return false;
     return url.includes('.m3u8') || url.includes('m3u8');
   }
 
-  handleProgress(downloadId, progressData) {
+  handleProgress(downloadId: string, progressData: any) {
     const { progress, bytesDownloaded, totalBytes } = progressData;
 
     downloadQueue.updateProgress(downloadId, progress, bytesDownloaded, totalBytes);
@@ -263,7 +273,7 @@ class DownloadManager {
     });
   }
 
-  async handleComplete(downloadId, result) {
+  async handleComplete(downloadId: string, result: any) {
     this.activeDownloads.delete(downloadId);
 
     await downloadQueue.markCompleted(downloadId, result.fileSize, result.filePath);
@@ -276,7 +286,7 @@ class DownloadManager {
     this.processQueue();
   }
 
-  async handleError(downloadId, error) {
+  async handleError(downloadId: string, error: any) {
     this.activeDownloads.delete(downloadId);
 
     await downloadQueue.markFailed(downloadId, error.message);
@@ -289,7 +299,7 @@ class DownloadManager {
     this.processQueue();
   }
 
-  async pauseDownload(downloadId) {
+  async pauseDownload(downloadId: string) {
     const downloader = this.activeDownloads.get(downloadId);
     if (downloader) {
       downloader.pause();
@@ -299,7 +309,7 @@ class DownloadManager {
     }
   }
 
-  async resumeDownload(downloadId) {
+  async resumeDownload(downloadId: string) {
     const entry = await getDownloadEntry(downloadId);
     if (entry && entry.status === DOWNLOAD_STATUS.PAUSED) {
       await downloadQueue.resume(downloadId);
@@ -308,7 +318,7 @@ class DownloadManager {
     }
   }
 
-  async cancelDownload(downloadId) {
+  async cancelDownload(downloadId: string) {
     const downloader = this.activeDownloads.get(downloadId);
     if (downloader) {
       downloader.cancel();
@@ -332,7 +342,7 @@ class DownloadManager {
   }
 
   async cancelAllDownloads() {
-    const downloadIds = [];
+    const downloadIds: string[] = [];
 
     for (const [downloadId, downloader] of this.activeDownloads) {
       downloader.cancel();
@@ -358,7 +368,7 @@ class DownloadManager {
   }
 
   async cancelAllAndRetry() {
-    const itemsToRetry = [];
+    const itemsToRetry: any[] = [];
 
     for (const [downloadId, downloader] of this.activeDownloads) {
       downloader.cancel();
@@ -416,7 +426,7 @@ class DownloadManager {
     return itemsToRetry.length;
   }
 
-  async retryDownload(downloadId) {
+  async retryDownload(downloadId: string) {
     const entry = await getDownloadEntry(downloadId);
     if (entry && entry.status === DOWNLOAD_STATUS.FAILED) {
       await deleteDownload(downloadId);
@@ -438,7 +448,7 @@ class DownloadManager {
     return null;
   }
 
-  async setStreamUrlForDownload(downloadId, streamUrl, streamReferer = null) {
+  async setStreamUrlForDownload(downloadId: string, streamUrl: string, streamReferer: string | null = null) {
     await updateDownloadEntry(downloadId, { streamUrl, streamReferer });
 
     const queueItem = downloadQueue.getById(downloadId);
@@ -448,11 +458,11 @@ class DownloadManager {
     }
   }
 
-  async markAsWatched(downloadId) {
+  async markAsWatched(downloadId: string) {
     return markDownloadAsWatched(downloadId);
   }
 
-  async getDownload(downloadId) {
+  async getDownload(downloadId: string) {
     return getDownloadEntry(downloadId);
   }
 
@@ -491,7 +501,7 @@ class DownloadManager {
     return downloadQueue.getAll();
   }
 
-  async isDownloaded(mediaType, tmdbId, season = null, episode = null) {
+  async isDownloaded(mediaType: string, tmdbId: string, season: number | null = null, episode: number | null = null) {
     const downloadId = generateDownloadId(mediaType, tmdbId, season, episode);
     const entry = await getDownloadEntry(downloadId);
 
@@ -518,7 +528,7 @@ class DownloadManager {
     }
   }
 
-  async getDownloadStatus(mediaType, tmdbId, season = null, episode = null) {
+  async getDownloadStatus(mediaType: string, tmdbId: string, season: number | null = null, episode: number | null = null) {
     const downloadId = generateDownloadId(mediaType, tmdbId, season, episode);
     const entry = await getDownloadEntry(downloadId);
 
@@ -546,7 +556,7 @@ class DownloadManager {
     return entry.status;
   }
 
-  async getDownloadProgress(mediaType, tmdbId, season = null, episode = null) {
+  async getDownloadProgress(mediaType: string, tmdbId: string, season: number | null = null, episode: number | null = null) {
     const downloadId = generateDownloadId(mediaType, tmdbId, season, episode);
 
     const queueItem = downloadQueue.getById(downloadId);
@@ -558,14 +568,14 @@ class DownloadManager {
     return entry?.progress || 0;
   }
 
-  subscribe(callback) {
+  subscribe(callback: (event: string, data: any) => void) {
     this.listeners.add(callback);
     return () => {
       this.listeners.delete(callback);
     };
   }
 
-  notifyListeners(event, data) {
+  notifyListeners(event: string, data: any) {
     this.listeners.forEach(callback => {
       try {
         callback(event, data);
