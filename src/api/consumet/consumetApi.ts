@@ -65,7 +65,7 @@ export class ConsumetApiService {
 
   async searchMovies(query: string, page: number = 1): Promise<ConsumetMovie[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/movies/, {
+      const response = await axios.get(`${CONSUMET_BASE_URL}/movies/${query}`, {
         params: { page }
       });
       return response.data.results || [];
@@ -77,7 +77,7 @@ export class ConsumetApiService {
 
   async getMovieInfo(id: string): Promise<ConsumetMovie | null> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/movies/info?id=);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/movies/info?id=${id}`);
       return response.data;
     } catch (error) {
       console.error('[Consumet] Movie info error:', error);
@@ -87,7 +87,7 @@ export class ConsumetApiService {
 
   async getMovieSources(id: string): Promise<ConsumetStream[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/movies/watch/);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/movies/watch/${id}`);
       return response.data.sources || [];
     } catch (error) {
       console.error('[Consumet] Movie sources error:', error);
@@ -101,7 +101,7 @@ export class ConsumetApiService {
 
   async searchTVShows(query: string, page: number = 1): Promise<ConsumetTVShow[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/tv/, {
+      const response = await axios.get(`${CONSUMET_BASE_URL}/tv/${query}`, {
         params: { page }
       });
       return response.data.results || [];
@@ -113,7 +113,7 @@ export class ConsumetApiService {
 
   async getTVInfo(id: string): Promise<ConsumetTVShow | null> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/tv/info?id=);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/tv/info?id=${id}`);
       return response.data;
     } catch (error) {
       console.error('[Consumet] TV info error:', error);
@@ -123,7 +123,7 @@ export class ConsumetApiService {
 
   async getTVSources(id: string, season: number, episode: number): Promise<ConsumetStream[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/tv/watch/, {
+      const response = await axios.get(`${CONSUMET_BASE_URL}/tv/watch/${id}`, {
         params: { season, episode }
       });
       return response.data.sources || [];
@@ -139,7 +139,7 @@ export class ConsumetApiService {
 
   async searchAnime(query: string, page: number = 1): Promise<ConsumetAnime[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/anime/, {
+      const response = await axios.get(`${CONSUMET_BASE_URL}/anime/${query}`, {
         params: { page }
       });
       return response.data.results || [];
@@ -151,7 +151,7 @@ export class ConsumetApiService {
 
   async getAnimeInfo(id: string): Promise<ConsumetAnime | null> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/anime/info?id=);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/anime/info?id=${id}`);
       return response.data;
     } catch (error) {
       console.error('[Consumet] Anime info error:', error);
@@ -161,7 +161,7 @@ export class ConsumetApiService {
 
   async getAnimeSources(id: string): Promise<ConsumetStream[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/anime/watch/);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/anime/watch/${id}`);
       return response.data.sources || [];
     } catch (error) {
       console.error('[Consumet] Anime sources error:', error);
@@ -175,7 +175,7 @@ export class ConsumetApiService {
 
   async getRecentMovies(): Promise<ConsumetMovie[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/movies/recent);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/movies/recent`);
       return response.data.results || [];
     } catch (error) {
       console.error('[Consumet] Recent movies error:', error);
@@ -185,7 +185,7 @@ export class ConsumetApiService {
 
   async getRecentTVShows(): Promise<ConsumetTVShow[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/tv/recent);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/tv/recent`);
       return response.data.results || [];
     } catch (error) {
       console.error('[Consumet] Recent TV error:', error);
@@ -195,7 +195,7 @@ export class ConsumetApiService {
 
   async getPopularAnime(): Promise<ConsumetAnime[]> {
     try {
-      const response = await axios.get(${CONSUMET_BASE_URL}/anime/popular);
+      const response = await axios.get(`${CONSUMET_BASE_URL}/anime/popular`);
       return response.data.results || [];
     } catch (error) {
       console.error('[Consumet] Popular anime error:', error);

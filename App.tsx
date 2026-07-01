@@ -34,7 +34,7 @@ import { initializeStreamSources } from './src/api/vidsrcApi';
 // Pawns consent + SDK
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EarningsConsentGate, CONSENT_STORAGE_KEY, checkAndShowConsent } from './src/components/EarningsConsentGate';
-import { initialize as initializePawns } from './src/modules/pawns';
+import { initialize as initializePawns } from './modules/pawns';
 // NOTE: navigationRef must be created + attached to <NavigationContainer ref={navigationRef}>
 // inside AppNavigator.tsx. Exported from there so App.tsx (above the navigator) can
 // still trigger navigation imperatively from handleOpenSettings below.

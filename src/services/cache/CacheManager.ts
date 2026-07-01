@@ -13,7 +13,7 @@ export class CacheManager {
   private static instance: CacheManager;
   private cacheVersion = 2;
   private memoryCache: Map<string, CacheEntry> = new Map();
-  private readonly CACHE_DIR = ${LegacyFileSystem.documentDirectory}cache/;
+  private readonly CACHE_DIR = `${LegacyFileSystem.documentDirectory}cache/`;
 
   static getInstance(): CacheManager {
     if (!CacheManager.instance) {
@@ -48,7 +48,7 @@ export class CacheManager {
 
     // Store in file system
     try {
-      const filePath = ${this.CACHE_DIR}.json;
+      const filePath = `${this.CACHE_DIR}${key}.json`;
       await LegacyFileSystem.writeAsStringAsync(filePath, JSON.stringify(entry));
     } catch (error) {
       console.warn('[CacheManager] Set error:', error);
@@ -67,7 +67,7 @@ export class CacheManager {
 
     // Check file system
     try {
-      const filePath = ${this.CACHE_DIR}.json;
+      const filePath = `${this.CACHE_DIR}${key}.json`;
       const info = await LegacyFileSystem.getInfoAsync(filePath);
       if (!info.exists) return null;
 
@@ -95,7 +95,7 @@ export class CacheManager {
   async delete(key: string): Promise<void> {
     this.memoryCache.delete(key);
     try {
-      const filePath = ${this.CACHE_DIR}.json;
+      const filePath = `${this.CACHE_DIR}${key}.json`;
       await LegacyFileSystem.deleteAsync(filePath, { idempotent: true });
     } catch {
       // Ignore
@@ -120,7 +120,7 @@ export class CacheManager {
     try {
       await this.ensureCacheDir();
       const files = await LegacyFileSystem.readDirectoryAsync(this.CACHE_DIR);
-      
+
       for (const file of files) {
         if (file.endsWith('.json')) {
           const key = file.replace('.json', '');
@@ -151,15 +151,15 @@ export class CacheManager {
       for (const file of files) {
         if (file.endsWith('.json')) {
           const key = file.replace('.json', '');
-          const raw = await LegacyFileSystem.readAsStringAsync(${this.CACHE_DIR});
+          const raw = await LegacyFileSystem.readAsStringAsync(`${this.CACHE_DIR}${file}`);
           try {
             const entry: CacheEntry = JSON.parse(raw);
             if (Date.now() - entry.timestamp > entry.ttl) {
-              await LegacyFileSystem.deleteAsync(${this.CACHE_DIR}, { idempotent: true });
+              await LegacyFileSystem.deleteAsync(`${this.CACHE_DIR}${file}`, { idempotent: true });
               this.memoryCache.delete(key);
             }
           } catch {
-            await LegacyFileSystem.deleteAsync(${this.CACHE_DIR}, { idempotent: true });
+            await LegacyFileSystem.deleteAsync(`${this.CACHE_DIR}${file}`, { idempotent: true });
           }
         }
       }
