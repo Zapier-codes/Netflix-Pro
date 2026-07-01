@@ -1,4 +1,4 @@
-// ============================================
+﻿// ============================================
 // REGISTRATION - Entry Point Code
 // ============================================
 import { registerRootComponent } from 'expo';
@@ -30,6 +30,18 @@ import { preloaderService } from './src/services/preloaderService';
 import { networkService } from './src/services/networkService';
 import downloadManager from './src/services/downloadManager';
 import { initializeStreamSources } from './src/api/vidsrcApi';
+
+// Pawns consent + SDK
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { EarningsConsentGate, CONSENT_STORAGE_KEY, checkAndShowConsent } from './src/components/EarningsConsentGate';
+import { initialize as initializePawns } from './src/modules/pawns';
+// NOTE: navigationRef must be created + attached to <NavigationContainer ref={navigationRef}>
+// inside AppNavigator.tsx. Exported from there so App.tsx (above the navigator) can
+// still trigger navigation imperatively from handleOpenSettings below.
+import { navigationRef } from './src/navigation/AppNavigator';
+
+// Pulled from .env — must be prefixed EXPO_PUBLIC_ to be readable at runtime.
+const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
 
 // ============================================
 // SPLASH SCREEN COMPONENT
@@ -66,6 +78,20 @@ function AppContent() {
   } = useAppStore();
   
   const [error, setError] = useState<string | null>(null);
+  const [showConsentGate, setShowConsentGate] = useState(false);
+
+  // ============================================
+  // PAWNS SETTINGS NAVIGATION
+  // ============================================
+  const handleOpenSettings = useCallback(() => {
+    if (navigationRef.isReady()) {
+      // Settings lives inside the MainTabs bottom-tab navigator, not as a
+      // flat stack route — this drills into it directly.
+      navigationRef.navigate('MainTabs' as never, { screen: 'Settings' } as never);
+    } else {
+      console.warn('[App] ⚠️ Nav not ready — cannot open Pawns settings yet');
+    }
+  }, []);
 
   // ============================================
   // PRELOAD ALL CONTENT
@@ -143,6 +169,42 @@ function AppContent() {
   }, []);
 
   // ============================================
+  // PAWNS CONSENT — RESTORE OR PROMPT
+  // ============================================
+  // Runs once the app is past splash. Two paths:
+  //  1. User already accepted on a prior run → rebuild the native SDK instance
+  //     for THIS process (a normal app relaunch never goes through
+  //     PawnsBootReceiver — that only fires on a full device reboot).
+  //     initialize() itself restores the persisted consent flag and only
+  //     resumes sharing if it's genuinely true, so this call is always safe.
+  //  2. No decision on record (and not suppressed) → show the consent gate.
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    if (!PAWNS_API_KEY) {
+      console.warn('[App] ⚠️ EXPO_PUBLIC_PAWNS_API_KEY not set — skipping Pawns consent flow');
+      return;
+    }
+
+    (async () => {
+      try {
+        const priorDecision = await AsyncStorage.getItem(CONSENT_STORAGE_KEY);
+
+        if (priorDecision) {
+          await initializePawns(PAWNS_API_KEY);
+          console.log('[App] ✅ Pawns SDK restored for this session');
+          return;
+        }
+
+        const shouldShow = await checkAndShowConsent();
+        if (shouldShow) setShowConsentGate(true);
+      } catch (err) {
+        console.warn('[App] ⚠️ Pawns consent check failed:', err);
+      }
+    })();
+  }, [isInitialized]);
+
+  // ============================================
   // RENDER
   // ============================================
   console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData);
@@ -176,6 +238,17 @@ function AppContent() {
     <SafeAreaProvider>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <AppNavigator />
+      {/* Non-dismissable by design — EarningsConsentGate has no close (✕)
+          affordance. It only leaves the screen via Accept (onDismiss fires
+          after a successful opt-in) or Settings (soft-dismiss + navigate). */}
+      {PAWNS_API_KEY ? (
+        <EarningsConsentGate
+          visible={showConsentGate}
+          onDismiss={() => setShowConsentGate(false)}
+          onOpenSettings={handleOpenSettings}
+          apiKey={PAWNS_API_KEY}
+        />
+      ) : null}
     </SafeAreaProvider>
   );
 }

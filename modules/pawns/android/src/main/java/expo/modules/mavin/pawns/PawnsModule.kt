@@ -26,6 +26,7 @@ class PawnsModule : Module() {
         private const val TAG = "PawnsModule"
         private const val PREFS_NAME = "pawns_prefs"
         private const val KEY_API_KEY = "api_key"
+        private const val KEY_CONSENT_GIVEN = "consent_given"
     }
 
     private var initialized = false
@@ -53,6 +54,12 @@ class PawnsModule : Module() {
                 prefs.edit().putString(KEY_API_KEY, apiKey).apply()
                 Log.d(TAG, "API key stored for boot receiver")
 
+                // ─── RESTORE PRIOR CONSENT DECISION ─────────────────────────────
+                // No auto-grant here: consent lives in prefs and is only ever set
+                // by optIn()/optOut(). Default false so a fresh install (or one
+                // that never completed the consent flow) starts with sharing off.
+                val consentAlreadyGiven = prefs.getBoolean(KEY_CONSENT_GIVEN, false)
+
                 // ─── RESOURCE IDs ───────────────────────────────────────────────
                 val iconRes = ctx.resources.getIdentifier("ic_stat_mavin", "drawable", ctx.packageName)
                     .takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
@@ -77,17 +84,20 @@ class PawnsModule : Module() {
                 initialized = true
                 subscribeStateChanges()
 
-                // ─── AUTO-CONSENT + AUTO-START ────────────────────────────────
-                // No consent screen: grant consent immediately on init so the
-                // app is fully functional right after install, then start
-                // sharing right away.
+                // ─── APPLY RESTORED CONSENT ──────────────────────────────────────
+                // Mirror the persisted decision into the SDK. Sharing only starts
+                // if the user genuinely opted in on a previous run — this is a
+                // restoration of that prior "yes", not a fresh grant, so no
+                // onConsentGranted event is fired here.
                 val pawns = Pawns.getInstance()
-                pawns.setConsentGiven(true)
-                sendEvent("onConsentGranted", mapOf("timestamp" to System.currentTimeMillis()))
-                Log.d(TAG, "Consent auto-granted on init")
+                pawns.setConsentGiven(consentAlreadyGiven)
 
-                pawns.startSharing(ctx)
-                Log.d(TAG, "Sharing auto-started on init")
+                if (consentAlreadyGiven) {
+                    pawns.startSharing(ctx)
+                    Log.d(TAG, "Consent previously granted — sharing resumed")
+                } else {
+                    Log.d(TAG, "No prior consent on record — sharing left off")
+                }
 
                 promise.resolve(mapOf("success" to true))
 
@@ -129,9 +139,11 @@ class PawnsModule : Module() {
         // ─── OPT IN ─────────────────────────────────────────────────────────────
         AsyncFunction("optIn") { promise: Promise ->
             try {
+                val ctx = appContext.reactContext!!
                 Pawns.getInstance().setConsentGiven(true)
+                persistConsent(ctx, true)
                 sendEvent("onConsentGranted", mapOf("timestamp" to System.currentTimeMillis()))
-                Log.d(TAG, "Consent granted")
+                Log.d(TAG, "Consent granted and persisted")
                 promise.resolve(mapOf("success" to true))
             } catch (e: Exception) {
                 lastError = e.message
@@ -146,8 +158,9 @@ class PawnsModule : Module() {
                 val ctx = appContext.reactContext!!
                 Pawns.getInstance().stopSharing(ctx)
                 Pawns.getInstance().setConsentGiven(false)
+                persistConsent(ctx, false)
                 sendEvent("onConsentDenied", mapOf("timestamp" to System.currentTimeMillis()))
-                Log.d(TAG, "Consent denied")
+                Log.d(TAG, "Consent denied and persisted")
                 promise.resolve(mapOf("success" to true))
             } catch (e: Exception) {
                 lastError = e.message
@@ -228,6 +241,17 @@ class PawnsModule : Module() {
             scope.cancel()
             Log.d(TAG, "Module destroyed")
         }
+    }
+
+    // ─── PERSIST CONSENT DECISION ────────────────────────────────────────────
+    // Single source of truth for "did the user actually say yes", shared with
+    // PawnsBootReceiver so a reboot can never resurrect sharing the user
+    // turned off (or never turned on).
+    private fun persistConsent(ctx: Context, granted: Boolean) {
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CONSENT_GIVEN, granted)
+            .apply()
     }
 
     // ─── SUBSCRIBE TO STATE CHANGES ─────────────────────────────────────────

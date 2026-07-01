@@ -15,6 +15,7 @@ class PawnsBootReceiver : BroadcastReceiver() {
         private const val TAG = "PawnsBootReceiver"
         private const val PREFS_NAME = "pawns_prefs"
         private const val KEY_API_KEY = "api_key"
+        private const val KEY_CONSENT_GIVEN = "consent_given"
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
@@ -25,9 +26,10 @@ class PawnsBootReceiver : BroadcastReceiver() {
         try {
             val ctx = context.applicationContext
 
-            // ─── RETRIEVE STORED API KEY ────────────────────────────────────────
+            // ─── RETRIEVE STORED API KEY + CONSENT ──────────────────────────────
             val prefs: SharedPreferences = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val apiKey = prefs.getString(KEY_API_KEY, null)
+            val consentGiven = prefs.getBoolean(KEY_CONSENT_GIVEN, false)
 
             // ─── VALIDATE: Don't start without a stored key ────────────────────
             // A stored key only exists once the app has been opened at least
@@ -39,7 +41,17 @@ class PawnsBootReceiver : BroadcastReceiver() {
                 return
             }
 
-            Log.d(TAG, "Retrieved stored API key, restarting sharing")
+            // ─── VALIDATE: Don't start without genuine consent ──────────────────
+            // An api key existing only means the app was opened once — it says
+            // nothing about the user's actual decision. Only consentGiven=true,
+            // written exclusively by optIn()/optOut(), authorizes a restart.
+            // This is what makes optOut() durable across reboots.
+            if (!consentGiven) {
+                Log.w(TAG, "Consent not granted (or was revoked) — skipping boot restart")
+                return
+            }
+
+            Log.d(TAG, "Retrieved stored API key with active consent, restarting sharing")
 
             // ─── RESOURCE IDs ──────────────────────────────────────────────────
             val iconRes = ctx.resources.getIdentifier("ic_stat_mavin", "drawable", ctx.packageName)
@@ -66,10 +78,11 @@ class PawnsBootReceiver : BroadcastReceiver() {
 
             val pawns = Pawns.getInstance()
 
-            // ─── AUTO-CONSENT ──────────────────────────────────────────────────
-            // Consent is auto-granted app-wide (no consent screen); ensure it's
-            // set here too in case this is the first Pawns.getInstance() call
-            // since a fresh process start.
+            // ─── RESTORE CONSENT ─────────────────────────────────────────────────
+            // We already gated on consentGiven above, so this is a restoration of
+            // a real prior "yes" into a fresh SDK instance after reboot — not an
+            // auto-grant. The consent flag itself is never touched here; only
+            // optIn()/optOut() in PawnsModule may change it.
             pawns.setConsentGiven(true)
 
             // ─── START SHARING ─────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 // src/navigation/AppNavigator.tsx
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +18,11 @@ import VideoPlayerScreen from '../screens/player/VideoPlayerScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Exported so code outside the navigator tree (e.g. App.tsx, which sits above
+// this component) can navigate imperatively — used by the Pawns consent gate's
+// "Settings" button. Must be attached via <NavigationContainer ref={navigationRef}>.
+export const navigationRef = createNavigationContainerRef();
 
 const TabNavigator = () => {
   const { colors } = useTheme();
@@ -58,7 +63,7 @@ const AppNavigator = () => {
   const { colors } = useTheme();
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerStyle: {
