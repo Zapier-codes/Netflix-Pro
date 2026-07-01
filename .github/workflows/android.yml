@@ -176,6 +176,25 @@ jobs:
             -o android/libs/ffmpeg-kit-full-gpl.aar
           echo "AAR downloaded: $(du -sh android/libs/ffmpeg-kit-full-gpl.aar)"
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Gradle repositories are scoped per-project: when :app resolves its
+      # own dependency graph, it only searches repositories it (or a root
+      # allprojects block) declared — not repositories declared inside
+      # pawns-sdk's own build.gradle. :app's flatDir repo already points at
+      # android/libs (that's where it successfully finds ffmpeg-kit's AAR
+      # above), so pawns-sdk's local AARs need to land in that same folder
+      # for :app:debugRuntimeClasspath to resolve them. This mirrors them
+      # in without touching any build.gradle beyond the pawns-sdk flatDir
+      # fix already made.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Mirror pawns-sdk local AARs into android/libs
+        run: |
+          mkdir -p android/libs
+          cp modules/pawns/android/libs/internet-sharing-1.8.1.aar android/libs/
+          cp modules/pawns/android/libs/pawns-ndk-1.8.1.aar android/libs/
+          echo "✅ pawns-sdk AARs mirrored into android/libs"
+          ls -la android/libs
+
       - name: Build Debug APK
         run: |
           cd android
