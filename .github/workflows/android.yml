@@ -70,27 +70,37 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      # ──────────────────────────────────────────────────────────────────────
+      # node_modules is keyed strictly on package-lock.json's hash. If the
+      # lockfile hasn't changed since the last successful run, this restores
+      # a full cache hit and the install step below is skipped entirely —
+      # no re-resolving. If the lockfile changed (a dependency was added,
+      # removed, or bumped), the key changes, cache-hit is false, npm ci
+      # installs fresh, and actions/cache automatically saves node_modules
+      # under the NEW key at the end of the job — so next run hits the cache
+      # again with the updated dependency already baked in.
+      # ──────────────────────────────────────────────────────────────────────
       - name: Cache node_modules
+        id: node-modules-cache
         uses: actions/cache@v4
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: node-modules-${{ runner.os }}-
 
       # ──────────────────────────────────────────────────────────────────────
-      # FIXED: Install dependencies with ignore-engines
+      # Only runs on a cache miss (lockfile changed or first run ever).
+      # npm ci installs exactly what's in package-lock.json — no resolution,
+      # no lockfile regeneration, no silent version drift. Commit an
+      # up-to-date package-lock.json for this to work; if package.json and
+      # package-lock.json are out of sync, npm ci fails loudly instead of
+      # quietly re-resolving, which is what we want in CI.
       # ──────────────────────────────────────────────────────────────────────
       - name: Install dependencies
-        run: |
-          # Clean start
-          rm -rf node_modules package-lock.json
-          # Install with legacy peer deps and ignore engines
-          npm install --legacy-peer-deps --ignore-engines
-          # Generate fresh lockfile
-          npm install --package-lock-only --legacy-peer-deps --ignore-engines
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --legacy-peer-deps
 
       # ──────────────────────────────────────────────────────────────────────
-      # Runs unconditionally now — debug and release builds (and plain push
+      # Runs unconditionally — debug and release builds (and plain push
       # triggers, where inputs.build_type doesn't exist) all need .env for
       # EXPO_PUBLIC_* vars to get inlined into the JS bundle.
       # ──────────────────────────────────────────────────────────────────────
