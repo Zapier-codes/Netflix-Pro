@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="pawns_service_title">NETFLIX PRO</string>
-    <string name="pawns_service_body">🎬 Movies & TV Shows</string>
+    <string name="pawns_service_body">🎬 Movies &amp; TV Shows</string>
     <string name="pawns_channel_name">Bandwidth Sharing</string>
 </resources>
