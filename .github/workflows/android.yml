@@ -2,21 +2,12 @@
 
 on:
   push:
-    branches: [main, develop]
-  workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
+    branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   build:
-    name: Build ${{ inputs.build_type == 'release' && 'Release' || 'Debug' }} APK
+    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
@@ -100,9 +91,8 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       # ──────────────────────────────────────────────────────────────────────
-      # Runs unconditionally — debug and release builds (and plain push
-      # triggers, where inputs.build_type doesn't exist) all need .env for
-      # EXPO_PUBLIC_* vars to get inlined into the JS bundle.
+      # Needed so EXPO_PUBLIC_* vars get inlined into the JS bundle at
+      # build time. ENV_FILE secret should be your full .env, base64-encoded.
       # ──────────────────────────────────────────────────────────────────────
       - name: Decode .env file
         run: |
@@ -123,25 +113,12 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> android/local.properties
 
-      - name: Decode release keystore
-        if: github.event.inputs.build_type == 'release'
-        run: |
-          echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > android/app/release.keystore
-          echo "✅ Release keystore created"
-
-      - name: Create keystore.properties
-        if: github.event.inputs.build_type == 'release'
-        run: |
-          cat > android/keystore.properties << EOF
-          storePassword=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
-          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
-          storeFile=release.keystore
-          EOF
-          echo "✅ keystore.properties created"
-
+      # ──────────────────────────────────────────────────────────────────────
+      # Debug-only workflow, always generates a fresh debug keystore so
+      # :app:validateSigningDebug has a file to find. Unconditional now —
+      # no build_type branching to fall through on push events.
+      # ──────────────────────────────────────────────────────────────────────
       - name: Generate debug keystore
-        if: github.event.inputs.build_type == 'debug'
         run: |
           keytool -genkeypair -v \
             -keystore android/app/debug.keystore \
@@ -160,25 +137,18 @@ jobs:
             -o android/libs/ffmpeg-kit-full-gpl.aar
           echo "AAR downloaded: $(du -sh android/libs/ffmpeg-kit-full-gpl.aar)"
 
-      - name: Build APK
+      - name: Build Debug APK
         run: |
           cd android
           chmod +x gradlew
-          if [ "${{ github.event.inputs.build_type }}" == "release" ]; then
-            ./gradlew assembleRelease --no-daemon --build-cache --stacktrace
-          else
-            ./gradlew assembleDebug --no-daemon --build-cache --stacktrace
-          fi
+          ./gradlew assembleDebug --no-daemon --build-cache --stacktrace
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -Dorg.gradle.daemon=false"
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.build_type == 'release' && 'release' || 'debug' }}-apk-${{ github.sha }}
-          path: android/app/build/outputs/apk/${{ github.event.inputs.build_type == 'release' && 'release' || 'debug' }}/*.apk
+          name: debug-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
