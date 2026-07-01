@@ -14,3 +14,12 @@ local.properties
 
 # Bundle artifacts
 *.jsbundle
+
+
+# Keystore files - NEVER commit these!
+android/app/release.keystore
+android/app/debug.keystore
+android/keystore.properties
+*.keystore
+*.jks
+*.p12
