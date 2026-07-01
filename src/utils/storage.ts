@@ -22,11 +22,11 @@ export const getContentDirectory = (
   episode?: number | null
 ): string => {
   if (mediaType === 'movie') {
-    return ${getDownloadsDirectory()}movies//;
+    return `${getDownloadsDirectory()}movies/${tmdbId}/`;
   } else if (mediaType === 'tv') {
-    return ${getDownloadsDirectory()}tv//season_/episode_/;
+    return `${getDownloadsDirectory()}tv/${tmdbId}/season_${season}/episode_${episode}/`;
   }
-  return ${getDownloadsDirectory()}//;
+  return `${getDownloadsDirectory()}${tmdbId}/`;
 };
 
 export const generateDownloadId = (
@@ -36,9 +36,9 @@ export const generateDownloadId = (
   episode?: number | null
 ): string => {
   if (mediaType === 'movie') {
-    return movie_;
+    return `movie_${tmdbId}`;
   }
-  return 	v__s_e;
+  return `tv_${tmdbId}_s${season}_e${episode}`;
 };
 
 export const DOWNLOAD_STATUS = {

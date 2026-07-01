@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';;
+import { useFocusEffect } from '@react-navigation/native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -207,15 +207,32 @@ const HomeScreen = ({ navigation }) => {
     const title = isContinueWatching ? item.title : (mediaType === 'tv' ? item.name : item.title);
 
     if (directPlay) {
-      router.push(`/player?poster_path=item.poster_path&season=item.season&episode=item.episode&episodeTitle=item.episodeTitle`);;
+      navigation.navigate('VideoPlayer', {
+        mediaId,
+        mediaType,
+        title,
+        poster_path: item.poster_path,
+        season: item.season,
+        episode: item.episode,
+        episodeTitle: item.episodeTitle,
+      });
     } else {
-      router.push(`/movie?poster_path=item.poster_path`);;
+      navigation.navigate('DetailScreen', {
+        mediaId,
+        mediaType,
+        title,
+        poster_path: item.poster_path,
+      });
     }
   }, [navigation]);
 
   // Continue Watching handlers
   const handleInfoPress = useCallback((item: any) => {
-    router.push(`/movie?mediaId=item.mediaId&mediaType=item.mediaType&title=item.title`);;
+    navigation.navigate('DetailScreen', {
+      mediaId: item.mediaId,
+      mediaType: item.mediaType,
+      title: item.title,
+    });
   }, [navigation]);
 
   const handleRemovePress = useCallback((contentId: string) => {
@@ -242,7 +259,7 @@ const HomeScreen = ({ navigation }) => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: colors.gold }]}>🎬 Netflix Pro</Text>
-          <TouchableOpacity onPress={() => router.push(`/search`);}>
+          <TouchableOpacity onPress={() => navigation.navigate('Search')}>
             <Ionicons name="search" size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -251,7 +268,7 @@ const HomeScreen = ({ navigation }) => {
         {isOffline && (
           <TouchableOpacity
             style={[styles.offlineBanner, { backgroundColor: colors.surfaceRaised }]}
-            onPress={() => router.push(`/downloads`);}
+            onPress={() => navigation.navigate('Downloads')}
           >
             <Ionicons name="cloud-offline-outline" size={18} color={colors.text} />
             <Text style={[styles.offlineBannerText, { color: colors.text }]}>

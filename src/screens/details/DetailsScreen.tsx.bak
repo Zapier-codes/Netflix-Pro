@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';;
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 // Zustand Stores
@@ -40,7 +40,7 @@ const DetailsScreen = ({ route, navigation }) => {
   const { showToast } = useAlert();
   const { addItem: addToContinueWatching } = useContinueWatching();
 
-  const {  mediaId, mediaType, title: routeTitle, poster_path: routePoster  } = useLocalSearchParams();
+  const { mediaId, mediaType, title: routeTitle, poster_path: routePoster } = route.params;
 
   const [details, setDetails] = useState<any>(null);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
@@ -117,7 +117,14 @@ const DetailsScreen = ({ route, navigation }) => {
       duration: 0,
     });
 
-    router.push(`/player?title=displayTitle&poster_path=details.poster_path || routePoster&season=selectedSeason&episode=1`);;
+    navigation.navigate('VideoPlayer', {
+      mediaId,
+      mediaType,
+      title: displayTitle,
+      poster_path: details.poster_path || routePoster,
+      season: selectedSeason,
+      episode: 1,
+    });
   }, [details, mediaId, mediaType, selectedSeason]);
 
   const handleEpisodePress = useCallback((episode: any) => {
@@ -135,7 +142,15 @@ const DetailsScreen = ({ route, navigation }) => {
       duration: 0,
     });
 
-    router.replace(`/player`);;
+    navigation.replace('VideoPlayer', {
+      mediaId,
+      mediaType: 'tv',
+      season: selectedSeason,
+      episode: episode.episode_number,
+      title: details.name,
+      episodeTitle: episode.name,
+      poster_path: details.poster_path,
+    });
   }, [mediaId, mediaType, selectedSeason, details]);
 
   const handleSeasonChange = async (seasonNumber: number) => {

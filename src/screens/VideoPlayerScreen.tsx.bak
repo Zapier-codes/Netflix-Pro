@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, Alert, StyleSheet, ActivityIndicator, BackHandler, Animated } from 'react-native';
-import { useRouter } from 'expo-router';;
+import { useNavigation } from '@react-navigation/native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { WebView } from 'react-native-webview';
@@ -36,10 +36,10 @@ import {
 } from '../components/video';
 
 const VideoPlayerScreen = ({ route }) => {
-  const router = useRouter();
+  const navigation = useNavigation();
   const navigationRef = useRef(navigation);
 
-  const { 
+  const {
     mediaId,
     mediaType,
     season,
@@ -52,7 +52,7 @@ const VideoPlayerScreen = ({ route }) => {
     streameastUrl,
     isOffline,
     offlineFilePath,
-   } = useLocalSearchParams();
+  } = route.params;
 
   const contentId = mediaType === 'tv'
     ? `tv-${mediaId}-s${season}-e${episode}`
@@ -201,7 +201,7 @@ const VideoPlayerScreen = ({ route }) => {
               if (streamExtraction.isLiveStream) {
                 navRef.replace('MainTabs');
               } else {
-                router.replace(`/movie`);;
+                navRef.replace('DetailScreen', { mediaId: mediaId, mediaType: mediaType, title: title });
               }
             } catch (e) {
               console.error("Navigation error:", e);
@@ -213,7 +213,7 @@ const VideoPlayerScreen = ({ route }) => {
       console.error("Error in handleGoBack:", e);
       const navRef = navigationRef.current;
       if (!navRef) return;
-      try { router.push(`//(tabs)`);; } catch (e2) { }
+      try { navRef.navigate('MainTabs'); } catch (e2) { }
     }
   }, [isUnmounting, player, position, mediaId, mediaType, title, saveProgress]);
 

@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';;
+import { useFocusEffect } from '@react-navigation/native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { searchMedia, getImageUrl } from '../api/tmdbApi';
 import { getMediaType } from '../api/vidsrcApi';
@@ -168,7 +168,12 @@ const SearchScreen = ({ navigation }) => {
   const handleItemPress = (item) => {
     const mediaType = item.media_type || getMediaType(item);
 
-    router.push(`/movie?mediaId=item.id&title=mediaType === tv ? item.name&poster_path=item.poster_path`);;
+    navigation.navigate('DetailScreen', {
+      mediaId: item.id,
+      mediaType,
+      title: mediaType === 'tv' ? item.name : item.title,
+      poster_path: item.poster_path
+    });
   };
 
   const renderSearchResult = ({ item }) => {

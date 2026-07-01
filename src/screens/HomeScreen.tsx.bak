@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useRouter, useFocusEffect } from 'expo-router';;
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -52,7 +52,7 @@ const GENRES_TO_DISPLAY = {
 };
 
 const HomeScreen = () => {
-  const router = useRouter();
+  const navigation = useNavigation();
   const [popularMovies, setPopularMovies] = useState([]);
   const [popularTVShows, setPopularTVShows] = useState([]);
   const [newReleaseMovies, setNewReleaseMovies] = useState([]);
@@ -269,7 +269,11 @@ const HomeScreen = () => {
   }, [fetchContent]);
 
   const handleSportPress = (sportCategory) => {
-    router.push(`/sportstreams?sportToken=sportCategory.sportToken&sportName=sportCategory.sportName&streams=sportCategory.streams`);;
+    navigation.navigate('SportStreams', {
+      sportToken: sportCategory.sportToken,
+      sportName: sportCategory.sportName,
+      streams: sportCategory.streams,
+    });
   };
 
   const handleMediaPress = (item, directPlay = false) => {
@@ -278,7 +282,12 @@ const HomeScreen = () => {
     const isLiveStreamItem = item.hasOwnProperty('isLive');
 
     if (isLiveStreamItem) {
-      router.push(`/player?isLive=true&streameastUrl=item.streameastUrl&title=item.title&sportToken=item.sportToken`);;
+      navigation.navigate('VideoPlayer', {
+        isLive: true,
+        streameastUrl: item.streameastUrl,
+        title: item.title,
+        sportToken: item.sportToken,
+      });
       return;
     }
 
@@ -305,9 +314,18 @@ const HomeScreen = () => {
 
     if (directPlay && mediaType && mediaId && title) {
       const posterUrl = item.poster_path ? getImageUrl(item.poster_path) : null;
-      router.push(`/player?mediaId=mediaId&mediaType=mediaType&title=title&posterUrl=posterUrl&poster_path=item.poster_path&season=season&episode=episode&episodeTitle=episodeTitle`);;
+      navigation.navigate('VideoPlayer', {
+        mediaId: mediaId,
+        mediaType: mediaType,
+        title: title,
+        posterUrl: posterUrl,
+        poster_path: item.poster_path,
+        season: season,
+        episode: episode,
+        episodeTitle: episodeTitle,
+      });
     } else if (mediaId && mediaType) {
-      router.push(`/movie?mediaId=mediaId&mediaType=mediaType&title=title`);;
+      navigation.navigate('DetailScreen', { mediaId: mediaId, mediaType: mediaType, title: title });
     } else {
       console.error("Missing mediaId or mediaType for navigation");
     }
@@ -317,7 +335,7 @@ const HomeScreen = () => {
   const handleInfoPress = (item) => {
     // Continue watching items store mediaId and mediaType directly
     if (item.mediaId && item.mediaType) {
-      router.push(`/movie?mediaId=item.mediaId&mediaType=item.mediaType&title=item.title`);;
+      navigation.navigate('DetailScreen', { mediaId: item.mediaId, mediaType: item.mediaType, title: item.title });
     } else {
       console.error("Missing mediaId or mediaType for info navigation from Continue Watching item:", item);
       Alert.alert("Error", "Could not load details for this item.");
@@ -356,7 +374,7 @@ const HomeScreen = () => {
         {isOffline && (
           <TouchableOpacity
             style={styles.offlineBanner}
-            onPress={() => router.push(`/downloads`);}
+            onPress={() => navigation.navigate('Downloads')}
           >
             <Ionicons name="cloud-offline-outline" size={18} color="#fff" style={{ marginRight: 10 }} />
             <Text style={styles.offlineBannerText}>

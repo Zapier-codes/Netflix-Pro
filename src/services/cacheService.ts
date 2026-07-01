@@ -14,7 +14,7 @@ export class CacheService {
   async set<T>(key: string, data: T, ttl: number = 7 * 24 * 60 * 60 * 1000): Promise<void> {
     try {
       const entry = { data, timestamp: Date.now(), ttl };
-      await AsyncStorage.setItem(pp_cache_, JSON.stringify(entry));
+      await AsyncStorage.setItem(`app_cache_${key}`, JSON.stringify(entry));
     } catch (error) {
       console.warn('[Cache] Failed to set:', key, error);
     }
@@ -22,11 +22,11 @@ export class CacheService {
 
   async get<T>(key: string): Promise<T | null> {
     try {
-      const raw = await AsyncStorage.getItem(pp_cache_);
+      const raw = await AsyncStorage.getItem(`app_cache_${key}`);
       if (!raw) return null;
       const entry = JSON.parse(raw);
       if (Date.now() - entry.timestamp > entry.ttl) {
-        await AsyncStorage.removeItem(pp_cache_);
+        await AsyncStorage.removeItem(`app_cache_${key}`);
         return null;
       }
       return entry.data;
@@ -38,7 +38,7 @@ export class CacheService {
 
   async remove(key: string): Promise<void> {
     try {
-      await AsyncStorage.removeItem(pp_cache_);
+      await AsyncStorage.removeItem(`app_cache_${key}`);
     } catch (error) {
       console.warn('[Cache] Failed to remove:', key, error);
     }

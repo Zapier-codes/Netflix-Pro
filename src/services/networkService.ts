@@ -1,6 +1,6 @@
 // src/services/networkService.ts
 import NetInfo from '@react-native-community/netinfo';
-import { EventEmitter } from 'events';
+import { DeviceEventEmitter } from 'react-native';
 
 export enum NetworkStatus {
   ONLINE = 'online',

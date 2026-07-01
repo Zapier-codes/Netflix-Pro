@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';;
+import { useFocusEffect } from '@react-navigation/native';
 
 // Zustand Stores
 import { useAppStore } from '../../store/zustand';
@@ -124,7 +124,12 @@ const SearchScreen = ({ navigation }) => {
 
   const handleItemPress = useCallback((item: any) => {
     const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
-    router.push(`/movie?mediaId=item.id&title=mediaType === tv ? item.name&poster_path=item.poster_path`);;
+    navigation.navigate('DetailScreen', {
+      mediaId: item.id,
+      mediaType,
+      title: mediaType === 'tv' ? item.name : item.title,
+      poster_path: item.poster_path,
+    });
   }, [navigation]);
 
   const handleHistoryItemPress = useCallback((historyQuery: string) => {

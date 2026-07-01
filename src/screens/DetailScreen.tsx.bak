@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';;
+import { useFocusEffect } from '@react-navigation/native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { fetchTVShowDetails, fetchSeasonDetails, fetchMovieDetails, getImageUrl, fetchMovieRecommendations, fetchTVShowRecommendations } from '../api/tmdbApi';
 import { getShowWatchProgress, getEpisodeWatchProgress } from '../utils/storage'; // Import progress functions
@@ -20,7 +20,7 @@ import MediaCard from '../components/MediaCard';
 import DownloadButton from '../components/DownloadButton';
 
 const DetailScreen = ({ route, navigation }) => {
-  const {  mediaId, mediaType, title  } = useLocalSearchParams();
+  const { mediaId, mediaType, title } = route.params;
   const [details, setDetails] = useState(null);
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [seasonDetails, setSeasonDetails] = useState(null);
@@ -163,11 +163,25 @@ const DetailScreen = ({ route, navigation }) => {
   };
 
   const handleEpisodePress = (episode, isUnreleased) => {
-    router.replace(`/player`);;
+    navigation.replace('VideoPlayer', {
+      mediaId: mediaId,
+      mediaType: 'tv',
+      season: selectedSeason,
+      episode: episode.episode_number,
+      title: details.name,
+      episodeTitle: episode.name,
+      poster_path: details.poster_path,
+      air_date: episode.air_date,
+    });
   };
 
   const handlePlayMovie = () => {
-    router.replace(`/player`);;
+    navigation.replace('VideoPlayer', {
+      mediaId: mediaId,
+      mediaType: 'movie',
+      title: details.title || title,
+      poster_path: details.poster_path || route.params.poster_path,
+    });
   };
 
   const handleLoadMoreEpisodes = () => {

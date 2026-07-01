@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';;
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 // Zustand Stores
@@ -173,7 +173,17 @@ const DownloadsScreen = ({ navigation }) => {
 
       const offlinePath = basePath.startsWith('file://') ? basePath : ile://;
 
-      router.push(`/player?mediaId=item.tmdbId&mediaType=item.mediaType&title=item.title&season=item.season&episode=item.episode&episodeTitle=item.episodeTitle&poster_path=item.posterPath&isOffline=true&offlineFilePath=offlinePath`);;
+      navigation.navigate('VideoPlayer', {
+        mediaId: item.tmdbId,
+        mediaType: item.mediaType,
+        title: item.title,
+        season: item.season,
+        episode: item.episode,
+        episodeTitle: item.episodeTitle,
+        poster_path: item.posterPath,
+        isOffline: true,
+        offlineFilePath: offlinePath,
+      });
     } catch (error) {
       Alert.alert('Error', 'Failed to access downloaded file');
     }
