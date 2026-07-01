@@ -62,10 +62,17 @@ jobs:
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-${{ runner.os }}-
 
+      # ──────────────────────────────────────────────────────────────────────
+      # FIXED: Install dependencies with ignore-engines
+      # ──────────────────────────────────────────────────────────────────────
       - name: Install dependencies
         run: |
-          npm config set ignore-engines true
-          npm install --legacy-peer-deps
+          # Clean start
+          rm -rf node_modules package-lock.json
+          # Install with legacy peer deps and ignore engines
+          npm install --legacy-peer-deps --ignore-engines
+          # Generate fresh lockfile
+          npm install --package-lock-only --legacy-peer-deps --ignore-engines
 
       - name: Decode .env file
         if: github.event.inputs.build_type == 'release'
