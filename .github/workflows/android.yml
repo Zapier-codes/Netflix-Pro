@@ -31,8 +31,23 @@ jobs:
           docker system prune -af || true
           df -h
 
-      - name: Checkout
+      - name: Checkout (without LFS)
         uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Create LFS file list
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Restore LFS cache
+        uses: actions/cache@v4
+        id: lfs-cache
+        with:
+          path: .git/lfs
+          key: lfs-${{ hashFiles('.lfs-assets-id') }}
+
+      - name: Git LFS pull
+        run: git lfs pull
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
