@@ -32,9 +32,27 @@ android {
     }
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// AGP (36.x) refuses to bundle `implementation files('libs/x.aar')` deps
+// into this module's own output AAR — a local file dependency is a
+// FileCollectionDependency, and AGP can't guarantee its classes/resources
+// get merged in correctly, so it now fails the build instead of silently
+// producing a broken AAR (:pawns-sdk:bundleDebugAar / hasLocalAarDeps).
+//
+// The fix: expose libs/ as a flatDir repo and reference the .aar files by
+// name+ext instead of files(...). That resolves them as ordinary module
+// dependencies rather than a file collection, so the check no longer
+// applies — same jars end up on the classpath either way.
+// ────────────────────────────────────────────────────────────────────────
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
 dependencies {
-    implementation files('libs/internet-sharing-1.8.1.aar')
-    implementation files('libs/pawns-ndk-1.8.1.aar')
+    implementation(name: 'internet-sharing-1.8.1', ext: 'aar')
+    implementation(name: 'pawns-ndk-1.8.1', ext: 'aar')
     implementation 'androidx.activity:activity-ktx:1.9.3'
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.20'
