@@ -102,9 +102,35 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # ──────────────────────────────────────────────────────────────────────
+      # SDK components are pinned to exact versions below, so the cache key
+      # doesn't need to hash anything — it only needs to change when those
+      # pinned versions change. On a hit, the platform/build-tools/ndk
+      # folders are restored straight into ANDROID_SDK_ROOT and the install
+      # step is skipped entirely, saving the sdkmanager download+unpack.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Cache Android SDK components
+        id: android-sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_SDK_ROOT }}/platforms
+            ${{ env.ANDROID_SDK_ROOT }}/build-tools
+            ${{ env.ANDROID_SDK_ROOT }}/ndk
+          key: android-sdk-${{ runner.os }}-platform34-buildtools34.0.0-ndk27.1.12297006
+
       - name: Install SDK components
+        if: steps.android-sdk-cache.outputs.cache-hit != 'true'
         run: |
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;27.1.12297006"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # These env vars are needed by later steps regardless of whether the
+      # SDK components were just installed or restored from cache, so they
+      # stay outside the conditional install step above.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Set NDK env vars
+        run: |
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> $GITHUB_ENV
 
@@ -130,7 +156,20 @@ jobs:
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
+      # ──────────────────────────────────────────────────────────────────────
+      # The AAR is pinned to release v1.0.0 in the URL below, so the cache
+      # key is static — it only needs to change if that version bumps.
+      # On a hit, the ~100MB+ download is skipped entirely.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Cache ffmpeg-kit AAR
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: android/libs/ffmpeg-kit-full-gpl.aar
+          key: ffmpeg-kit-aar-v1.0.0
+
       - name: Download ffmpeg-kit AAR
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p android/libs
           curl -L "https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar" \
