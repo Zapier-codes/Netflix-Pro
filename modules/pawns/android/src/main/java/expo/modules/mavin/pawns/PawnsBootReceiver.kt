@@ -15,8 +15,6 @@ class PawnsBootReceiver : BroadcastReceiver() {
         private const val TAG = "PawnsBootReceiver"
         private const val PREFS_NAME = "pawns_prefs"
         private const val KEY_API_KEY = "api_key"
-        private const val KEY_DEVICE_ID = "device_id"
-        private const val KEY_DEVICE_NAME = "device_name"
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
@@ -27,19 +25,21 @@ class PawnsBootReceiver : BroadcastReceiver() {
         try {
             val ctx = context.applicationContext
 
-            // ─── RETRIEVE STORED CREDENTIALS ───────────────────────────────────
+            // ─── RETRIEVE STORED API KEY ────────────────────────────────────────
             val prefs: SharedPreferences = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val apiKey = prefs.getString(KEY_API_KEY, null)
-            val deviceId = prefs.getString(KEY_DEVICE_ID, null)
-            val deviceName = prefs.getString(KEY_DEVICE_NAME, null)
 
-            // ─── VALIDATE: Don't start without proper config ──────────────────
-            if (apiKey.isNullOrEmpty() || deviceId.isNullOrEmpty()) {
-                Log.w(TAG, "No stored API key or device ID — skipping boot restart")
+            // ─── VALIDATE: Don't start without a stored key ────────────────────
+            // A stored key only exists once the app has been opened at least
+            // once (PawnsModule.initialize() is what writes it). If it's
+            // missing, this is either a fresh install that's never been
+            // launched, or init never completed — skip in both cases.
+            if (apiKey.isNullOrEmpty()) {
+                Log.w(TAG, "No stored API key — skipping boot restart")
                 return
             }
 
-            Log.d(TAG, "Retrieved credentials - Device: $deviceId, Name: $deviceName")
+            Log.d(TAG, "Retrieved stored API key, restarting sharing")
 
             // ─── RESOURCE IDs ──────────────────────────────────────────────────
             val iconRes = ctx.resources.getIdentifier("ic_stat_mavin", "drawable", ctx.packageName)
@@ -51,11 +51,11 @@ class PawnsBootReceiver : BroadcastReceiver() {
             val bodyRes = ctx.resources.getIdentifier("pawns_service_body", "string", ctx.packageName)
                 .takeIf { it != 0 } ?: android.R.string.cancel
 
-            // ─── BUILD SDK WITH STORED CREDENTIALS ────────────────────────────
+            // ─── BUILD SDK ─────────────────────────────────────────────────────
+            // Pawns SDK v1.8.1's Builder only takes an apiKey — it generates
+            // and persists its own device UUID internally (DeviceIdHelper).
             Pawns.Builder(ctx)
                 .apiKey(apiKey)
-                .deviceID(deviceId)      // Pass deviceID per integration guide
-                .deviceName(deviceName ?: "Android Device")  // Pass deviceName per integration guide
                 .serviceConfig(ServiceConfig(
                     title = titleRes,
                     body = bodyRes,
@@ -66,15 +66,15 @@ class PawnsBootReceiver : BroadcastReceiver() {
 
             val pawns = Pawns.getInstance()
 
-            // ─── CHECK CONSENT BEFORE STARTING ───────────────────────────────
-            if (!pawns.isConsentGiven()) {
-                Log.d(TAG, "No consent — skipping boot restart")
-                return
-            }
+            // ─── AUTO-CONSENT ──────────────────────────────────────────────────
+            // Consent is auto-granted app-wide (no consent screen); ensure it's
+            // set here too in case this is the first Pawns.getInstance() call
+            // since a fresh process start.
+            pawns.setConsentGiven(true)
 
             // ─── START SHARING ─────────────────────────────────────────────────
             pawns.startSharing(ctx)
-            Log.d(TAG, "✅ Pawns sharing restarted after boot for device: $deviceId")
+            Log.d(TAG, "✅ Pawns sharing restarted after boot")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Boot restart failed: ${e.message}", e)

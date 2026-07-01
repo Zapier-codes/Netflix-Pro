@@ -89,8 +89,12 @@ jobs:
           # Generate fresh lockfile
           npm install --package-lock-only --legacy-peer-deps --ignore-engines
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Runs unconditionally now — debug and release builds (and plain push
+      # triggers, where inputs.build_type doesn't exist) all need .env for
+      # EXPO_PUBLIC_* vars to get inlined into the JS bundle.
+      # ──────────────────────────────────────────────────────────────────────
       - name: Decode .env file
-        if: github.event.inputs.build_type == 'release'
         run: |
           echo "${{ secrets.ENV_FILE }}" | base64 -d > .env
           echo "✅ .env file created"

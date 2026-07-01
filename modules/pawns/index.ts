@@ -27,16 +27,14 @@ export interface SdkResult {
 
 export interface PawnsConfig {
   apiKey: string;
-  deviceID: string;
-  deviceName: string;
   [key: string]: any;
 }
 
-export const initialize = (
-  apiKey: string,
-  deviceID: string,
-  deviceName: string
-): Promise<SdkResult> => PawnsModule.initialize(apiKey, deviceID, deviceName);
+// Pawns SDK v1.8.1's Builder only takes an apiKey — it generates and
+// persists its own device UUID internally. deviceID/deviceName params
+// have been removed; nothing in the native layer ever read them.
+export const initialize = (apiKey: string): Promise<SdkResult> =>
+  PawnsModule.initialize(apiKey);
 
 export const start = (): Promise<SdkResult> => PawnsModule.start();
 export const stop = (): Promise<SdkResult> => PawnsModule.stop();

