@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 
 const API_KEY = '9xkBmnpMy7D3wP9HoxSifWGwJidqY7eO'; // It's free. I don't care that it's public.
 const API_URL = 'https://api.opensubtitles.com/api/v1';

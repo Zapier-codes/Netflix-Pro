@@ -1,4 +1,4 @@
-﻿// src/api/consumet/consumetApi.ts
+// src/api/consumet/consumetApi.ts
 import axios from 'axios';
 
 const CONSUMET_BASE_URL = 'https://api.consumet.org';

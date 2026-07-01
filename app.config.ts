@@ -1,4 +1,4 @@
-﻿const packageJson = require('./package.json');
+const packageJson = require('./package.json');
 const IS_DEV = process.env.APP_VARIANT === 'development';
 
 console.log('[CONFIG] Loading app.config.ts...');

@@ -1,4 +1,4 @@
-﻿// src/components/ErrorBoundary.tsx
+// src/components/ErrorBoundary.tsx
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';

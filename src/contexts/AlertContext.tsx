@@ -1,4 +1,4 @@
-﻿// src/contexts/AlertContext.tsx
+// src/contexts/AlertContext.tsx
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { useTheme } from './ThemeContext';

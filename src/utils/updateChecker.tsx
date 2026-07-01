@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import { Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';

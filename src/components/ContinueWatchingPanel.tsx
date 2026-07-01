@@ -1,4 +1,4 @@
-﻿// src/components/ContinueWatchingPanel.tsx
+// src/components/ContinueWatchingPanel.tsx
 import React, { useRef, useState } from 'react';
 import {
   View,

@@ -1,4 +1,4 @@
-﻿// src/services/networkService.ts
+// src/services/networkService.ts
 import NetInfo from '@react-native-community/netinfo';
 import { EventEmitter } from 'events';
 

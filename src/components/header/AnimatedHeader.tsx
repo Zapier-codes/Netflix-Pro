@@ -1,4 +1,4 @@
-﻿// src/components/header/AnimatedHeader.tsx
+// src/components/header/AnimatedHeader.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,

@@ -1,4 +1,4 @@
-﻿// src/store/slices/downloadsSlice.ts
+// src/store/slices/downloadsSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface DownloadItem {

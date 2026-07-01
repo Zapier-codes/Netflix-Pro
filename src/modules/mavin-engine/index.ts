@@ -1,4 +1,4 @@
-﻿// src/modules/mavin-engine/index.ts
+// src/modules/mavin-engine/index.ts
 /**
  * MavinEngine Native Module Wrapper
  * 

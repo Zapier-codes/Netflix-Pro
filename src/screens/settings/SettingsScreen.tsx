@@ -1,4 +1,4 @@
-﻿// src/screens/settings/SettingsScreen.tsx
+// src/screens/settings/SettingsScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,

@@ -1,4 +1,4 @@
-﻿// src/types/index.ts
+// src/types/index.ts
 export interface Movie {
   id: number;
   title: string;

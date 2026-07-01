@@ -1,4 +1,4 @@
-﻿// src/components/thriller/ThrillerGrid.tsx
+// src/components/thriller/ThrillerGrid.tsx
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,

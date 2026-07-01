@@ -1,4 +1,4 @@
-﻿// src/components/comments/CommentItem.tsx
+// src/components/comments/CommentItem.tsx
 import React, { useState } from 'react';
 import {
   View,

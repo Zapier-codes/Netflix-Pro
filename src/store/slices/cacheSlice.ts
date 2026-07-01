@@ -1,4 +1,4 @@
-﻿// src/store/slices/cacheSlice.ts
+// src/store/slices/cacheSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface CacheState {

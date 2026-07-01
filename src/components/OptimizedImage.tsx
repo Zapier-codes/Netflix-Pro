@@ -1,4 +1,4 @@
-﻿// src/components/OptimizedImage.tsx
+// src/components/OptimizedImage.tsx
 import React, { useState, useEffect } from 'react';
 import { Image, ImageProps, View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';

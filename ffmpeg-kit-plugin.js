@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const { withPlugins, withDangerousMod, withAppBuildGradle, withProjectBuildGradle } = require('@expo/config-plugins');
 const { mergeContents } = require('@expo/config-plugins/build/utils/generateCode');

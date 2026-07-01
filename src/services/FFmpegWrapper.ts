@@ -1,4 +1,4 @@
-﻿// src/services/FFmpegWrapper.ts
+// src/services/FFmpegWrapper.ts
 import { Platform } from 'react-native';
 
 console.log('[FFMPEG_WRAPPER] Loading ffmpeg-kit wrapper...');

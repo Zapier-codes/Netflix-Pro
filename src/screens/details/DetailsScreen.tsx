@@ -1,4 +1,4 @@
-﻿// src/screens/details/DetailsScreen.tsx
+// src/screens/details/DetailsScreen.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,

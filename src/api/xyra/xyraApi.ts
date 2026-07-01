@@ -1,4 +1,4 @@
-﻿// src/api/xyra/xyraApi.ts
+// src/api/xyra/xyraApi.ts
 import axios from 'axios';
 
 const XYRA_BASE_URL = 'https://api.xyra.stream/v1/dramacool';

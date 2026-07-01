@@ -1,4 +1,4 @@
-﻿// src/utils/contentUtils.ts
+// src/utils/contentUtils.ts
 import { Movie, TVShow, Drama, ContentRow } from '../types/domain';
 
 export class ShufflingEngine {

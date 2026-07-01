@@ -1,4 +1,4 @@
-﻿// src/services/cache/CacheManager.ts
+// src/services/cache/CacheManager.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
 

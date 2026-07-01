@@ -1,4 +1,4 @@
-﻿// src/navigation/deepLinking.ts
+// src/navigation/deepLinking.ts
 export const linking = {
   prefixes: ['netflixpro://', 'https://netflixpro.app'],
   config: {

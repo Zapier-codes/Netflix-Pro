@@ -1,4 +1,4 @@
-﻿// src/hooks/comments/useComments.ts
+// src/hooks/comments/useComments.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { commentService, Comment } from '../../services/comments/commentService';
 import { deviceManager } from '../../services/device/DeviceManager';

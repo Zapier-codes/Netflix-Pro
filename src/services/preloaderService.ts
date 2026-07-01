@@ -1,4 +1,4 @@
-﻿// src/services/preloaderService.ts
+// src/services/preloaderService.ts
 import { cacheService } from './cacheService';
 
 export class PreloaderService {

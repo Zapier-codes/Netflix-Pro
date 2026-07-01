@@ -1,4 +1,4 @@
-﻿// src/store/slices/playerSlice.ts
+// src/store/slices/playerSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface PlayerState {

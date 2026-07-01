@@ -1,4 +1,4 @@
-﻿// src/services/NetworkMonitor.ts
+// src/services/NetworkMonitor.ts
 import NetInfo from '@react-native-community/netinfo';
 import { useAppStore } from '../store/zustand/store';
 

@@ -1,4 +1,4 @@
-﻿// src/types/declarations.d.ts
+// src/types/declarations.d.ts
 declare module 'parse-srt' {
   const parseSRT: (content: string) => Array<{ start: number; end: number; text: string }>;
   export default parseSRT;

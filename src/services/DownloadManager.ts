@@ -1,4 +1,4 @@
-﻿// src/services/DownloadManager.ts
+// src/services/DownloadManager.ts
 import { useAppStore } from "../store/zustand/store";`nimport networkMonitor from './NetworkMonitor';
 import storageManager from './StorageManager';
 import downloadQueue from './DownloadQueue';

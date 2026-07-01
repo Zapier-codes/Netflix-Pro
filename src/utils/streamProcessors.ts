@@ -1,4 +1,4 @@
-﻿class StreamProcessor {
+class StreamProcessor {
   constructor(sourceName, timeoutInSeconds) {
     this.sourceName = sourceName;
     this.timeoutInSeconds = timeoutInSeconds;

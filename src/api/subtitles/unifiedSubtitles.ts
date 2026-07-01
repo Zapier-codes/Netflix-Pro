@@ -1,4 +1,4 @@
-﻿// src/api/subtitles/unifiedSubtitles.ts
+// src/api/subtitles/unifiedSubtitles.ts
 import { openSubtitlesService } from './openSubtitlesApi';
 import { subdlApiService } from './subdlApi';
 

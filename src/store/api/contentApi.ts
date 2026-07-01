@@ -1,4 +1,4 @@
-﻿// src/store/api/contentApi.ts
+// src/store/api/contentApi.ts
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 export const contentApi = createApi({

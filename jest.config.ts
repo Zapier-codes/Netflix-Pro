@@ -1,4 +1,4 @@
-﻿module.exports = {
+module.exports = {
   preset: 'react-native',
   setupFilesAfterEnv: ['@testing-library/react-native'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],

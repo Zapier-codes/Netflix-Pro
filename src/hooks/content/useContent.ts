@@ -1,4 +1,4 @@
-﻿// src/hooks/content/useContent.ts
+// src/hooks/content/useContent.ts
 import { useMemo } from 'react';
 import {
   useGetTrendingQuery,

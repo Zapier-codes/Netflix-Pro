@@ -1,4 +1,4 @@
-﻿import networkMonitor from './NetworkMonitor';
+import networkMonitor from './NetworkMonitor';
 import storageManager from './StorageManager';
 import downloadQueue from './DownloadQueue';
 import HLSDownloader from './HLSDownloader';

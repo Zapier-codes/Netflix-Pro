@@ -1,4 +1,4 @@
-﻿// src/types/domain.ts
+// src/types/domain.ts
 export interface Movie {
   id: number;
   title: string;

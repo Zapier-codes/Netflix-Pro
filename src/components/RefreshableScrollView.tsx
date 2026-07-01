@@ -1,4 +1,4 @@
-﻿// src/components/RefreshableScrollView.tsx
+// src/components/RefreshableScrollView.tsx
 import React from 'react';
 import { RefreshControl, ScrollView, ScrollViewProps, ActivityIndicator, View, Text } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';

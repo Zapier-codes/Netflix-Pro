@@ -1,4 +1,4 @@
-﻿// src/hooks/useApp.ts
+// src/hooks/useApp.ts
 import { useAppStore } from '../store/zustand/store';
 
 export const useApp = () => {

@@ -1,4 +1,4 @@
-﻿// src/hooks/useMemoizedValue.ts
+// src/hooks/useMemoizedValue.ts
 import { useRef, useMemo } from 'react';
 
 export function useMemoizedValue<T>(value: T, comparator?: (prev: T, next: T) => boolean): T {

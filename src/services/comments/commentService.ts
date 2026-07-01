@@ -1,4 +1,4 @@
-﻿// src/services/comments/commentService.ts
+// src/services/comments/commentService.ts
 import { supabase } from '../supabase/supabaseClient';
 import { deviceManager } from '../device/DeviceManager';
 

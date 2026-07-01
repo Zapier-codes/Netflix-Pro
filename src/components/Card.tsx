@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
 
 interface CardProps {

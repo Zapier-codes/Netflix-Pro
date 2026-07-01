@@ -1,4 +1,4 @@
-﻿// src/screens/downloads/DownloadsScreen.tsx
+// src/screens/downloads/DownloadsScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,

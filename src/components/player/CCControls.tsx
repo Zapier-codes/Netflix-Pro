@@ -1,4 +1,4 @@
-﻿// src/components/player/CCControls.tsx
+// src/components/player/CCControls.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,

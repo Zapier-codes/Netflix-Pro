@@ -1,4 +1,4 @@
-﻿// src/contexts/ThemeContext.tsx
+// src/contexts/ThemeContext.tsx
 import React, { createContext, useContext, useMemo, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import { useAppStore } from '../store/zustand/store';

@@ -1,4 +1,4 @@
-﻿// src/store/slices/settingsSlice.ts
+// src/store/slices/settingsSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

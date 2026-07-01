@@ -1,4 +1,4 @@
-﻿// src/components/RefreshableFlatList.tsx
+// src/components/RefreshableFlatList.tsx
 import React from 'react';
 import { FlatList, FlatListProps, RefreshControl, View, Text, ActivityIndicator } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';

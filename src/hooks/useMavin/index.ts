@@ -1,4 +1,4 @@
-﻿// src/hooks/useMavin/index.ts
+// src/hooks/useMavin/index.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { requireNativeModule } from 'expo-modules-core';
 

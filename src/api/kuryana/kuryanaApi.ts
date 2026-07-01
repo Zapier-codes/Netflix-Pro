@@ -1,4 +1,4 @@
-﻿// src/api/kuryana/kuryanaApi.ts
+// src/api/kuryana/kuryanaApi.ts
 import axios from 'axios';
 
 const KURYANA_BASE_URL = 'https://kuryana.tbdh.app';

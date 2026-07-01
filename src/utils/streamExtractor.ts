@@ -1,4 +1,4 @@
-﻿import { getActiveStreamSources, getStreamingUrl as getApiStreamingUrl } from '../api/vidsrcApi';
+import { getActiveStreamSources, getStreamingUrl as getApiStreamingUrl } from '../api/vidsrcApi';
 import { getStreamProcessor } from './streamProcessors';
 
 const _extractStream = (

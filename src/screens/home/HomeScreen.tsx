@@ -1,4 +1,4 @@
-﻿// src/screens/home/HomeScreen.tsx
+// src/screens/home/HomeScreen.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,

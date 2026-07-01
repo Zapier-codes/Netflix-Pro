@@ -1,4 +1,4 @@
-﻿// src/components/skeleton/SkeletonLoader.tsx
+// src/components/skeleton/SkeletonLoader.tsx
 import React from 'react';
 import { View, StyleSheet, Animated, Easing, Dimensions } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';

@@ -1,4 +1,4 @@
-﻿// src/store/api/homeApi.ts
+// src/store/api/homeApi.ts
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 export const homeApi = createApi({

@@ -1,4 +1,4 @@
-﻿// src/screens/library/LibraryScreen.tsx
+// src/screens/library/LibraryScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,

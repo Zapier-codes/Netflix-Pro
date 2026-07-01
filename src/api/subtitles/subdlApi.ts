@@ -1,4 +1,4 @@
-﻿// src/api/subtitles/subdlApi.ts
+// src/api/subtitles/subdlApi.ts
 import axios from 'axios';
 
 const SUBDL_BASE_URL = 'https://subdl.com/api/v1';

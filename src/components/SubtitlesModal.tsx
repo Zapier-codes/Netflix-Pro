@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Modal, View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getLanguageFlag } from '../utils/languageUtils'; // Import the flag utility
