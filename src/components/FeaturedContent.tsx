@@ -1,139 +1,240 @@
+// src/components/FeaturedContent.tsx
 import React from 'react';
-import { View, Text, ImageBackground, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  Dimensions,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getHighResImageUrl } from '../api/tmdbApi';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
+import { getImageUrl } from '../api/tmdbApi';
 
-const { width, height } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BANNER_HEIGHT = 200; // Compact height (reduced from 300-400px)
+const BANNER_ASPECT_RATIO = 16 / 9;
 
-const FeaturedContent = ({ item, onPlay, onInfoPress }) => {
-  const imageUrl = item?.backdrop_path
-    ? getHighResImageUrl(item.backdrop_path)
-    : null;
-  
-  const title = item?.title || item?.name || '';
-  const overview = item?.overview || '';
+interface FeaturedContentProps {
+  item: {
+    id: number;
+    title?: string;
+    name?: string;
+    poster_path?: string;
+    backdrop_path?: string;
+    overview?: string;
+    vote_average?: number;
+    media_type?: 'movie' | 'tv';
+  };
+  onPlay: () => void;
+  // No longer rendered as a separate button — info now lives inside the
+  // gradient panel itself. Kept optional so existing callers don't break;
+  // wire it to the card tap yourself if you still want an info route.
+  onInfoPress?: () => void;
+}
+
+const FeaturedContent: React.FC<FeaturedContentProps> = ({
+  item,
+  onPlay,
+  onInfoPress,
+}) => {
+  const { colors, isDark } = useTheme();
+
+  const title = item.title || item.name || 'Untitled';
+  const imagePath = item.backdrop_path || item.poster_path;
+  const imageUrl = imagePath ? getImageUrl(imagePath, 'w780') : null;
+  const rating = item.vote_average ? item.vote_average.toFixed(1) : null;
 
   return (
-    <View style={styles.cardContainer}>
-      <ImageBackground
-        source={imageUrl ? { uri: imageUrl } : require('../../assets/placeholder.png')}
-        style={styles.backgroundImage}
-        resizeMode="cover"
-      >
-        <LinearGradient
-          // Gradient similar to Netflix style
-          colors={['transparent', 'transparent', 'rgba(0,0,0,0.8)', 'rgba(0,0,0,1)']}
-          style={styles.gradient}
-        >
-          {/* Remove background from content container, rely on gradient */}
-          <View style={styles.contentContainer}>
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.overview} numberOfLines={3}>
-              {overview}
+    <TouchableOpacity
+      activeOpacity={0.95}
+      onPress={onPlay}
+      style={[styles.container, { backgroundColor: colors.surface }]}
+    >
+      {/* Background: autoplaying trailer if available, otherwise backdrop image */}
+      <View style={styles.imageContainer}>
+        {imageUrl ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.image}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.placeholder, { backgroundColor: colors.surfaceRaised }]}>
+            <Text style={[styles.placeholderText, { color: colors.textMuted }]}>
+              🎬
             </Text>
-            <View style={styles.buttonsContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.playButton]}
-                onPress={() => onPlay(item)}
-              >
-                <Ionicons name="play" size={18} color="#000" />
-                <Text style={[styles.buttonText, styles.playButtonText]}>Play</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.infoButton]}
-                onPress={() => onInfoPress(item)}
-              >
-                <Ionicons name="information-circle-outline" size={18} color="#fff" />
-                <Text style={[styles.buttonText, styles.infoButtonText]}>Info</Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        </LinearGradient>
-      </ImageBackground>
-    </View>
+        )}
+
+        {/* Dynamic gradient fill — carries the info surface for the card.
+            Wider spread + more stops than a flat bottom fade so title,
+            overview, and badge all sit on readable, graduated darkness
+            instead of needing a separate info panel/button. */}
+        <LinearGradient
+          colors={[
+            'transparent',
+            'transparent',
+            'rgba(0,0,0,0.15)',
+            'rgba(0,0,0,0.55)',
+            'rgba(0,0,0,0.85)',
+          ]}
+          locations={[0, 0.35, 0.55, 0.78, 1]}
+          style={styles.gradient}
+        />
+      </View>
+
+      {/* Content Overlay */}
+      <View style={styles.contentOverlay}>
+        {/* Brand Badge */}
+        <View style={[styles.badge, { backgroundColor: 'rgba(229, 9, 20, 0.9)' }]}>
+          <Text style={styles.badgeText}>NETFLIX</Text>
+          {rating && (
+            <>
+              <View style={styles.badgeDivider} />
+              <Text style={styles.badgeText}>⭐ {rating}</Text>
+            </>
+          )}
+        </View>
+
+        {/* Title */}
+        <Text style={[styles.title, { color: '#FFFFFF' }]} numberOfLines={2}>
+          {title}
+        </Text>
+
+        {/* Info now lives in the gradient panel itself */}
+        {item.overview ? (
+          <Text style={styles.overview} numberOfLines={2}>
+            {item.overview}
+          </Text>
+        ) : null}
+
+        {/* Play — sits inside the gradient rather than floating on top of it:
+            same near-black tone as the gradient's base, so the fill reads as
+            part of the card, with a hairline gold edge and a small notch
+            accent on each side for a compact, faceted, HUD-like mark. */}
+        <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={styles.playButton}
+            onPress={onPlay}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.playButtonNotch, { backgroundColor: colors.gold }]} />
+            <Ionicons name="play" size={11} color={colors.gold} style={styles.playIcon} />
+            <Text style={[styles.playButtonText, { color: colors.gold }]}>PLAY</Text>
+            <View style={[styles.playButtonNotch, { backgroundColor: colors.gold }]} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  cardContainer: {
-    height: height * 0.6,
-    borderRadius: 15,
+  container: {
+    marginHorizontal: 12,
+    marginVertical: 8,
+    borderRadius: 12,
     overflow: 'hidden',
-    marginTop: 10,
-    marginBottom: 20,
-    elevation: 5,
+    height: BANNER_HEIGHT,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.6,
-    shadowRadius: 4,
-    borderColor: 'rgb(42, 42, 42)',
-    borderWidth: 1,
-    maxWidth: 700, // Added max width
-    alignSelf: 'center', // Center the card
-    width: '95%', // Ensure it still tries to fill available width up to maxWidth
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
-  backgroundImage: {
+  imageContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  image: {
     width: '100%',
     height: '100%',
-    justifyContent: 'flex-end',
+  },
+  placeholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    fontSize: 40,
   },
   gradient: {
-    height: '100%',
-    justifyContent: 'flex-end',
-    padding: 15,
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
-  contentContainer: {
+  contentOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  badge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    // Removed background color to rely on the gradient
-    borderRadius: 10,
-    padding: 15,
-    width: '100%',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 6,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  badgeDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    marginHorizontal: 6,
   },
   title: {
-    color: 'white',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   overview: {
-    color: '#E0E0E0',
-    fontSize: 13,
-    textAlign: 'center',
-    marginBottom: 15,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 16,
+    marginBottom: 10,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-  buttonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    width: '100%',
-  },
-  button: {
+  buttonRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 25,
-    borderRadius: 5,
-    minWidth: 120,
-    justifyContent: 'center',
+    gap: 10,
   },
   playButton: {
-    backgroundColor: '#fff',
-  },
-  infoButton: {
-    backgroundColor: 'rgba(109, 109, 110, 0.7)',
-  },
-  buttonText: {
-    fontWeight: 'bold',
-    marginLeft: 8,
-    fontSize: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    gap: 6,
   },
   playButtonText: {
-    color: '#000',
-  },
-  infoButtonText: {
-    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
 

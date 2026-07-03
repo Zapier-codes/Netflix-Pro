@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';;
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 // Zustand Stores
@@ -35,12 +35,12 @@ import {
   fetchTVShowRecommendations,
 } from '../../api/tmdbApi';
 
-const DetailsScreen = ({ route, navigation }) => {
+const DetailsScreen = () => {
   const { colors } = useTheme();
   const { showToast } = useAlert();
   const { addItem: addToContinueWatching } = useContinueWatching();
 
-  const {  mediaId, mediaType, title: routeTitle, poster_path: routePoster  } = useLocalSearchParams();
+  const { mediaId, mediaType, title: routeTitle, poster_path: routePoster } = useLocalSearchParams();
 
   const [details, setDetails] = useState<any>(null);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
@@ -107,7 +107,7 @@ const DetailsScreen = ({ route, navigation }) => {
 
     // Add to continue watching
     addToContinueWatching({
-      id: ${mediaType}_,
+      id: `${mediaType}_${mediaId}`,
       title: displayTitle,
       mediaType,
       tmdbId: String(mediaId),
@@ -117,12 +117,12 @@ const DetailsScreen = ({ route, navigation }) => {
       duration: 0,
     });
 
-    router.push(`/player?title=displayTitle&poster_path=details.poster_path || routePoster&season=selectedSeason&episode=1`);;
-  }, [details, mediaId, mediaType, selectedSeason]);
+    router.push(`/player?title=${displayTitle}&poster_path=${details.poster_path || routePoster}&season=${selectedSeason}&episode=1`);
+  }, [details, mediaId, mediaType, selectedSeason, routePoster]);
 
   const handleEpisodePress = useCallback((episode: any) => {
     addToContinueWatching({
-      id: ${mediaType}__s_e,
+      id: `${mediaType}_${mediaId}_s${selectedSeason}_e${episode.episode_number}`,
       title: details.name,
       mediaType,
       tmdbId: String(mediaId),
@@ -135,7 +135,7 @@ const DetailsScreen = ({ route, navigation }) => {
       duration: 0,
     });
 
-    router.replace(`/player`);;
+    router.push(`/player?title=${details.name}&poster_path=${details.poster_path}&season=${selectedSeason}&episode=${episode.episode_number}`);
   }, [mediaId, mediaType, selectedSeason, details]);
 
   const handleSeasonChange = async (seasonNumber: number) => {
@@ -172,7 +172,7 @@ const DetailsScreen = ({ route, navigation }) => {
         <View style={styles.headerContainer}>
           {details?.backdrop_path ? (
             <Image
-              source={{ uri: getImageUrl(details.backdrop_path, 'w780') }}
+              source={{ uri: getImageUrl(details.backdrop_path) }}
               style={styles.backdropImage}
               resizeMode="cover"
             />
@@ -268,7 +268,7 @@ const DetailsScreen = ({ route, navigation }) => {
                       </Text>
                     </TouchableOpacity>
                   )}
-                  keyExtractor={(item) => season-}
+                  keyExtractor={(item) => `season-${item.season_number}`}
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.seasonsScrollContent}
                 />
@@ -342,13 +342,11 @@ const DetailsScreen = ({ route, navigation }) => {
               <View style={styles.recommendationsGrid}>
                 {recommendations.map((item) => (
                   <MediaCard
-                    key={ec-}
+                    key={`rec-${item.id}`}
                     item={item}
-                    onPress={() => navigation.push('DetailScreen', {
-                      mediaId: item.id,
-                      mediaType: item.media_type || (item.title ? 'movie' : 'tv'),
-                      title: item.title || item.name,
-                    })}
+                    onPress={() => {
+                      router.push(`/movie/${item.id}?mediaType=${item.media_type || (item.title ? 'movie' : 'tv')}&title=${item.title || item.name}`);
+                    }}
                   />
                 ))}
               </View>

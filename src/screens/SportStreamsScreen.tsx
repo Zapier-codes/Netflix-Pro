@@ -82,7 +82,7 @@ const SportStreamsScreen = ({ route, navigation }) => {
 
   const handleStreamPress = (stream) => {
     if (stream.isLive) {
-      router.push(`/player?isLive=true&streameastUrl=stream.streameastUrl&title=stream.title&sportToken=stream.sportToken`);;
+      router.push(`/player?isLive=true&streameastUrl=stream.streameastUrl&title=stream.title&sportToken=stream.sportToken`);
     } else {
       // For upcoming streams, could show an alert or just do nothing
       // console.log('Stream not yet live:', stream.title);

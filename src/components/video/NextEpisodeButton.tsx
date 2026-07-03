@@ -29,7 +29,8 @@ const NextEpisodeButton = ({
   }
 
   const buttonText = nextEpisodeDetails
-    ? `Next: S${nextEpisodeDetails.season} E${nextEpisodeDetails.episode}`
+    ? 
+ext: S${nextEpisodeDetails.season} E${nextEpisodeDetails.episode}`
     : "Back to Home";
 
   let buttonOpacityStyle;

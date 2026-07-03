@@ -1,3 +1,4 @@
+// src/services/downloadManager/FFmpegConverter.ts
 import { FFmpegKit, FFmpegKitConfig, ReturnCode, Level } from 'ffmpeg-kit-react-native';
 import { AppState } from 'react-native';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
@@ -17,20 +18,36 @@ class FFmpegConverter {
     reject: (error: Error) => void;
   }> = [];
   private isProcessingQueue: boolean = false;
+  private isInitialized: boolean = false;
 
-  initialize() {
+  async initialize() {
+    if (this.isInitialized) return;
+    
     try {
-      FFmpegKitConfig.setLogLevel(Level.AV_LOG_QUIET);
+      // Check if FFmpegKitConfig is available
+      if (FFmpegKitConfig && typeof FFmpegKitConfig.setLogLevel === 'function') {
+        FFmpegKitConfig.setLogLevel(Level.AV_LOG_QUIET);
+        console.log('[FFmpegConverter] Initialized successfully');
+      } else {
+        console.warn('[FFmpegConverter] FFmpegKitConfig not available');
+      }
+      
       // Safely get current app state
       try {
         this.appState = AppState.currentState || 'active';
       } catch {
         this.appState = 'active';
       }
-      this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
+      
+      // Only add listener if AppState is available
+      if (AppState && typeof AppState.addEventListener === 'function') {
+        this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
+      }
+      
+      this.isInitialized = true;
     } catch (error) {
-      // Initialization failed but continue without app state monitoring
-      console.warn('[FFmpegConverter] Could not initialize app state monitoring:', error);
+      console.warn('[FFmpegConverter] Initialization failed:', error);
+      // Don't throw - allow app to continue without FFmpeg
     }
   }
 
@@ -45,6 +62,7 @@ class FFmpegConverter {
     }
     this.cancelConversion();
     this.conversionQueue = [];
+    this.isInitialized = false;
   }
 
   handleAppStateChange = (nextAppState: string) => {
@@ -58,6 +76,11 @@ class FFmpegConverter {
   };
 
   async convertHLSToMP4(segmentsDir: string, outputPath: string, onProgress?: (data: any) => void) {
+    // Ensure FFmpeg is initialized
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
     return new Promise((resolve, reject) => {
       this.conversionQueue.push({
         segmentsDir,
@@ -92,6 +115,11 @@ class FFmpegConverter {
   }
 
   async executeConversion(segmentsDir: string, outputPath: string, onProgress?: (data: any) => void) {
+    // Ensure FFmpeg is initialized
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    
     this.isConverting = true;
     this.wasCancelledDueToBackground = false;
     this.onProgressCallback = onProgress || null;
@@ -172,7 +200,11 @@ class FFmpegConverter {
       const returnCode = await session.getReturnCode();
 
       // Clean up playlist file
-      await LegacyFileSystem.deleteAsync(playlistPath, { idempotent: true });
+      try {
+        await LegacyFileSystem.deleteAsync(playlistPath, { idempotent: true });
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
 
       if (ReturnCode.isSuccess(returnCode)) {
         const outputFileInfo = await LegacyFileSystem.getInfoAsync(outputPathClean);

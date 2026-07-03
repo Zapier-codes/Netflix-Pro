@@ -53,6 +53,15 @@ export class CacheService {
       console.warn('[Cache] Failed to clear all:', error);
     }
   }
+
+  // NEW: Dedicated methods for home data
+  async getHomeData(): Promise<any | null> {
+    return this.get('home_data');
+  }
+
+  async setHomeData(data: any): Promise<void> {
+    return this.set('home_data', data);
+  }
 }
 
 export const cacheService = CacheService.getInstance();

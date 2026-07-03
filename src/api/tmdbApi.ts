@@ -1,6 +1,7 @@
+// src/api/tmdbApi.ts
 import axios from 'axios';
 
-const TMDB_API_KEY = 'fa953c513c37da857fb3155738358ff0'; // I do not care that this is public. Its free...
+const TMDB_API_KEY = 'fa953c513c37da857fb3155738358ff0';
 const BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 const HIGH_RES_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w1280';
@@ -19,19 +20,41 @@ const getTodayDateString = () => {
 };
 
 // Helper function to create standard image URLs
-export const getImageUrl = (path) => {
+export const getImageUrl = (path: string | null, size?: string) => {
   if (!path) return null;
   return `${IMAGE_BASE_URL}${path}`;
 };
 
 // Helper function to create high-resolution image URLs
-export const getHighResImageUrl = (path) => {
+export const getHighResImageUrl = (path: string | null) => {
   if (!path) return null;
   return `${HIGH_RES_IMAGE_BASE_URL}${path}`;
 };
 
-// Fetch popular movies available on major US streaming services
-export const fetchPopularMovies = async () => {
+// ──────────────────────────────────────────────────────────────────────────
+// TRENDING
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchTrending = async (
+  timeWindow: 'day' | 'week' = 'day',
+  mediaType: 'all' | 'movie' | 'tv' = 'all'
+): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/trending/${mediaType}/${timeWindow}`, {
+      params: { api_key: TMDB_API_KEY }
+    });
+    return response.data.results || [];
+  } catch (error) {
+    console.error('Error fetching trending:', error);
+    return [];
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// POPULAR
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchPopularMovies = async (): Promise<any[]> => {
   try {
     const response = await axios.get(`${BASE_URL}/discover/movie`, {
       params: {
@@ -40,23 +63,17 @@ export const fetchPopularMovies = async () => {
         watch_region: US_REGION,
         with_watch_providers: US_PROVIDERS_STRING,
         include_adult: false,
-        'primary_release_date.lte': getTodayDateString(), // Ensure movie is released
+        'primary_release_date.lte': getTodayDateString(),
       },
     });
-    // Filter out results without a poster_path and ensure release date is valid
-    const filteredResults = response.data.results.filter(item =>
-      item.poster_path &&
-      item.release_date && new Date(item.release_date) <= new Date(getTodayDateString())
-    );
-    return filteredResults;
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
   } catch (error) {
     console.error('Error fetching popular movies:', error);
-    throw error;
+    return [];
   }
 };
 
-// Fetch popular TV shows available on major US streaming services
-export const fetchPopularTVShows = async () => {
+export const fetchPopularTVShows = async (): Promise<any[]> => {
   try {
     const response = await axios.get(`${BASE_URL}/discover/tv`, {
       params: {
@@ -65,52 +82,191 @@ export const fetchPopularTVShows = async () => {
         watch_region: US_REGION,
         with_watch_providers: US_PROVIDERS_STRING,
         include_adult: false,
-        'first_air_date.lte': getTodayDateString(), // Ensure TV show has aired
+        'first_air_date.lte': getTodayDateString(),
       },
     });
-    // Filter out results without a poster_path and ensure first air date is valid
-    const filteredResults = response.data.results.filter(item =>
-      item.poster_path &&
-      item.first_air_date && new Date(item.first_air_date) <= new Date(getTodayDateString())
-    );
-    return filteredResults;
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
   } catch (error) {
     console.error('Error fetching popular TV shows:', error);
-    throw error;
+    return [];
   }
 };
 
-// Search for movies and TV shows
-export const searchMedia = async (query) => {
+// ──────────────────────────────────────────────────────────────────────────
+// TOP RATED
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchTopRatedMovies = async ({ page = 1 }: { page?: number } = {}): Promise<any[]> => {
   try {
-    const response = await axios.get(`${BASE_URL}/search/multi`, {
-      params: { 
-        api_key: TMDB_API_KEY, 
-        query,
-        include_adult: false // Explicitly exclude adult content
+    const response = await axios.get(`${BASE_URL}/movie/top_rated`, {
+      params: { api_key: TMDB_API_KEY, page }
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching top rated movies:', error);
+    return [];
+  }
+};
+
+export const fetchTopRatedTVShows = async ({ page = 1 }: { page?: number } = {}): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/tv/top_rated`, {
+      params: { api_key: TMDB_API_KEY, page }
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching top rated TV shows:', error);
+    return [];
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// NEW RELEASES
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchNewReleaseMovies = async (): Promise<any[]> => {
+  try {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const today = new Date();
+
+    const formattedOneMonthAgo = `${oneMonthAgo.getFullYear()}-${String(oneMonthAgo.getMonth() + 1).padStart(2, '0')}-${String(oneMonthAgo.getDate()).padStart(2, '0')}`;
+    const formattedToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const response = await axios.get(`${BASE_URL}/discover/movie`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        watch_region: US_REGION,
+        with_watch_providers: US_PROVIDERS_STRING,
+        include_adult: false,
+        'primary_release_date.gte': formattedOneMonthAgo,
+        'primary_release_date.lte': formattedToday,
+        sort_by: 'popularity.desc',
       },
     });
-    // Filter out unreleased content and items without poster_path
-    const currentDate = new Date(getTodayDateString());
-    const filteredResults = response.data.results.filter(item => {
-      if (!item.poster_path) return false;
-      if (item.media_type === 'movie') {
-        return item.release_date && new Date(item.release_date) <= currentDate;
-      }
-      if (item.media_type === 'tv') {
-        return item.first_air_date && new Date(item.first_air_date) <= currentDate;
-      }
-      return true; // Keep other media types if any, or filter as needed
-    });
-    return filteredResults;
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
   } catch (error) {
-    console.error('Error searching media:', error);
-    throw error;
+    console.error('Error fetching new release movies:', error);
+    return [];
   }
 };
 
-// Fetch movie details
-export const fetchMovieDetails = async (movieId) => {
+export const fetchNewReleaseTVShows = async (): Promise<any[]> => {
+  try {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const today = new Date();
+
+    const formattedOneMonthAgo = `${oneMonthAgo.getFullYear()}-${String(oneMonthAgo.getMonth() + 1).padStart(2, '0')}-${String(oneMonthAgo.getDate()).padStart(2, '0')}`;
+    const formattedToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const response = await axios.get(`${BASE_URL}/discover/tv`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        watch_region: US_REGION,
+        with_watch_providers: US_PROVIDERS_STRING,
+        include_adult: false,
+        'first_air_date.gte': formattedOneMonthAgo,
+        'first_air_date.lte': formattedToday,
+        sort_by: 'popularity.desc',
+      },
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching new release TV shows:', error);
+    return [];
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// UPCOMING / AIRING
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchUpcomingMovies = async ({ page = 1 }: { page?: number } = {}): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/movie/upcoming`, {
+      params: { api_key: TMDB_API_KEY, page }
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching upcoming movies:', error);
+    return [];
+  }
+};
+
+export const fetchAiringTodayTV = async ({ page = 1 }: { page?: number } = {}): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/tv/airing_today`, {
+      params: { api_key: TMDB_API_KEY, page }
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching airing today TV shows:', error);
+    return [];
+  }
+};
+
+export const fetchOnTheAirTV = async ({ page = 1 }: { page?: number } = {}): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/tv/on_the_air`, {
+      params: { api_key: TMDB_API_KEY, page }
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching on the air TV shows:', error);
+    return [];
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// RECOMMENDATIONS
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchRecommendedMovies = async (params: any = {}): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/discover/movie`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        sort_by: 'popularity.desc',
+        include_adult: false,
+        watch_region: US_REGION,
+        with_watch_providers: US_PROVIDERS_STRING,
+        'primary_release_date.lte': getTodayDateString(),
+        ...params
+      },
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching recommended movies:', error);
+    return [];
+  }
+};
+
+export const fetchRecommendedTVShows = async (params: any = {}): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/discover/tv`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        sort_by: 'popularity.desc',
+        include_adult: false,
+        watch_region: US_REGION,
+        with_watch_providers: US_PROVIDERS_STRING,
+        'first_air_date.lte': getTodayDateString(),
+        ...params
+      },
+    });
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
+  } catch (error) {
+    console.error('Error fetching recommended TV shows:', error);
+    return [];
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// DETAILS
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchMovieDetails = async (movieId: number): Promise<any> => {
   try {
     const response = await axios.get(`${BASE_URL}/movie/${movieId}`, {
       params: { api_key: TMDB_API_KEY, append_to_response: 'credits,videos' },
@@ -122,8 +278,7 @@ export const fetchMovieDetails = async (movieId) => {
   }
 };
 
-// Fetch TV show details
-export const fetchTVShowDetails = async (tvId) => {
+export const fetchTVShowDetails = async (tvId: number): Promise<any> => {
   try {
     const response = await axios.get(`${BASE_URL}/tv/${tvId}`, {
       params: { api_key: TMDB_API_KEY, append_to_response: 'credits,videos' },
@@ -135,15 +290,11 @@ export const fetchTVShowDetails = async (tvId) => {
   }
 };
 
-// Fetch TV season details
-export const fetchSeasonDetails = async (tvId, seasonNumber) => {
+export const fetchSeasonDetails = async (tvId: number, seasonNumber: number): Promise<any> => {
   try {
-    const response = await axios.get(
-      `${BASE_URL}/tv/${tvId}/season/${seasonNumber}`,
-      {
-        params: { api_key: TMDB_API_KEY },
-      }
-    );
+    const response = await axios.get(`${BASE_URL}/tv/${tvId}/season/${seasonNumber}`, {
+      params: { api_key: TMDB_API_KEY },
+    });
     return response.data;
   } catch (error) {
     console.error('Error fetching season details:', error);
@@ -151,63 +302,35 @@ export const fetchSeasonDetails = async (tvId, seasonNumber) => {
   }
 };
 
-// Fetch recommended movies based on criteria (e.g., genres) AND US availability
-export const fetchRecommendedMovies = async (params = {}) => {
+export const fetchMovieRecommendations = async (movieId: number): Promise<any[]> => {
   try {
-    const response = await axios.get(`${BASE_URL}/discover/movie`, {
-      params: {
-        api_key: TMDB_API_KEY,
-        sort_by: 'popularity.desc', // Default sort
-        include_adult: false, // Explicitly exclude adult content
-        watch_region: US_REGION, // Add US region filter
-        with_watch_providers: US_PROVIDERS_STRING, // Add US provider filter
-        'primary_release_date.lte': getTodayDateString(), // Ensure movie is released
-        ...params // Spread additional filter parameters (like with_genres)
-      },
+    const response = await axios.get(`${BASE_URL}/movie/${movieId}/recommendations`, {
+      params: { api_key: TMDB_API_KEY },
     });
-    // Filter out results without a poster_path and ensure release date is valid
-    const filteredResults = response.data.results.filter(item =>
-      item.poster_path &&
-      item.release_date && new Date(item.release_date) <= new Date(getTodayDateString())
-    );
-    return filteredResults;
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
   } catch (error) {
-    console.error('Error fetching recommended movies:', error);
-    throw error; // Re-throw or handle as needed
+    console.error('Error fetching movie recommendations:', error);
+    return [];
   }
 };
 
-// Fetch recommended TV shows based on criteria (e.g., genres) AND US availability
-export const fetchRecommendedTVShows = async (params = {}) => {
+export const fetchTVShowRecommendations = async (tvId: number): Promise<any[]> => {
   try {
-    const response = await axios.get(`${BASE_URL}/discover/tv`, {
-      params: {
-        api_key: TMDB_API_KEY,
-        sort_by: 'popularity.desc', // Default sort
-        include_adult: false, // Explicitly exclude adult content
-        watch_region: US_REGION, // Add US region filter
-        with_watch_providers: US_PROVIDERS_STRING, // Add US provider filter
-        'first_air_date.lte': getTodayDateString(), // Ensure TV show has aired
-        ...params // Spread additional filter parameters (like with_genres)
-      },
+    const response = await axios.get(`${BASE_URL}/tv/${tvId}/recommendations`, {
+      params: { api_key: TMDB_API_KEY },
     });
-    // Filter out results without a poster_path and ensure first air date is valid
-    const filteredResults = response.data.results.filter(item =>
-      item.poster_path &&
-      item.first_air_date && new Date(item.first_air_date) <= new Date(getTodayDateString())
-    );
-    return filteredResults;
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
   } catch (error) {
-    console.error('Error fetching recommended TV shows:', error);
-    throw error; // Re-throw or handle as needed
+    console.error('Error fetching TV show recommendations:', error);
+    return [];
   }
 };
 
-// Fetch media by genre AND US availability
-export const fetchMediaByGenre = async (mediaType, genreId, params = {}) => {
-  if (!['movie', 'tv'].includes(mediaType)) {
-    throw new Error('Invalid media type specified for fetchMediaByGenre');
-  }
+// ──────────────────────────────────────────────────────────────────────────
+// GENRE
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchMediaByGenre = async (mediaType: 'movie' | 'tv', genreId: number, params: any = {}): Promise<any[]> => {
   try {
     const response = await axios.get(`${BASE_URL}/discover/${mediaType}`, {
       params: {
@@ -222,139 +345,63 @@ export const fetchMediaByGenre = async (mediaType, genreId, params = {}) => {
         ...params,
       },
     });
-    // Filter out results without a poster_path and ensure release date is valid
-    const currentDateFilter = new Date(getTodayDateString());
-    const filteredResults = response.data.results.filter(item => {
-      if (!item.poster_path) return false;
-      if (mediaType === 'movie') {
-        return item.release_date && new Date(item.release_date) <= currentDateFilter;
-      }
-      if (mediaType === 'tv') {
-        return item.first_air_date && new Date(item.first_air_date) <= currentDateFilter;
-      }
-      return true;
-    });
-    return filteredResults;
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
   } catch (error) {
     console.error(`Error fetching ${mediaType} by genre ${genreId}:`, error);
-    throw error;
-  }
-};
-
-// Fetch new release movies available on major US streaming services
-export const fetchNewReleaseMovies = async () => {
-  try {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-    const today = new Date();
-
-    const formattedOneMonthAgo = `${oneMonthAgo.getFullYear()}-${String(oneMonthAgo.getMonth() + 1).padStart(2, '0')}-${String(oneMonthAgo.getDate()).padStart(2, '0')}`;
-    const formattedToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    const discoverResponse = await axios.get(`${BASE_URL}/discover/movie`, {
-      params: {
-        api_key: TMDB_API_KEY,
-        watch_region: US_REGION,
-        with_watch_providers: US_PROVIDERS_STRING,
-        include_adult: false,
-        'primary_release_date.gte': formattedOneMonthAgo,
-        'primary_release_date.lte': formattedToday,
-        sort_by: 'popularity.desc', // Sort by popularity within new releases
-      },
-    });
-    // Ensure movies are actually released and have a poster
-    const todayDateCheck = new Date(getTodayDateString());
-    const filteredResults = discoverResponse.data.results.filter(item =>
-      item.poster_path &&
-      item.release_date && new Date(item.release_date) <= todayDateCheck
-    );
-    return filteredResults;
-  } catch (error) {
-    console.error('Error fetching new release movies:', error);
-    throw error;
-  }
-};
-
-// Fetch new release TV shows available on major US streaming services
-export const fetchNewReleaseTVShows = async () => {
-  try {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-    const today = new Date();
-
-    const formattedOneMonthAgo = `${oneMonthAgo.getFullYear()}-${String(oneMonthAgo.getMonth() + 1).padStart(2, '0')}-${String(oneMonthAgo.getDate()).padStart(2, '0')}`;
-    const formattedToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    const discoverResponse = await axios.get(`${BASE_URL}/discover/tv`, {
-      params: {
-        api_key: TMDB_API_KEY,
-        watch_region: US_REGION,
-        with_watch_providers: US_PROVIDERS_STRING,
-        include_adult: false,
-        'first_air_date.gte': formattedOneMonthAgo, // Keep this for "newly added to service"
-        'first_air_date.lte': formattedToday,     // and ensure it's not in the future
-        sort_by: 'popularity.desc',
-      },
-    });
-    // Ensure TV shows have actually aired and have a poster
-    const todayDateFilterCheck = new Date(getTodayDateString());
-    const filteredResults = discoverResponse.data.results.filter(item =>
-      item.poster_path &&
-      item.first_air_date && new Date(item.first_air_date) <= todayDateFilterCheck
-    );
-    return filteredResults;
-  } catch (error) {
-    console.error('Error fetching new release TV shows:', error);
-    throw error;
-  }
-};
-
-// Fetch recommendations for a specific movie
-export const fetchMovieRecommendations = async (movieId) => {
-  try {
-    const response = await axios.get(`${BASE_URL}/movie/${movieId}/recommendations`, {
-      params: {
-        api_key: TMDB_API_KEY,
-      },
-    });
-    const filteredResults = response.data.results.filter(item => item.poster_path);
-    return filteredResults;
-  } catch (error) {
-    console.error(`Error fetching recommendations for movie ${movieId}:`, error);
     return [];
   }
 };
 
-// Fetch recommendations for a specific TV show
-export const fetchTVShowRecommendations = async (tvId) => {
+// ──────────────────────────────────────────────────────────────────────────
+// SEARCH
+// ──────────────────────────────────────────────────────────────────────────
+
+export const searchMedia = async (query: string): Promise<any[]> => {
   try {
-    const response = await axios.get(`${BASE_URL}/tv/${tvId}/recommendations`, {
-      params: {
-        api_key: TMDB_API_KEY,
-      },
+    const response = await axios.get(`${BASE_URL}/search/multi`, {
+      params: { api_key: TMDB_API_KEY, query, include_adult: false },
     });
-    const filteredResults = response.data.results.filter(item => item.poster_path);
-    return filteredResults;
+    return response.data.results?.filter((item: any) => item.poster_path) || [];
   } catch (error) {
-    console.error(`Error fetching recommendations for TV show ${tvId}:`, error);
+    console.error('Error searching media:', error);
     return [];
   }
 };
+
+// ──────────────────────────────────────────────────────────────────────────
+// DEFAULT EXPORT
+// ──────────────────────────────────────────────────────────────────────────
 
 export default {
+  // Trending
+  fetchTrending,
+  // Popular
   fetchPopularMovies,
   fetchPopularTVShows,
+  // Top Rated
+  fetchTopRatedMovies,
+  fetchTopRatedTVShows,
+  // New Releases
   fetchNewReleaseMovies,
   fetchNewReleaseTVShows,
-  searchMedia,
+  // Upcoming / Airing
+  fetchUpcomingMovies,
+  fetchAiringTodayTV,
+  fetchOnTheAirTV,
+  // Recommendations
+  fetchRecommendedMovies,
+  fetchRecommendedTVShows,
+  // Details
   fetchMovieDetails,
   fetchTVShowDetails,
   fetchSeasonDetails,
-  getImageUrl,
-  getHighResImageUrl, // Export the new function
-  fetchRecommendedMovies,
-  fetchRecommendedTVShows,
-  fetchMediaByGenre,
   fetchMovieRecommendations,
   fetchTVShowRecommendations,
+  // Genre
+  fetchMediaByGenre,
+  // Search
+  searchMedia,
+  // Images
+  getImageUrl,
+  getHighResImageUrl,
 };

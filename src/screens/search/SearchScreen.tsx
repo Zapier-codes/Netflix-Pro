@@ -13,11 +13,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';;
+import { router, useFocusEffect } from 'expo-router';
 
 // Zustand Stores
 import { useAppStore } from '../../store/zustand';
-import { useSearchPreloader } from "../../hooks/content/useContent";`nimport { useTheme } from '../../contexts/ThemeContext';
+import { useSearchPreloader } from "../../hooks/content/useContent";
+import { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
 // API
@@ -26,12 +27,13 @@ import { searchMedia, getImageUrl } from '../../api/tmdbApi';
 // Utils
 import { saveSearchQuery, getSearchHistory, removeSearchQuery, clearSearchHistory } from '../../utils/storage';
 
-const SearchScreen = ({ navigation }) => {
+const SearchScreen = () => {
   const { colors } = useTheme();
   const { showToast } = useAlert();
   const { networkStatus } = useAppStore();
 
-  const { trendingSearches, categories, loading: preloadLoading } = useSearchPreloader();`n  const [query, setQuery] = useState('');
+  const { trendingSearches, categories, loading: preloadLoading } = useSearchPreloader();
+  const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [noResults, setNoResults] = useState(false);
@@ -124,8 +126,9 @@ const SearchScreen = ({ navigation }) => {
 
   const handleItemPress = useCallback((item: any) => {
     const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
-    router.push(`/movie?mediaId=item.id&title=mediaType === tv ? item.name&poster_path=item.poster_path`);;
-  }, [navigation]);
+    const title = item.title || item.name || 'Untitled';
+    router.push(`/movie/${item.id}?mediaType=${mediaType}&title=${title}&poster_path=${item.poster_path || ''}`);
+  }, []);
 
   const handleHistoryItemPress = useCallback((historyQuery: string) => {
     setQuery(historyQuery);
@@ -148,11 +151,11 @@ const SearchScreen = ({ navigation }) => {
     const title = item.title || item.name || 'Unknown';
     const imageSource = item.poster_path
       ? { uri: getImageUrl(item.poster_path) }
-      : require('../../assets/placeholder.png');
+      : require('../../../assets/icon.png');
 
     return (
       <TouchableOpacity style={[styles.resultItem, { borderBottomColor: colors.border }]} onPress={() => handleItemPress(item)}>
-        <Image source={imageSource} style={styles.poster} />
+        <Image source={imageSource} style={styles.poster} resizeMode="cover" />
         <View style={styles.itemDetails}>
           <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>{title}</Text>
           <Text style={[styles.itemOverview, { color: colors.textSub }]} numberOfLines={2}>
@@ -212,7 +215,7 @@ const SearchScreen = ({ navigation }) => {
           <FlatList
             data={searchHistory}
             renderItem={renderHistoryItem}
-            keyExtractor={(item, index) => ${item}-}
+            keyExtractor={(item, index) => `${item}-${index}`}
             contentContainerStyle={styles.historyList}
           />
         </>
@@ -323,4 +326,3 @@ const styles = StyleSheet.create({
 });
 
 export default SearchScreen;
-

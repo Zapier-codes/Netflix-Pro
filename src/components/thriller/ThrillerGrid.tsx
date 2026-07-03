@@ -7,357 +7,378 @@ import {
   FlatList,
   TouchableOpacity,
   Dimensions,
-  ActivityIndicator,
+  Animated,
   Image,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useMavinTrending } from '../../hooks/useMavin';
 import { Ionicons } from '@expo/vector-icons';
+import { ThrillerItem } from '../../services/preloader/ThrillerPreloader';
+import { getImageUrl } from '../../api/tmdbApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ─── Grid Config ───
 const GRID_COLUMNS = 3;
-const CELL_WIDTH = (SCREEN_WIDTH - 32) / GRID_COLUMNS;
-const CELL_HEIGHT = CELL_WIDTH * 1.5;
+const GRID_ROWS = 2;
+const MAX_GRID_ITEMS = GRID_COLUMNS * GRID_ROWS;
+const GRID_HORIZONTAL_PADDING = 16;
+const GRID_GAP = 8;
+const CELL_WIDTH =
+  (SCREEN_WIDTH - GRID_HORIZONTAL_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) /
+  GRID_COLUMNS;
+const CELL_HEIGHT = CELL_WIDTH * 1.2;
+
+// ─── Max simultaneous video players ───
+const MAX_ACTIVE_PLAYERS = 6;
 
 interface ThrillerGridProps {
-  onItemPress?: (item: any) => void;
-  category?: string;
-  limit?: number;
-  muted?: boolean;
+  items: ThrillerItem[];
+  loading?: boolean;
+  isVisible?: boolean;
+  onItemPress: (item: any) => void;
 }
 
-interface ThrillerItem {
-  id: string;
-  title: string;
-  thumbnail: string;
-  videoUrl?: string;
-  duration?: number;
-  uploaderName: string;
-  viewCount: number;
-}
+// ─── Global active player counter ───
+let activePlayerCount = 0;
 
-export const ThrillerGrid: React.FC<ThrillerGridProps> = ({
-  onItemPress,
-  category = 'movies',
-  limit = 12,
-  muted = true,
-}) => {
+// ─── Shuffle helper ───
+const shuffleArray = <T,>(array: T[]): T[] => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// ─── Individual Grid Cell ───
+const ThrillerCell: React.FC<{
+  item: ThrillerItem;
+  index: number;
+  isVisible: boolean;
+  onPress: (item: any) => void;
+}> = ({ item, index, isVisible, onPress }) => {
   const { colors } = useTheme();
-  const { data, loading, error, refresh } = useMavinTrending(category);
-  const [items, setItems] = useState<ThrillerItem[]>([]);
-  const videoRefs = useRef<Map<string, any>>(new Map());
-  const [isMounted, setIsMounted] = useState(true);
-  const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
+  const [isReady, setIsReady] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [canMountPlayer, setCanMountPlayer] = useState(false);
+  const isLastInRow = index % GRID_COLUMNS === GRID_COLUMNS - 1;
 
-  // Process Mavin items into thriller grid items
+  const indexRef = useRef(index);
   useEffect(() => {
-    if (data.length > 0) {
-      const processed = data.slice(0, limit).map((item: any) => ({
-        id: item.id || item.url || String(Math.random()),
-        title: item.name || item.title || 'Untitled',
-        thumbnail: item.thumbnails?.[0]?.url || '',
-        videoUrl: item.url,
-        duration: item.duration || 0,
-        uploaderName: item.uploaderName || 'Unknown',
-        viewCount: item.viewCount || 0,
-      }));
-      setItems(processed);
-    }
-  }, [data, limit]);
+    indexRef.current = index;
+  }, [index]);
 
-  // Auto-play all visible videos when items are loaded
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // ─── Staggered mount ───
   useEffect(() => {
-    if (items.length > 0) {
-      // Start playing all videos after a small delay
-      const timer = setTimeout(() => {
-        playAllVideos();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [items]);
+    let claimedSlot = false;
 
-  // Play all videos
-  const playAllVideos = useCallback(() => {
-    videoRefs.current.forEach((player) => {
-      if (player && !player.isPlaying) {
-        try {
-          player.play();
-        } catch (e) {
-          // Ignore playback errors
-        }
+    const timer = setTimeout(() => {
+      if (activePlayerCount < MAX_ACTIVE_PLAYERS && isVisible) {
+        activePlayerCount++;
+        claimedSlot = true;
+        setCanMountPlayer(true);
       }
-    });
-  }, []);
+    }, indexRef.current * 200);
 
-  // Pause all videos
-  const pauseAllVideos = useCallback(() => {
-    videoRefs.current.forEach((player) => {
-      if (player && player.isPlaying) {
-        try {
-          player.pause();
-        } catch (e) {
-          // Ignore errors
-        }
-      }
-    });
-  }, []);
-
-  // Handle visibility change - play/pause based on visibility
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      // When screen is active, play all; when background, pause all
-      // This handles app state changes
-    };
-
-    // Pause all when component unmounts
     return () => {
-      pauseAllVideos();
-      videoRefs.current.clear();
+      clearTimeout(timer);
+      if (claimedSlot) {
+        activePlayerCount = Math.max(0, activePlayerCount - 1);
+      }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVisible]);
 
-  // Handle item press - navigate to details or play
-  const handleItemPress = useCallback((item: ThrillerItem, index: number) => {
-    // Toggle mute/unmute on tap, or navigate
-    if (onItemPress) {
-      onItemPress(item);
-    }
-  }, [onItemPress]);
-
-  // Render each grid cell - all videos auto-play simultaneously
-  const renderItem = useCallback(({ item, index }: { item: ThrillerItem; index: number }) => {
-    // Create a unique key for this video
-    const videoKey = ${item.id}_;
-    
-    // Create player for this cell - auto-plays when loaded
-    const player = useVideoPlayer(null, (playerInstance) => {
-      // This callback runs when the player instance is created
-      if (item.videoUrl) {
-        playerInstance.replace(item.videoUrl);
-        // Auto-play immediately (muted by default)
+  // ─── Player instance ───
+  const player = useVideoPlayer(
+    canMountPlayer && isVisible && item.videoUrl ? item.videoUrl : null,
+    (playerInstance) => {
+      if (canMountPlayer && isVisible && item.videoUrl) {
+        playerInstance.loop = true;
+        playerInstance.muted = true;
         playerInstance.play();
-        // Store reference
-        videoRefs.current.set(videoKey, playerInstance);
       }
-    });
+    }
+  );
 
-    // Cleanup on unmount
-    useEffect(() => {
+  // ─── Playback settings ───
+  useEffect(() => {
+    if (player && canMountPlayer && isVisible && item.videoUrl) {
+      player.loop = true;
+      player.muted = true;
+      player.play();
+    } else if (player && !isVisible) {
+      player.pause();
+    }
+  }, [player, canMountPlayer, isVisible, item.videoUrl]);
+
+  // ─── Ready tracking ───
+  useEffect(() => {
+    if (player && canMountPlayer && isVisible && item.videoUrl) {
+      const checkReady = setInterval(() => {
+        if (player.playing) {
+          setIsReady(true);
+          clearInterval(checkReady);
+        }
+      }, 100);
+
+      const timeout = setTimeout(() => {
+        clearInterval(checkReady);
+        if (!player.playing) {
+          setHasError(true);
+        }
+      }, 5000);
+
       return () => {
-        if (videoRefs.current.has(videoKey)) {
-          const p = videoRefs.current.get(videoKey);
-          if (p) {
-            try {
-              p.pause();
-              p.replace(null);
-            } catch (e) {}
-          }
-          videoRefs.current.delete(videoKey);
-        }
+        clearInterval(checkReady);
+        clearTimeout(timeout);
       };
-    }, [videoKey]);
+    } else {
+      setIsReady(false);
+    }
+  }, [player, canMountPlayer, isVisible, item.videoUrl]);
 
-    // Update video when item changes
-    useEffect(() => {
-      if (item.videoUrl) {
-        const p = videoRefs.current.get(videoKey);
-        if (p) {
-          try {
-            // Only replace if different to avoid flicker
-            const currentUrl = p.source?.uri || '';
-            if (currentUrl !== item.videoUrl) {
-              p.replace(item.videoUrl);
-              p.play();
-            }
-          } catch (e) {
-            // Ignore errors
-          }
-        }
-      }
-    }, [item.videoUrl, videoKey]);
+  // ─── Force muted ───
+  useEffect(() => {
+    if (player) {
+      player.muted = true;
+    }
+  }, [player]);
 
-    // Toggle mute on demand
-    useEffect(() => {
-      const p = videoRefs.current.get(videoKey);
-      if (p) {
-        p.muted = muted;
-      }
-    }, [muted, videoKey]);
+  // ─── Crossfade ───
+  useEffect(() => {
+    if (isReady) {
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      fadeAnim.setValue(0);
+    }
+  }, [isReady, fadeAnim]);
 
-    return (
-      <TouchableOpacity
-        style={[styles.cell, { backgroundColor: colors.surface }]}
-        onPress={() => handleItemPress(item, index)}
-        activeOpacity={0.8}
-      >
-        <View style={styles.thumbnailContainer}>
-          <VideoView
-            player={player}
-            style={styles.video}
-            contentFit="cover"
-            isMuted={muted}
-            allowsPictureInPicture={false}
-            nativeControls={false}
-          />
-          
-          {/* Duration Badge */}
-          {item.duration > 0 && (
-            <View style={[styles.durationBadge, { backgroundColor: 'rgba(0,0,0,0.8)' }]}>
-              <Text style={styles.durationText}>
-                {formatDuration(item.duration)}
-              </Text>
-            </View>
-          )}
-          
-          {/* Play/Pause Overlay - appears on hover/tap */}
-          <View style={styles.overlay}>
-            <View style={[styles.playCircle, { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
-              <Ionicons name="play" size={20} color="#FFFFFF" />
+  const handlePress = () => {
+    onPress({
+      id: item.tmdbId,
+      title: item.title,
+      poster_path: item.posterPath,
+      backdrop_path: item.backdropPath,
+      overview: item.overview,
+      vote_average: item.voteAverage,
+      media_type: 'movie',
+    });
+  };
+
+  const thumbnailUrl = item.posterPath ? getImageUrl(item.posterPath) : null;
+  const attemptingVideo = !!(item.isLoaded && item.videoUrl && canMountPlayer && isVisible && !hasError);
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.cell,
+        { backgroundColor: colors.surface },
+        !isLastInRow && styles.cellSpacing,
+      ]}
+      onPress={handlePress}
+      activeOpacity={0.8}
+    >
+      <View style={styles.thumbnailContainer}>
+        {/* Cover art - always visible */}
+        {thumbnailUrl ? (
+          <Image source={{ uri: thumbnailUrl }} style={styles.poster} resizeMode="cover" />
+        ) : (
+          <View style={[styles.posterContainer, { backgroundColor: colors.surfaceRaised }]}>
+            <Ionicons name="film-outline" size={24} color={colors.textMuted} />
+          </View>
+        )}
+
+        {/* Video overlay - fades in over poster when ready */}
+        {attemptingVideo && (
+          <Animated.View style={[styles.videoWrapper, { opacity: fadeAnim }]}>
+            <VideoView
+              player={player}
+              style={styles.video}
+              contentFit="cover"
+              isMuted={true}
+              allowsPictureInPicture={false}
+              nativeControls={false}
+              surfaceType="textureView"
+            />
+          </Animated.View>
+        )}
+
+        {/* "NEW" Badge - only when video is actually playing */}
+        {isReady && (
+          <View style={styles.newBadgeWrapper}>
+            <View style={[styles.newBadge, { backgroundColor: '#E50914' }]}>
+              <Text style={styles.newBadgeText}>NEW</Text>
             </View>
           </View>
-        </View>
+        )}
+      </View>
 
-        <View style={styles.itemInfo}>
-          <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>
-            {item.title}
-          </Text>
-          <Text style={[styles.itemSubtitle, { color: colors.textMuted }]} numberOfLines={1}>
-            {item.uploaderName} • {formatViewCount(item.viewCount)}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  }, [colors, muted, handleItemPress]);
+      <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
+        {item.title}
+      </Text>
+    </TouchableOpacity>
+  );
+};
 
-  // Loading state
-  if (loading && items.length === 0) {
+// ─── Skeleton Cell ───
+const SkeletonCell: React.FC<{ colors: any; index: number }> = ({ colors, index }) => {
+  const isLastInRow = index % GRID_COLUMNS === GRID_COLUMNS - 1;
+  return (
+    <View
+      style={[
+        styles.cell,
+        { backgroundColor: colors.surface },
+        !isLastInRow && styles.cellSpacing,
+      ]}
+    >
+      <View style={styles.thumbnailContainer}>
+        <View style={[styles.video, { backgroundColor: colors.surfaceRaised }]} />
+      </View>
+      <View style={[styles.skeletonTitle, { backgroundColor: colors.surfaceRaised }]} />
+    </View>
+  );
+};
+
+// ─── Main Component ───
+export const ThrillerGrid: React.FC<ThrillerGridProps> = ({
+  items,
+  loading = false,
+  isVisible = true,
+  onItemPress,
+}) => {
+  const { colors } = useTheme();
+
+  const flatListKey = loading ? 'skeleton-grid' : 'content-grid';
+
+  // ─── Shuffle the entire pool and pick 6 fresh items ───
+  // This runs on every render, giving a fresh batch each time
+  const displayItems = useMemo(() => {
+    if (loading || !items || items.length === 0) {
+      return [];
+    }
+
+    // Separate loaded trailers from fallbacks
+    const loadedItems = items.filter((item) => item.isLoaded && item.videoUrl);
+    const fallbackItems = items.filter((item) => !(item.isLoaded && item.videoUrl));
+
+    // Shuffle both pools independently
+    const shuffledLoaded = shuffleArray(loadedItems);
+    const shuffledFallback = shuffleArray(fallbackItems);
+
+    // Combine: loaded first, then fallbacks
+    const combined = [...shuffledLoaded, ...shuffledFallback];
+
+    // Pick 6 from the shuffled combined pool
+    return combined.slice(0, MAX_GRID_ITEMS);
+  }, [items, loading]);
+
+  if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.gold} />
-        <Text style={[styles.loadingText, { color: colors.textSub }]}>
-          Loading thriller content...
-        </Text>
+      <View style={styles.container}>
+        <FlatList
+          key={flatListKey}
+          data={Array.from({ length: MAX_GRID_ITEMS }, (_, i) => i)}
+          renderItem={({ index }) => <SkeletonCell colors={colors} index={index} />}
+          keyExtractor={(item) => `skeleton-${item}`}
+          numColumns={GRID_COLUMNS}
+          contentContainerStyle={styles.gridContent}
+          scrollEnabled={false}
+          columnWrapperStyle={styles.columnWrapper}
+        />
       </View>
     );
   }
 
-  // Error state
-  if (error && items.length === 0) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={[styles.errorText, { color: colors.error }]}>⚠️ {error}</Text>
-        <TouchableOpacity onPress={refresh}>
-          <Text style={[styles.retryText, { color: colors.gold }]}>Tap to Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // Empty state
-  if (items.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-          No thriller content available
-        </Text>
-      </View>
-    );
+  if (!items || items.length === 0 || displayItems.length === 0) {
+    return null;
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>🔥 Thriller Picks</Text>
-        <View style={styles.headerBadge}>
-          <View style={styles.liveDot} />
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-            Auto-playing
-          </Text>
-        </View>
-      </View>
       <FlatList
-        data={items}
-        renderItem={renderItem}
-        keyExtractor={(item, index) => ${item.id}_}
+        key={flatListKey}
+        data={displayItems}
+        renderItem={({ item, index }) => (
+          <ThrillerCell
+            item={item}
+            index={index}
+            isVisible={isVisible}
+            onPress={onItemPress}
+          />
+        )}
+        keyExtractor={(item) => item.id || `item-${Math.random()}`}
         numColumns={GRID_COLUMNS}
         contentContainerStyle={styles.gridContent}
-        showsVerticalScrollIndicator={false}
         scrollEnabled={false}
         columnWrapperStyle={styles.columnWrapper}
-        removeClippedSubviews={false}
-        windowSize={21}
-        initialNumToRender={limit}
-        maxToRenderPerBatch={limit}
-        updateCellsBatchingPeriod={50}
+        removeClippedSubviews={true}
+        initialNumToRender={MAX_GRID_ITEMS}
+        maxToRenderPerBatch={MAX_GRID_ITEMS}
       />
     </View>
   );
 };
 
-// Helper functions
-const formatDuration = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return ${mins}:;
-};
-
-const formatViewCount = (count: number): string => {
-  if (count >= 1_000_000) return ${(count / 1_000_000).toFixed(1)}M;
-  if (count >= 1_000) return ${(count / 1_000).toFixed(1)}K;
-  return String(count);
-};
-
+// ─── Styles ───
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 12,
+    paddingVertical: 8,
+    paddingHorizontal: GRID_HORIZONTAL_PADDING,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  headerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#E50914',
-    marginRight: 6,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-  },
-  gridContent: {
-    paddingHorizontal: 8,
-  },
+  gridContent: {},
   columnWrapper: {
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: GRID_GAP,
   },
   cell: {
     width: CELL_WIDTH,
-    borderRadius: 8,
+    borderRadius: 6,
     overflow: 'hidden',
+  },
+  cellSpacing: {
+    marginRight: GRID_GAP,
   },
   thumbnailContainer: {
     width: CELL_WIDTH,
     height: CELL_HEIGHT,
     position: 'relative',
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   video: {
     width: CELL_WIDTH,
     height: CELL_HEIGHT,
+    borderRadius: 6,
     backgroundColor: '#000',
+  },
+  posterContainer: {
+    width: CELL_WIDTH,
+    height: CELL_HEIGHT,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  poster: {
+    width: CELL_WIDTH,
+    height: CELL_HEIGHT,
+    borderRadius: 6,
+    backgroundColor: '#1a1a1a',
+  },
+  videoWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: CELL_WIDTH,
+    height: CELL_HEIGHT,
   },
   overlay: {
     position: 'absolute',
@@ -368,64 +389,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  playCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  durationBadge: {
+  newBadgeWrapper: {
     position: 'absolute',
-    bottom: 8,
-    right: 8,
+    top: 6,
+    left: 6,
+    zIndex: 10,
+  },
+  newBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 3,
+    minWidth: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  durationText: {
+  newBadgeText: {
+    fontSize: 7,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  itemInfo: {
-    padding: 8,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   itemTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  itemSubtitle: {
-    fontSize: 11,
-  },
-  loadingContainer: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-  },
-  errorContainer: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 14,
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 4,
+    paddingHorizontal: 2,
     textAlign: 'center',
   },
-  retryText: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
+  skeletonTitle: {
+    height: 10,
+    borderRadius: 3,
+    marginTop: 4,
+    width: '80%',
+    alignSelf: 'center',
   },
 });
 

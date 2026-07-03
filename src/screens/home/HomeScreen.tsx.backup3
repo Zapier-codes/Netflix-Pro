@@ -549,7 +549,7 @@ const HomeScreen = () => {
         });
       } else {
         router.push({
-          pathname: `/movie/${mediaId}`,
+          pathname: '/detail',
           params: cleanParams({
             mediaId,
             mediaType,
@@ -566,7 +566,7 @@ const HomeScreen = () => {
   const handleInfoPress = useCallback(
     (item: any) => {
       router.push({
-        pathname: `/movie/${mediaId}`,
+        pathname: '/detail',
         params: cleanParams({
           mediaId: item.mediaId,
           mediaType: item.mediaType,

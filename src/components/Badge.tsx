@@ -1,11 +1,17 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { getBadgeInfo } from '../utils/badgeHelper';
 
-const Badge = ({ mediaType, releaseDate, firstAirDate, lastAirDate, isLive, isUpcoming }) => {
-  let badgeText = null;
-  let badgeStyle = styles.newBadge;
-  let textStyle = styles.newBadgeText;
-
+const Badge = ({
+  mediaType,
+  releaseDate,
+  firstAirDate,
+  lastAirDate,
+  isLive,
+  isUpcoming,
+  hasWatched = false,
+}) => {
+  // ─── Live / Upcoming badges (unrelated to recency tiers, unchanged) ───
   if (isLive !== undefined) {
     if (isUpcoming) {
       return (
@@ -22,37 +28,22 @@ const Badge = ({ mediaType, releaseDate, firstAirDate, lastAirDate, isLive, isUp
     );
   }
 
-  const oneWeekAgo = new Date();
-  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  // ─── Recency badge: Hot / New / Latest / none, via shared helper ───
+  const badgeInfo = getBadgeInfo({
+    mediaType,
+    releaseDate,
+    firstAirDate,
+    lastAirDate,
+    hasWatched,
+  });
 
-  if (mediaType === 'movie' && releaseDate) {
-    const releaseDateObj = new Date(releaseDate);
-    if (releaseDateObj >= oneWeekAgo) {
-      badgeText = "NEW";
-    }
-  } else if (mediaType === 'tv') {
-    if (lastAirDate) {
-      const lastAirDateObj = new Date(lastAirDate);
-      if (lastAirDateObj >= oneWeekAgo) {
-        badgeText = "New Episodes";
-      }
-    }
-    // Fallback to show's first air date if no "New Episodes" and show itself is new
-    if (!badgeText && firstAirDate) {
-      const firstAirDateObj = new Date(firstAirDate);
-      if (firstAirDateObj >= oneWeekAgo) {
-        badgeText = "NEW";
-      }
-    }
-  }
-
-  if (!badgeText) {
+  if (!badgeInfo) {
     return null;
   }
 
   return (
-    <View style={badgeStyle}>
-      <Text style={textStyle}>{badgeText}</Text>
+    <View style={[styles.newBadge, { backgroundColor: badgeInfo.color }]}>
+      <Text style={styles.newBadgeText}>{badgeInfo.label}</Text>
     </View>
   );
 };
@@ -62,7 +53,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     left: 8,
-    backgroundColor: 'red',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,

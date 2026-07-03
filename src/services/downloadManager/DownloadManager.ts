@@ -1,9 +1,11 @@
+﻿// src/services/downloadManager/DownloadManager.ts
 import networkMonitor from './NetworkMonitor';
 import storageManager from './StorageManager';
 import downloadQueue from './DownloadQueue';
 import HLSDownloader from './HLSDownloader';
 import MP4Downloader from './MP4Downloader';
 import ffmpegConverter from './FFmpegConverter';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 import {
   getDownloadSettings,
   initializeDownloadsDirectory,
@@ -16,7 +18,23 @@ import {
   generateDownloadId,
   createDownloadEntry,
   markAsWatched as markDownloadAsWatched,
+  getSecureBaseDirectory,
+  getSecureContentDirectory,
+  getEncodedFilePath,
+  hideFileFromMediaScanner,
+  encryptAndSaveVideo,
+  saveContentMetadata,
+  saveDownloadInfo,
+  loadContentMetadata,
+  loadDownloadInfo,
+  getAvailableSubtitles,
+  getSubtitlePath,
+  saveSubtitle,
+  ensureDirectoryExists,
+  decryptFileToTemp,
+  cleanupTempFile,
 } from '../../utils/downloadStorage';
+import { getImageUrl } from '../../api/tmdbApi';
 
 class DownloadManager {
   private activeDownloads: Map<any, any>;
@@ -50,7 +68,6 @@ class DownloadManager {
       });
 
       this.isInitialized = true;
-
       this.processQueue();
     } catch (error) {
       console.warn('[DownloadManager] Initialization warning:', error);
@@ -117,7 +134,6 @@ class DownloadManager {
         const entry = await this.addToQueue(mediaInfo);
         entries.push(entry);
       } catch (error) {
-        // Skip failed episodes
         console.warn('[DownloadManager] Failed to add episode to queue:', error);
       }
     }
@@ -176,7 +192,6 @@ class DownloadManager {
       const { getActiveStreamSources } = require('../../api/vidsrcApi');
       const sources = getActiveStreamSources();
 
-      // FIXED: Changed from 'Netflix ProSource' to 'FluxSource'
       const fluxSource = sources.find((s: any) => s.name === 'FluxSource');
 
       if (!fluxSource) {
@@ -276,14 +291,106 @@ class DownloadManager {
   async handleComplete(downloadId: string, result: any) {
     this.activeDownloads.delete(downloadId);
 
-    await downloadQueue.markCompleted(downloadId, result.fileSize, result.filePath);
+    try {
+      const entry = await getDownloadEntry(downloadId);
+      if (!entry) {
+        console.warn('[DownloadManager] Entry not found:', downloadId);
+        return;
+      }
 
-    this.notifyListeners('download-complete', {
-      id: downloadId,
-      ...result,
-    });
+      // ─── Create industry-standard secure directory structure ───
+      const contentDir = await getSecureContentDirectory(
+        entry.mediaType,
+        entry.tmdbId,
+        entry.season,
+        entry.episode
+      );
+
+      // Ensure all directories exist
+      await ensureDirectoryExists(contentDir);
+      await ensureDirectoryExists(`${contentDir}subtitles/`);
+      await ensureDirectoryExists(`${contentDir}thumbnails/`);
+
+      // ─── Save metadata ───
+      await saveContentMetadata(contentDir, {
+        title: entry.title,
+        posterPath: entry.posterPath,
+        overview: entry.overview || '',
+        voteAverage: entry.voteAverage || 0,
+        releaseDate: entry.releaseDate || '',
+        genres: entry.genres || [],
+        runtime: entry.runtime || 0,
+        seasonNumber: entry.season || undefined,
+        episodeNumber: entry.episode || undefined,
+        episodeTitle: entry.episodeTitle || undefined,
+      });
+
+      // ─── Save download info ───
+      await saveDownloadInfo(contentDir, {
+        downloadId: entry.id,
+        mediaType: entry.mediaType,
+        tmdbId: entry.tmdbId,
+        fileSize: result.fileSize || 0,
+        downloadedAt: new Date().toISOString(),
+        progress: 100,
+        status: DOWNLOAD_STATUS.COMPLETED,
+        season: entry.season || undefined,
+        episode: entry.episode || undefined,
+      });
+
+      // ─── Encrypt and save video ───
+      const videoPath = await encryptAndSaveVideo(result.filePath, contentDir);
+
+      // ─── Download and save subtitles (if available) ───
+      if (entry.subtitles && entry.subtitles.length > 0) {
+        for (const sub of entry.subtitles) {
+          try {
+            const subContent = await this.fetchSubtitle(sub.url);
+            if (subContent) {
+              await saveSubtitle(contentDir, sub.language || 'en', subContent);
+            }
+          } catch (subError) {
+            console.warn('[DownloadManager] Subtitle download error:', subError);
+          }
+        }
+      }
+
+      // ─── Hide from media scanner ───
+      await hideFileFromMediaScanner(contentDir);
+
+      // ─── Update entry with new file path ───
+      await updateDownloadEntry(downloadId, {
+        filePath: contentDir,
+        fileSize: result.fileSize || 0,
+        completedAt: new Date().toISOString(),
+        progress: 100,
+      });
+
+      this.notifyListeners('download-complete', {
+        id: downloadId,
+        ...result,
+        filePath: contentDir,
+        isEncrypted: true,
+        contentDir,
+      });
+
+    } catch (error) {
+      console.error('[DownloadManager] Complete error:', error);
+      await this.handleError(downloadId, error);
+    }
 
     this.processQueue();
+  }
+
+  async fetchSubtitle(url: string): Promise<string | null> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      return await response.text();
+    } catch (error) {
+      console.warn('[DownloadManager] Fetch subtitle error:', error);
+      return null;
+    }
   }
 
   async handleError(downloadId: string, error: any) {
@@ -472,20 +579,32 @@ class DownloadManager {
 
   async getCompletedDownloads() {
     const downloads = await getCompletedDownloads();
-    const { getInfoAsync } = require('expo-file-system/legacy');
     const validDownloads = [];
 
     for (const entry of downloads) {
-      const filePath = entry.filePath.endsWith('.mp4') || entry.filePath.endsWith('.m3u8')
-        ? entry.filePath
-        : `${entry.filePath}video.mp4`;
-
       try {
-        const cleanPath = filePath.replace('file://', '');
-        const fileInfo = await getInfoAsync(cleanPath);
+        // Check if the content directory exists
+        const contentDir = await getSecureContentDirectory(
+          entry.mediaType,
+          entry.tmdbId,
+          entry.season,
+          entry.episode
+        );
 
-        if (fileInfo.exists) {
-          validDownloads.push(entry);
+        const info = await LegacyFileSystem.getInfoAsync(contentDir);
+        if (info.exists) {
+          // Load metadata and info
+          const metadata = await loadContentMetadata(contentDir);
+          const downloadInfo = await loadDownloadInfo(contentDir);
+          const subtitles = await getAvailableSubtitles(contentDir);
+
+          validDownloads.push({
+            ...entry,
+            metadata,
+            downloadInfo,
+            subtitles,
+            contentDir,
+          });
         } else {
           await deleteDownload(entry.id);
         }
@@ -509,16 +628,10 @@ class DownloadManager {
       return false;
     }
 
-    const filePath = entry.filePath.endsWith('.mp4') || entry.filePath.endsWith('.m3u8')
-      ? entry.filePath
-      : `${entry.filePath}video.mp4`;
-
+    const contentDir = await getSecureContentDirectory(mediaType, tmdbId, season, episode);
     try {
-      const { getInfoAsync } = require('expo-file-system/legacy');
-      const cleanPath = filePath.replace('file://', '');
-      const fileInfo = await getInfoAsync(cleanPath);
-
-      if (!fileInfo.exists) {
+      const info = await LegacyFileSystem.getInfoAsync(contentDir);
+      if (!info.exists) {
         await deleteDownload(downloadId);
         return false;
       }
@@ -535,16 +648,10 @@ class DownloadManager {
     if (!entry) return null;
 
     if (entry.status === DOWNLOAD_STATUS.COMPLETED) {
-      const filePath = entry.filePath.endsWith('.mp4') || entry.filePath.endsWith('.m3u8')
-        ? entry.filePath
-        : `${entry.filePath}video.mp4`;
-
+      const contentDir = await getSecureContentDirectory(mediaType, tmdbId, season, episode);
       try {
-        const { getInfoAsync } = require('expo-file-system/legacy');
-        const cleanPath = filePath.replace('file://', '');
-        const fileInfo = await getInfoAsync(cleanPath);
-
-        if (!fileInfo.exists) {
+        const info = await LegacyFileSystem.getInfoAsync(contentDir);
+        if (!info.exists) {
           await deleteDownload(downloadId);
           return null;
         }
@@ -566,6 +673,72 @@ class DownloadManager {
 
     const entry = await getDownloadEntry(downloadId);
     return entry?.progress || 0;
+  }
+
+  // ─── Get content for playback ───
+  async getContentForPlayback(
+    mediaType: string,
+    tmdbId: string,
+    season: number | null = null,
+    episode: number | null = null
+  ): Promise<{
+    videoPath: string;
+    metadata: any;
+    subtitles: string[];
+    contentDir: string;
+  } | null> {
+    try {
+      const contentDir = await getSecureContentDirectory(mediaType, tmdbId, season, episode);
+      const info = await LegacyFileSystem.getInfoAsync(contentDir);
+      if (!info.exists) return null;
+
+      const videoPath = `${contentDir}video.nfx`;
+      const videoInfo = await LegacyFileSystem.getInfoAsync(videoPath);
+      if (!videoInfo.exists) return null;
+
+      const metadata = await loadContentMetadata(contentDir);
+      const subtitles = await getAvailableSubtitles(contentDir);
+
+      return {
+        videoPath,
+        metadata,
+        subtitles,
+        contentDir,
+      };
+    } catch (error) {
+      console.error('[DownloadManager] Get content error:', error);
+      return null;
+    }
+  }
+
+  // ─── Decrypt content for playback ───
+  async getDecryptedPlaybackPath(
+    mediaType: string,
+    tmdbId: string,
+    season: number | null = null,
+    episode: number | null = null
+  ): Promise<{ tempPath: string; metadata: any; subtitles: string[] } | null> {
+    try {
+      const content = await this.getContentForPlayback(mediaType, tmdbId, season, episode);
+      if (!content) return null;
+
+      const tempPath = await decryptFileToTemp(content.videoPath);
+      if (!tempPath) return null;
+
+      return {
+        tempPath,
+        metadata: content.metadata,
+        subtitles: content.subtitles,
+      };
+    } catch (error) {
+      console.error('[DownloadManager] Decrypt error:', error);
+      return null;
+    }
+  }
+
+  // ─── Cleanup temp file ───
+  async cleanupPlaybackTemp(tempPath: string): Promise<void> {
+    await cleanupTempFile(tempPath);
   }
 
   subscribe(callback: (event: string, data: any) => void) {

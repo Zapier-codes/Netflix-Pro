@@ -1,8 +1,17 @@
 import React, { useState } from 'react';
-import { StyleSheet, Image, TouchableOpacity, Dimensions, View, Text, Alert } from 'react-native';
+import {
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  Dimensions,
+  View,
+  Text,
+  Alert,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
 import { getImageUrl } from '../api/tmdbApi';
 import ImagePlaceholder from './ImagePlaceholder';
-import { Ionicons } from '@expo/vector-icons';
 import Badge from './Badge';
 import { SPORT_LOGO_MAP } from '../api/streameastApi';
 
@@ -15,26 +24,26 @@ const formatStartTime = (timestamp) => {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  
+
   const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  
-  let timeStr = date.toLocaleTimeString('en-US', { 
-    hour: 'numeric', 
+
+  let timeStr = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
     minute: '2-digit',
-    hour12: true 
+    hour12: true,
   });
-  
+
   if (dateOnly.getTime() === today.getTime()) {
     return `Today at ${timeStr}`;
   } else if (dateOnly.getTime() === tomorrow.getTime()) {
     return `Tomorrow at ${timeStr}`;
   } else {
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
-      hour12: true
+      hour12: true,
     });
   }
 };
@@ -47,69 +56,204 @@ const MediaCard = ({
   width: customWidth,
   height: customImageHeight,
   isContinueWatching = false,
-  isLiveStream = false
+  isLiveStream = false,
+  hasWatched = false,
 }) => {
+  const { colors, isDark } = useTheme();
   const [imageError, setImageError] = useState(false);
-  
-  const cardWidth = isLiveStream 
+
+  // ─── Get display title ───
+  const getDisplayTitle = () => {
+    if (isLiveStream) return item.title || 'Live Event';
+    if (isContinueWatching) return item.title || 'Untitled';
+    return item.title || item.name || 'Untitled';
+  };
+
+  // ─── Get poster path ───
+  const getPosterPath = () => {
+    if (isContinueWatching) return item.posterPath || item.poster_path || null;
+    return item.poster_path || item.posterPath || null;
+  };
+
+  // ─── Get rating ───
+  const getRating = () => {
+    if (isContinueWatching) return item.voteAverage || item.vote_average || null;
+    return item.vote_average || item.voteAverage || null;
+  };
+
+  // ─── Get progress ───
+  const getProgress = () => {
+    if (isContinueWatching) {
+      if (item.progress !== undefined) return item.progress;
+      if (item.position && item.duration) return item.position / item.duration;
+    }
+    return 0;
+  };
+
+  // ─── Get episode info ───
+  const getEpisodeInfo = () => {
+    if (item.mediaType === 'tv' && item.season && item.episode) {
+      return `S${item.season}:E${item.episode}`;
+    }
+    return null;
+  };
+
+  // ─── Get media type ───
+  const getMediaType = () => {
+    if (isContinueWatching) return item.mediaType || 'movie';
+    if (isLiveStream) return 'live';
+    return item.media_type || (item.title ? 'movie' : 'tv');
+  };
+
+  const displayTitle = getDisplayTitle();
+  const posterPath = getPosterPath();
+  const rating = getRating();
+  const progress = getProgress();
+  const episodeInfo = getEpisodeInfo();
+  const mediaType = getMediaType();
+
+  const cardWidth = isLiveStream
     ? 240
-    : (customWidth || styles.defaultCardWidth);
-  const imageContainerHeight = isLiveStream 
+    : customWidth || defaultWidth;
+  const imageContainerHeight = isLiveStream
     ? 135
-    : (customImageHeight || styles.defaultImageHeight);
-  
+    : customImageHeight || defaultHeight;
+
   let imageSource = null;
-  
+
   if (isLiveStream) {
     const sportToken = item.sportToken || 'DEFAULT';
     const logoUrl = SPORT_LOGO_MAP[sportToken] || SPORT_LOGO_MAP['DEFAULT'];
     imageSource = { uri: logoUrl };
   } else {
-    const posterPath = item.poster_path || item.posterPath;
     imageSource = posterPath && !imageError
       ? { uri: getImageUrl(posterPath) }
       : null;
   }
 
-  const progress = (item.position && item.duration) ? (item.position / item.duration) : 0;
-
   const handleRemove = () => {
     Alert.alert(
       'Remove from Continue Watching',
-      `Are you sure you want to remove "${item.title || 'this item'}"?`,
+      `Are you sure you want to remove "${displayTitle}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => onRemovePress(item.id), 
+          onPress: () => onRemovePress?.(item.id || item.mediaId),
         },
       ]
     );
   };
 
   const handleInfo = () => {
-    if (onInfoPress) {
-      onInfoPress(item);
-    }
+    onInfoPress?.(item);
   };
 
   const handlePlay = () => {
     if (isContinueWatching && onPress) {
-      onPress(item, true); 
+      onPress(item, true);
     } else if (onPress) {
-      onPress(item); 
+      onPress(item);
     }
   };
 
-  const mediaType = item.media_type || (item.title ? 'movie' : 'tv');
+  // ─── Live Stream Card ───
+  if (isLiveStream) {
+    return (
+      <View style={[styles.outerContainer, { width: cardWidth }, styles.liveStreamContainer]}>
+        <TouchableOpacity
+          style={styles.touchableContainer}
+          onPress={handlePlay}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.imageContainer, { height: imageContainerHeight }]}>
+            {imageSource ? (
+              <Image
+                source={imageSource}
+                style={[styles.image, styles.liveStreamImage]}
+                resizeMode="contain"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <ImagePlaceholder width={cardWidth} height={imageContainerHeight} />
+            )}
+            <Badge isLive={true} isUpcoming={!item.isLive} />
+          </View>
+        </TouchableOpacity>
+        <View style={[styles.liveStreamFooterContainer, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.liveStreamTitle, { color: colors.text }]} numberOfLines={2}>
+            {displayTitle}
+          </Text>
+          {!item.isLive && item.matchTime && (
+            <Text style={[styles.startTimeText, { color: colors.textSub }]}>
+              {formatStartTime(item.matchTime)}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  }
 
+  // ─── Continue Watching Card ───
+  if (isContinueWatching) {
+    return (
+      <View style={[styles.outerContainer, { width: cardWidth }]}>
+        <TouchableOpacity
+          style={styles.touchableContainer}
+          onPress={handlePlay}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.imageContainer, { height: imageContainerHeight }]}>
+            {imageSource ? (
+              <Image
+                source={imageSource}
+                style={styles.image}
+                resizeMode="cover"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <ImagePlaceholder width={cardWidth} height={imageContainerHeight} />
+            )}
+            <View style={styles.playOverlay}>
+              <View style={[styles.playButtonBackground, { backgroundColor: 'rgba(0,0,0,0.7)' }]} />
+              <Ionicons name="play-circle-outline" size={90} color="#FFFFFF" style={styles.playIcon} />
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        <View style={[styles.footerContainer, { backgroundColor: colors.surface }]}>
+          {episodeInfo && (
+            <Text style={[styles.episodeText, { color: colors.textSub }]} numberOfLines={1}>
+              {episodeInfo}
+            </Text>
+          )}
+          {!episodeInfo && (
+            <Text style={[styles.episodeText, { color: colors.textSub }]} numberOfLines={1}>
+              {displayTitle}
+            </Text>
+          )}
+          {progress > 0 && progress < 1 && (
+            <View style={[styles.progressBarContainer, { backgroundColor: colors.surfaceRaised }]}>
+              <View style={[styles.progressBarFill, { backgroundColor: colors.gold, width: `${progress * 100}%` }]} />
+            </View>
+          )}
+          <View style={styles.footerActions}>
+            <TouchableOpacity onPress={handleInfo} style={styles.iconButton}>
+              <Ionicons name="information-circle-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleRemove} style={styles.iconButton}>
+              <Ionicons name="close-circle-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // ─── Regular Media Card ───
   return (
-    <View style={[
-      styles.outerContainer, 
-      { width: cardWidth },
-      isLiveStream && styles.liveStreamContainer
-    ]}>
+    <View style={[styles.outerContainer, { width: cardWidth }]}>
       <TouchableOpacity
         style={styles.touchableContainer}
         onPress={handlePlay}
@@ -119,81 +263,33 @@ const MediaCard = ({
           {imageSource ? (
             <Image
               source={imageSource}
-              style={[styles.image, isLiveStream && styles.liveStreamImage]}
-              resizeMode={isLiveStream ? "contain" : "cover"}
+              style={styles.image}
+              resizeMode="cover"
               onError={() => setImageError(true)}
             />
           ) : (
             <ImagePlaceholder width={cardWidth} height={imageContainerHeight} />
           )}
-
-          {!isContinueWatching && !isLiveStream && (
-            <Badge
-              mediaType={mediaType}
-              releaseDate={item.release_date}
-              firstAirDate={item.first_air_date}
-              lastAirDate={item.last_air_date}
-            />
-          )}
-
-          {isLiveStream && (
-            <Badge isLive={true} isUpcoming={!item.isLive} />
-          )}
-
-          {isContinueWatching && (
-            <View style={styles.playOverlay}>
-              <View style={styles.playButtonBackground} />
-              <Ionicons
-                name="play-circle-outline"
-                size={90}
-                color="#FFFFFF"
-                style={styles.playIcon}
-              />
+          <Badge
+            mediaType={mediaType}
+            releaseDate={item.release_date}
+            firstAirDate={item.first_air_date}
+            lastAirDate={item.last_air_date}
+            hasWatched={hasWatched}
+          />
+          {rating && rating > 0 && (
+            <View style={[styles.ratingBadge, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
+              <Ionicons name="star" size={10} color="#FFD700" />
+              <Text style={styles.ratingBadgeText}>{rating.toFixed(1)}</Text>
             </View>
           )}
         </View>
       </TouchableOpacity>
-
-      {isContinueWatching && (
-        <View style={styles.footerContainer}>
-          {item.mediaType === 'tv' && item.season && item.episode && (
-            <Text style={styles.episodeText} numberOfLines={1}>
-              S{item.season}:E{item.episode}
-            </Text>
-          )}
-          {item.mediaType === 'movie' && (
-            <Text style={styles.episodeText} numberOfLines={1}>
-              {item.title}
-            </Text>
-          )}
-          {progress > 0 && (
-            <View style={styles.progressBarContainer}>
-              <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
-            </View>
-          )}
-          <View style={styles.footerActions}>
-            <TouchableOpacity onPress={handleInfo} style={styles.iconButton}>
-              <Ionicons name="information-circle-outline" size={22} color="#FFF" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleRemove} style={styles.iconButton}>
-              <Ionicons name="close-circle-outline" size={22} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {isLiveStream && (
-        <View style={styles.liveStreamFooterContainer}>
-          <Text style={styles.liveStreamTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          {!item.isLive && item.matchTime && (
-            <Text style={styles.startTimeText}>
-              {formatStartTime(item.matchTime)}
-            </Text>
-          )}
-        </View>
-      )}
+      <View style={[styles.footerContainer, { backgroundColor: colors.surface }]}>
+        <Text style={[styles.episodeText, { color: colors.text }]} numberOfLines={2}>
+          {displayTitle}
+        </Text>
+      </View>
     </View>
   );
 };
@@ -202,8 +298,6 @@ const defaultWidth = width / 3 - 16;
 const defaultHeight = defaultWidth * 1.5;
 
 const styles = StyleSheet.create({
-  defaultCardWidth: defaultWidth,
-  defaultImageHeight: defaultHeight,
   outerContainer: {
     marginHorizontal: 4,
     marginBottom: 5,
@@ -219,8 +313,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  touchableContainer: {
-  },
+  touchableContainer: {},
   imageContainer: {
     width: '100%',
     backgroundColor: '#222',
@@ -236,6 +329,23 @@ const styles = StyleSheet.create({
   liveStreamImage: {
     backgroundColor: '#000',
   },
+  ratingBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 3,
+    zIndex: 5,
+  },
+  ratingBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
   playOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
@@ -245,11 +355,9 @@ const styles = StyleSheet.create({
     width: 48 * 1.5,
     height: 48 * 1.5,
     borderRadius: 24 * 1.5,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     position: 'absolute',
   },
-  playIcon: {
-  },
+  playIcon: {},
   footerContainer: {
     paddingHorizontal: 8,
     paddingTop: 5,
@@ -258,7 +366,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   episodeText: {
-    color: '#AAA',
     fontSize: 11,
     fontWeight: 'bold',
     textAlign: 'left',
@@ -266,13 +373,11 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 1.5,
     marginBottom: 6,
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#E50914',
     borderRadius: 1.5,
   },
   footerActions: {
@@ -290,14 +395,12 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   liveStreamTitle: {
-    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
     lineHeight: 18,
   },
   startTimeText: {
-    color: '#999999',
     fontSize: 11,
     textAlign: 'center',
     marginTop: 4,

@@ -8,9 +8,10 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';;
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 // Zustand Stores
@@ -144,7 +145,7 @@ const DownloadsScreen = ({ navigation }) => {
   const handlePlay = useCallback(async (item: any) => {
     const basePath = item.filePath.endsWith('.m3u8') || item.filePath.endsWith('.mp4')
       ? item.filePath
-      : ${item.filePath}video.mp4;
+      : `${item.filePath}video.mp4`;
 
     const cleanPath = basePath.replace('file://', '');
 
@@ -171,9 +172,9 @@ const DownloadsScreen = ({ navigation }) => {
         return;
       }
 
-      const offlinePath = basePath.startsWith('file://') ? basePath : ile://;
+      const offlinePath = basePath.startsWith('file://') ? basePath : `file://${cleanPath}`;
 
-      router.push(`/player?mediaId=item.tmdbId&mediaType=item.mediaType&title=item.title&season=item.season&episode=item.episode&episodeTitle=item.episodeTitle&poster_path=item.posterPath&isOffline=true&offlineFilePath=offlinePath`);;
+      router.push(`/player?mediaId=${item.tmdbId}&mediaType=${item.mediaType}&title=${item.title}&season=${item.season}&episode=${item.episode}&episodeTitle=${item.episodeTitle}&poster_path=${item.posterPath}&isOffline=true&offlineFilePath=${offlinePath}`);
     } catch (error) {
       Alert.alert('Error', 'Failed to access downloaded file');
     }
@@ -244,7 +245,7 @@ const DownloadsScreen = ({ navigation }) => {
         {hasDownloads && (
           <View style={styles.storageSection}>
             <View style={[styles.storageBar, { backgroundColor: colors.surface }]}>
-              <View style={[styles.storageBarFill, { width: ${Math.min(100, storagePercentage)}%, backgroundColor: colors.gold }]} />
+              <View style={[styles.storageBarFill, { width: `${Math.min(100, storagePercentage)}%`, backgroundColor: colors.gold }]} />
             </View>
             <Text style={[styles.storageText, { color: colors.textSub }]}>
               {formatFileSize(storageUsed)} used • {formatFileSize(availableStorage)} available

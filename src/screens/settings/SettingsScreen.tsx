@@ -1,5 +1,5 @@
 // src/screens/settings/SettingsScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';;
+import { router, useFocusEffect } from 'expo-router';
 import Constants from 'expo-constants';
 
 // Zustand Stores
@@ -115,7 +115,7 @@ const SettingsScreen = () => {
 
     showDestructiveAlert(
       'Clear All Downloads',
-      Delete all  downloads? This will free up .,
+      `Delete all ${totalDownloadsCount} downloads? This will free up ${formatFileSize(downloadStorageUsed)}.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -328,7 +328,7 @@ const SettingsScreen = () => {
                   onPress={() => setAutoDeleteUnwatchedDays(days)}
                 >
                   <Text style={[styles.qualityButtonText, autoDeleteUnwatchedDays === days && { color: '#000' }, { color: colors.text }]}>
-                    {days === 0 ? 'Never' : ${days}d}
+                    {days === 0 ? 'Never' : `${days}d`}
                   </Text>
                 </TouchableOpacity>
               ))}

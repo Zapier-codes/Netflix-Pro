@@ -1,5 +1,4 @@
-// src/utils/storage.ts
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CONTINUE_WATCHING_KEY = 'continueWatching';
 const EPISODE_PROGRESS_KEY_PREFIX = 'episodeProgress_';
@@ -15,15 +14,7 @@ const SUBTITLES_ENABLED_KEY = 'subtitlesEnabled'; // New key for enabled state
 const STREAM_SOURCE_ORDER_KEY = 'streamSourceOrder';
 const STREAM_SOURCE_SIGNATURE_KEY = 'streamSourceSignature';
 
-export const STORAGE_KEYS = {
-  DOWNLOADS_INDEX: 'downloads_index',
-  DOWNLOAD_SETTINGS: 'download_settings',
-  STREAM_SOURCES_ORDER: 'stream_sources_order',
-  CHECK_UPDATES: 'check_updates',
-  LAST_UPDATE_CHECK: 'last_update_check',
-};
-
-export const FLUX_SOURCE_URL = 'https://streamprovider.byteful.me/';
+export const FLUX_SOURCE_URL = "https://streamprovider.byteful.me/";
 
 // Define default sources here, so it's accessible by other modules if needed
 // This should match the `name` property of the sources in vidsrcApi.js
@@ -34,49 +25,7 @@ export const DEFAULT_STREAM_SOURCES = [
   { name: 'cineby.gd', timeoutInSeconds: 10, type: 'direct', defaultBaseUrl: 'https://cineby.gd' },
 ];
 
-// --- Downloads Directory / Content Path Helpers ---
-
-export const getDownloadsDirectory = (): string => {
-  return 'downloads/';
-};
-
-export const getContentDirectory = (
-  mediaType: string,
-  tmdbId: string,
-  season?: number | null,
-  episode?: number | null
-): string => {
-  if (mediaType === 'movie') {
-    return `${getDownloadsDirectory()}movies/${tmdbId}/`;
-  } else if (mediaType === 'tv') {
-    return `${getDownloadsDirectory()}tv/${tmdbId}/season_${season}/episode_${episode}/`;
-  }
-  return `${getDownloadsDirectory()}${tmdbId}/`;
-};
-
-export const generateDownloadId = (
-  mediaType: string,
-  tmdbId: string,
-  season?: number | null,
-  episode?: number | null
-): string => {
-  if (mediaType === 'movie') {
-    return `movie_${tmdbId}`;
-  }
-  return `tv_${tmdbId}_s${season}_e${episode}`;
-};
-
-export const DOWNLOAD_STATUS = {
-  QUEUED: 'queued',
-  DOWNLOADING: 'downloading',
-  PAUSED: 'paused',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-} as const;
-
-// --- Continue Watching / Watch Progress ---
-
-export const saveWatchProgress = async (mediaId: string, data: any) => {
+export const saveWatchProgress = async (mediaId, data) => {
   try {
     const watchDataString = await AsyncStorage.getItem(CONTINUE_WATCHING_KEY);
     const watchData = watchDataString ? JSON.parse(watchDataString) : {};
@@ -102,7 +51,7 @@ export const saveWatchProgress = async (mediaId: string, data: any) => {
   }
 };
 
-export const getWatchProgress = async (mediaId: string) => {
+export const getWatchProgress = async (mediaId) => {
   try {
     const watchDataString = await AsyncStorage.getItem(CONTINUE_WATCHING_KEY);
     const watchData = watchDataString ? JSON.parse(watchDataString) : {};
@@ -113,11 +62,11 @@ export const getWatchProgress = async (mediaId: string) => {
   }
 };
 
-const getEpisodeProgressKey = (mediaId: string, seasonNumber: number, episodeNumber: number) => {
+const getEpisodeProgressKey = (mediaId, seasonNumber, episodeNumber) => {
   return `${EPISODE_PROGRESS_KEY_PREFIX}tv_${mediaId}_s${seasonNumber}_e${episodeNumber}`;
 };
 
-export const saveEpisodeWatchProgress = async (mediaId: string, seasonNumber: number, episodeNumber: number, progressData: any) => {
+export const saveEpisodeWatchProgress = async (mediaId, seasonNumber, episodeNumber, progressData) => {
   try {
     const key = getEpisodeProgressKey(mediaId, seasonNumber, episodeNumber);
     const dataToSave = {
@@ -132,7 +81,7 @@ export const saveEpisodeWatchProgress = async (mediaId: string, seasonNumber: nu
   }
 };
 
-export const getEpisodeWatchProgress = async (mediaId: string, seasonNumber: number, episodeNumber: number) => {
+export const getEpisodeWatchProgress = async (mediaId, seasonNumber, episodeNumber) => {
   try {
     const key = getEpisodeProgressKey(mediaId, seasonNumber, episodeNumber);
     const progressString = await AsyncStorage.getItem(key);
@@ -143,13 +92,13 @@ export const getEpisodeWatchProgress = async (mediaId: string, seasonNumber: num
   }
 };
 
-export const getShowWatchProgress = async (mediaId: string) => {
+export const getShowWatchProgress = async (mediaId) => {
   try {
     const keys = await AsyncStorage.getAllKeys();
     const episodeProgressKeys = keys.filter(key => key.startsWith(`${EPISODE_PROGRESS_KEY_PREFIX}tv_${mediaId}_`));
     const progressEntries = await AsyncStorage.multiGet(episodeProgressKeys);
 
-    const showProgress: Record<number, Record<number, any>> = {};
+    const showProgress = {};
     progressEntries.forEach(([key, value]) => {
       if (value) {
         const parts = key.replace(`${EPISODE_PROGRESS_KEY_PREFIX}tv_${mediaId}_s`, '').split('_e');
@@ -177,10 +126,10 @@ export const getContinueWatchingList = async () => {
     return Object.entries(watchData)
       .map(([mediaId, data]) => ({
         id: mediaId,
-        ...data as any,
+        ...data, // data contains the last watched episode details
       }))
       .sort((a, b) => {
-        return new Date(b.lastWatched).getTime() - new Date(a.lastWatched).getTime();
+        return new Date(b.lastWatched) - new Date(a.lastWatched);
       });
   } catch (error) {
     console.error('Error getting continue watching list:', error);
@@ -189,7 +138,7 @@ export const getContinueWatchingList = async () => {
 };
 
 // Clear a specific show/movie from continue watching
-export const removeFromContinueWatching = async (mediaId: string) => {
+export const removeFromContinueWatching = async (mediaId) => {
   try {
     const watchDataString = await AsyncStorage.getItem(CONTINUE_WATCHING_KEY);
     const watchData = watchDataString ? JSON.parse(watchDataString) : {};
@@ -206,7 +155,7 @@ export const removeFromContinueWatching = async (mediaId: string) => {
 // --- Stream Cache Functions ---
 
 // Save a stream URL, its referer, and sourceName to the cache
-export const saveStreamUrl = async (contentId: string, url: string, referer: string | null, sourceName: string | null) => {
+export const saveStreamUrl = async (contentId, url, referer, sourceName) => {
   if (!contentId || !url) return false; // referer can be null, sourceName can be null
   try {
     const cacheString = await AsyncStorage.getItem(STREAM_CACHE_KEY);
@@ -226,7 +175,7 @@ export const saveStreamUrl = async (contentId: string, url: string, referer: str
 };
 
 // Get a cached stream URL if it's not expired
-export const getCachedStreamUrl = async (contentId: string) => {
+export const getCachedStreamUrl = async (contentId) => {
   if (!contentId) return null;
   try {
     const cacheString = await AsyncStorage.getItem(STREAM_CACHE_KEY);
@@ -256,7 +205,7 @@ export const getCachedStreamUrl = async (contentId: string) => {
 };
 
 // Clear a specific stream URL from the cache
-export const clearSpecificStreamFromCache = async (contentId: string) => {
+export const clearSpecificStreamFromCache = async (contentId) => {
   if (!contentId) {
     console.warn('clearSpecificStreamFromCache called with no contentId');
     return;
@@ -267,6 +216,7 @@ export const clearSpecificStreamFromCache = async (contentId: string) => {
     if (cache[contentId]) {
       delete cache[contentId];
       await AsyncStorage.setItem(STREAM_CACHE_KEY, JSON.stringify(cache));
+    } else {
     }
   } catch (e) {
     console.error(`Failed to clear cached stream URL for ${contentId} from main cache object.`, e);
@@ -284,7 +234,7 @@ export const clearStreamCache = async () => { // This clears the ENTIRE cache
 // --- Auto Play Setting ---
 
 // Save the auto-play setting
-export const saveAutoPlaySetting = async (isEnabled: boolean) => {
+export const saveAutoPlaySetting = async (isEnabled) => {
   try {
     await AsyncStorage.setItem(AUTO_PLAY_KEY, JSON.stringify(isEnabled));
     return true;
@@ -308,14 +258,14 @@ export const getAutoPlaySetting = async () => {
 // --- Search History Functions ---
 
 // Save a search query to history
-export const saveSearchQuery = async (query: string) => {
+export const saveSearchQuery = async (query) => {
   if (!query || typeof query !== 'string' || !query.trim()) return false;
   const trimmedQuery = query.trim();
   try {
     const historyString = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
     let history = historyString ? JSON.parse(historyString) : [];
     // Remove existing entry if it's already there to move it to the top
-    history = history.filter((item: string) => item !== trimmedQuery);
+    history = history.filter(item => item !== trimmedQuery);
     // Add new query to the beginning
     history.unshift(trimmedQuery);
     // Limit history size
@@ -342,13 +292,13 @@ export const getSearchHistory = async () => {
 };
 
 // Remove a specific search query from history
-export const removeSearchQuery = async (queryToRemove: string) => {
+export const removeSearchQuery = async (queryToRemove) => {
   if (!queryToRemove || typeof queryToRemove !== 'string' || !queryToRemove.trim()) return false;
   const trimmedQuery = queryToRemove.trim();
   try {
     const historyString = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
     let history = historyString ? JSON.parse(historyString) : [];
-    history = history.filter((item: string) => item !== trimmedQuery);
+    history = history.filter(item => item !== trimmedQuery);
     await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
     return true;
   } catch (error) {
@@ -370,7 +320,7 @@ export const clearSearchHistory = async () => {
 
 // --- Subtitle Preference Functions ---
 
-export const saveSubtitleLanguagePreference = async (languageCode: string | null) => {
+export const saveSubtitleLanguagePreference = async (languageCode) => {
   try {
     // languageCode can be a string (e.g., 'en') or null (for 'None'/disabled)
     if (languageCode === null) {
@@ -404,7 +354,7 @@ export const getLastSelectedSubtitleLanguage = getSubtitleLanguagePreference;
 
 // --- End Subtitle Preference Functions ---
 
-export const saveStreamSourceOrder = async (sourceOrder: any[]) => {
+export const saveStreamSourceOrder = async (sourceOrder) => {
   // sourceOrder should be an array of objects like: { name: 'vidsrc.cc', timeoutInSeconds: 20 }
   // We only really need to store the names and their order. Timeouts can be part of this object too.
   try {
@@ -439,7 +389,7 @@ export const getStreamSourceOrder = async () => {
     if (storedOrderJson) {
       const storedOrder = JSON.parse(storedOrderJson);
       // Create a new array based on storedOrder, validating against DEFAULT_STREAM_SOURCES
-      const orderedFromStorage = storedOrder.map((storedSource: any) => {
+      const orderedFromStorage = storedOrder.map(storedSource => {
         const defaultDetail = DEFAULT_STREAM_SOURCES.find(ds => ds.name === storedSource.name);
         if (defaultDetail) {
           // Merge stored order with default details to ensure consistency
@@ -452,11 +402,11 @@ export const getStreamSourceOrder = async () => {
       }).filter(Boolean); // Remove nulls
 
       // Add any new default sources that weren't in the stored order
-      const newSources = DEFAULT_STREAM_SOURCES.filter((defaultSource: any) =>
-        !orderedFromStorage.some((os: any) => os.name === defaultSource.name)
+      const newSources = DEFAULT_STREAM_SOURCES.filter(defaultSource =>
+        !orderedFromStorage.some(os => os.name === defaultSource.name)
       );
 
-      effectiveOrder = [...orderedFromStorage, ...newSources.map((s: any) => ({ ...s }))];
+      effectiveOrder = [...orderedFromStorage, ...newSources.map(s => ({ ...s }))];
     }
 
     return effectiveOrder;
@@ -478,7 +428,6 @@ export default {
   removeFromContinueWatching,
   saveStreamUrl,
   getCachedStreamUrl,
-  clearSpecificStreamFromCache,
   clearStreamCache,
   saveAutoPlaySetting,
   getAutoPlaySetting,
@@ -493,12 +442,5 @@ export default {
   // Stream Source Order
   saveStreamSourceOrder,
   getStreamSourceOrder,
-  DEFAULT_STREAM_SOURCES,
-  // Downloads helpers
-  STORAGE_KEYS,
-  FLUX_SOURCE_URL,
-  getDownloadsDirectory,
-  getContentDirectory,
-  generateDownloadId,
-  DOWNLOAD_STATUS,
+  DEFAULT_STREAM_SOURCES, // Exporting for use in settings or API layer
 };

@@ -1,6 +1,55 @@
 // src/services/networkService.ts
 import NetInfo from '@react-native-community/netinfo';
-import { DeviceEventEmitter } from 'react-native';
+
+// Minimal dependency-free EventEmitter (Metro doesn't polyfill Node's
+// 'events' module, and RN no longer exposes a global EventEmitter — so we
+// implement the small subset this service actually needs).
+class EventEmitter {
+  private listeners: Record<string, Array<(...args: any[]) => void>> = {};
+
+  on(event: string, listener: (...args: any[]) => void): this {
+    if (!this.listeners[event]) this.listeners[event] = [];
+    this.listeners[event].push(listener);
+    return this;
+  }
+
+  addListener(event: string, listener: (...args: any[]) => void): this {
+    return this.on(event, listener);
+  }
+
+  off(event: string, listener: (...args: any[]) => void): this {
+    this.listeners[event] = (this.listeners[event] || []).filter(l => l !== listener);
+    return this;
+  }
+
+  removeListener(event: string, listener: (...args: any[]) => void): this {
+    return this.off(event, listener);
+  }
+
+  once(event: string, listener: (...args: any[]) => void): this {
+    const wrapper = (...args: any[]) => {
+      this.off(event, wrapper);
+      listener(...args);
+    };
+    return this.on(event, wrapper);
+  }
+
+  emit(event: string, ...args: any[]): boolean {
+    const eventListeners = this.listeners[event];
+    if (!eventListeners || eventListeners.length === 0) return false;
+    eventListeners.slice().forEach(listener => listener(...args));
+    return true;
+  }
+
+  removeAllListeners(event?: string): this {
+    if (event) {
+      delete this.listeners[event];
+    } else {
+      this.listeners = {};
+    }
+    return this;
+  }
+}
 
 export enum NetworkStatus {
   ONLINE = 'online',
