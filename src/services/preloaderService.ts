@@ -2,7 +2,8 @@
 import { cacheService } from './cacheService';
 import { 
   fetchTrending, 
-  fetchPopularCombined, 
+  fetchPopularMovies,
+  fetchPopularTVShows,
   fetchTopRatedMovies, 
   fetchTopRatedTVShows,
   fetchUpcomingMovies,
@@ -55,20 +56,27 @@ export class PreloaderService {
         console.log('[Preloader] 📡 No cache found, fetching fresh data from TMDB...');
       }
 
-      // Fetch all data in parallel
-      const [trending, popular, topRatedMovies, topRatedTVShows, upcoming] = await Promise.all([
-        fetchTrending('day'),
-        fetchPopularCombined(),
-        fetchTopRatedMovies(),
-        fetchTopRatedTVShows(),
-        fetchUpcomingMovies(),
+      // Fetch all data in parallel - use individual functions instead of fetchPopularCombined
+      const [trending, popularMovies, popularTVShows, topRatedMovies, topRatedTVShows, upcoming] = await Promise.all([
+        fetchTrending('day', 'all'),
+        fetchPopularMovies(),
+        fetchPopularTVShows(),
+        fetchTopRatedMovies({ page: 1 }),
+        fetchTopRatedTVShows({ page: 1 }),
+        fetchUpcomingMovies({ page: 1 }),
       ]);
+
+      // Combine popular movies and TV shows
+      const popular = [
+        ...popularMovies.map((item: any) => ({ ...item, media_type: 'movie' })),
+        ...popularTVShows.map((item: any) => ({ ...item, media_type: 'tv' })),
+      ];
 
       // Combine top-rated movies and TV shows
       const topRated = [
         ...topRatedMovies.map((item: any) => ({ ...item, media_type: 'movie' })),
         ...topRatedTVShows.map((item: any) => ({ ...item, media_type: 'tv' })),
-      ].sort((a, b) => b.vote_average - a.vote_average);
+      ].sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
 
       // Build the home data object
       const homeData = {

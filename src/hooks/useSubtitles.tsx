@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { searchSubtitles, downloadSubtitle } from '../api/opensubtitlesApi';
+import { searchSubtitles, downloadSubtitle } from '../services/unified/subtitles/OpenSubtitlesProvider';
 import { getLanguageName } from '../utils/languageUtils';
 import { saveSubtitleLanguagePreference, getSubtitleLanguagePreference } from '../utils/storage';
 import { timeToSeconds } from '../utils/timeUtils';
@@ -243,3 +243,4 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
     updateCurrentSubtitle,
   };
 };
+

@@ -67,7 +67,7 @@ import {
   fetchUpcomingMovies,
   fetchAiringTodayTV,
   fetchOnTheAirTV,
-} from '../../api/tmdbApi';
+} from '../../services/unified/metadata/TMDBMetadata';
 
 // Badge tier sorting
 import { sortByBadgeTier, BADGE_SORTABLE_ROW_IDS } from '../../utils/badgeHelper';
@@ -882,3 +882,4 @@ const styles = StyleSheet.create({
 });
 
 export default HomeScreen;
+

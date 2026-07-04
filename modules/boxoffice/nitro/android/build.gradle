@@ -1,0 +1,101 @@
+// modules/boxoffice/nitro/android/build.gradle
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+group = 'expo.modules.boxoffice.nitro'
+version = '1.0.0'
+
+def expoModulesCoreVersion = "55.0.25"
+def nitroModulesVersion = "0.36.1"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.5.0"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21"
+    }
+}
+
+android {
+    namespace "expo.modules.boxoffice.nitro"
+    compileSdkVersion 35
+
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 35
+        versionCode 1
+        versionName "1.0.0"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-O3 -fexceptions -frtti -std=c++17"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+
+        ndk {
+            abiFilters "arm64-v8a", "armeabi-v7a", "x86_64"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDir "src/main/jniLibs"
+            cpp.srcDir "src/main/cpp"
+        }
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven { url "$rootDir/../node_modules/react-native/android" }
+    maven { url "$rootDir/../node_modules/expo-modules-core/android/maven" }
+    maven { url "$rootDir/../node_modules/react-native-nitro-modules/android" }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
+    
+    // Expo modules core
+    implementation "expo.modules:expo-modules-core:$expoModulesCoreVersion"
+    
+    // React Native
+    implementation "com.facebook.react:react-native:0.83.6"
+    
+    // Nitro modules
+    implementation "com.margelo.nitro:react-native-nitro-modules:$nitroModulesVersion"
+    
+    // Coroutines for async operations
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+    
+    // JSON handling
+    implementation "org.json:json:20231013"
+}

@@ -58,7 +58,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'modules/**/android/build.gradle') }}
           restore-keys: gradle-${{ runner.os }}-
 
       # ──────────────────────────────────────────────────────────────────────
@@ -140,6 +140,20 @@ jobs:
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> android/local.properties
 
       # ──────────────────────────────────────────────────────────────────────
+      # Cache Chaquopy Python packages to avoid re-downloading moviebox-api
+      # and its dependencies on every build. The cache key includes the
+      # requirements.txt hash so it invalidates when Python deps change.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Cache Chaquopy Python packages
+        id: chaquopy-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            modules/boxoffice/android/build/python
+            modules/boxoffice/android/build/chaquopy
+          key: chaquopy-${{ runner.os }}-${{ hashFiles('modules/boxoffice/android/src/main/python/requirements.txt') }}
+
+      # ──────────────────────────────────────────────────────────────────────
       # Debug-only workflow, always generates a fresh debug keystore so
       # :app:validateSigningDebug has a file to find. Unconditional now —
       # no build_type branching to fall through on push events.
@@ -177,6 +191,16 @@ jobs:
           echo "AAR downloaded: $(du -sh android/libs/ffmpeg-kit-full-gpl.aar)"
 
       # ──────────────────────────────────────────────────────────────────────
+      # These env vars tell Chaquopy where to find the Python interpreter
+      # and ensure the boxoffice module's Python code is built into the APK.
+      # CHAQUOPY_PYTHON_VERSION pins the Python version for reproducible builds.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Set Chaquopy env vars
+        run: |
+          echo "CHAQUOPY_PYTHON_VERSION=3.12" >> $GITHUB_ENV
+          echo "CHAQUOPY_NO_LICENSE=DIALOG" >> $GITHUB_ENV
+
+      # ──────────────────────────────────────────────────────────────────────
       # Gradle repositories are scoped per-project: when :app resolves its
       # own dependency graph, it only searches repositories it (or a root
       # allprojects block) declared — not repositories declared inside
@@ -195,6 +219,19 @@ jobs:
           echo "✅ pawns-sdk AARs mirrored into android/libs"
           ls -la android/libs
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Verify boxoffice module structure before build to catch missing
+      # files early instead of failing deep in the Gradle build.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Verify boxoffice module
+        run: |
+          echo "Checking boxoffice module structure..."
+          test -f modules/boxoffice/android/build.gradle || { echo "❌ missing build.gradle"; exit 1; }
+          test -f modules/boxoffice/android/src/main/python/requirements.txt || { echo "❌ missing requirements.txt"; exit 1; }
+          test -f modules/boxoffice/expo-module.config.json || { echo "❌ missing expo-module.config.json"; exit 1; }
+          echo "✅ boxoffice module structure valid"
+          cat modules/boxoffice/android/src/main/python/requirements.txt
+
       - name: Build Debug APK
         run: |
           cd android
@@ -203,6 +240,8 @@ jobs:
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -Dorg.gradle.daemon=false"
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          CHAQUOPY_PYTHON_VERSION: ${{ env.CHAQUOPY_PYTHON_VERSION }}
+          CHAQUOPY_NO_LICENSE: ${{ env.CHAQUOPY_NO_LICENSE }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

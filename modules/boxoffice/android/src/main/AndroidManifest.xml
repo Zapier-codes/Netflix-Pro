@@ -1,0 +1,36 @@
+<!-- modules/boxoffice/android/src/main/AndroidManifest.xml -->
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="expo.modules.boxoffice">
+
+    <!-- Permissions required by moviebox-api SDK for network operations -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
+    <!-- Permissions for downloading files -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    
+    <!-- For Android 10+ scoped storage -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    
+    <!-- For foreground download service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
+        
+        <!-- Chaquopy Python service -->
+        <service
+            android:name="com.chaquo.python.PythonService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+            
+    </application>
+
+</manifest>

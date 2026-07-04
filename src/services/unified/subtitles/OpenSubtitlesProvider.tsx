@@ -1,6 +1,7 @@
+// src/api/subtitles/opensubtitlesApi.tsx
 import axios from 'axios';
 
-const API_KEY = '9xkBmnpMy7D3wP9HoxSifWGwJidqY7eO'; // It's free. I don't care that it's public.
+const API_KEY = '9xkBmnpMy7D3wP9HoxSifWGwJidqY7eO';
 const API_URL = 'https://api.opensubtitles.com/api/v1';
 
 const opensubtitlesApi = axios.create({
@@ -22,14 +23,11 @@ const opensubtitlesApi = axios.create({
  * @param {number} [episode] - Optional episode number for TV shows.
  * @returns {Promise<Array>} - A promise that resolves to an array of subtitle results.
  */
-export const searchSubtitles = async (tmdbId, language = 'en', season, episode) => {
+export const searchSubtitles = async (tmdbId: string, language = 'en', season?: number, episode?: number) => {
   try {
-    const params = {
+    const params: any = {
       tmdb_id: tmdbId,
       languages: language,
-      // Prioritize subtitles that matched by video hash, then by trusted sources, then by download count.
-      // The API likely only takes one primary order_by. We'll use moviehash_match.
-      // Further sorting/selection will be done client-side.
       order_by: "moviehash_match",
       order_direction: "desc"
     };
@@ -39,12 +37,12 @@ export const searchSubtitles = async (tmdbId, language = 'en', season, episode) 
     const response = await opensubtitlesApi.get('/subtitles', { params });
 
     if (response.data && response.data.data) {
-      return response.data.data; // Assuming the subtitles are in response.data.data
+      return response.data.data;
     } else {
       console.warn('No subtitles found or unexpected API response format.');
       return [];
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error searching subtitles:', error.response ? error.response.data : error.message);
     return [];
   }
@@ -56,9 +54,8 @@ export const searchSubtitles = async (tmdbId, language = 'en', season, episode) 
  * @param {string} fileId - The ID of the subtitle file to download.
  * @returns {Promise<string|null>} - A promise that resolves to the subtitle content (e.g., SRT format) or null on error.
  */
-export const downloadSubtitle = async (fileId) => {
+export const downloadSubtitle = async (fileId: string) => {
   try {
-    // This endpoint and structure is based on OpenSubtitles docs
     const response = await opensubtitlesApi.post('/download', {
       file_id: fileId,
       sub_format: 'srt'
@@ -66,24 +63,22 @@ export const downloadSubtitle = async (fileId) => {
 
     if (response.data && response.data.link) {
       const subtitleContentResponse = await axios.get(response.data.link);
-      return subtitleContentResponse.data; // The actual subtitle text (SRT/VTT)
+      return subtitleContentResponse.data;
     } else if (response.data && response.data.content) {
-       return response.data.content;
+      return response.data.content;
     } else {
       console.warn('Could not get subtitle download link or content.');
       return null;
     }
-  } catch (error) {
-    console.error('Error downloading subtitle. Full error object:', JSON.stringify(error, null, 2));
-    if (error.response) {
-      console.error('Download Subtitle - Status:', error.response.status);
-      console.error('Download Subtitle - Headers:', JSON.stringify(error.response.headers, null, 2));
-      console.error('Download Subtitle - Data:', JSON.stringify(error.response.data, null, 2));
-    } else if (error.request) {
-      console.error('Download Subtitle - Request Error:', error.request);
-    } else {
-      console.error('Download Subtitle - General Error:', error.message);
-    }
+  } catch (error: any) {
+    console.error('Error downloading subtitle:', error.response ? error.response.data : error.message);
     return null;
   }
 };
+
+export const opensubtitlesApiService = {
+  searchSubtitles,
+  downloadSubtitle,
+};
+
+export default opensubtitlesApiService;

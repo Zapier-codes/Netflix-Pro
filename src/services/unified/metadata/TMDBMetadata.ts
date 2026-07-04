@@ -327,6 +327,34 @@ export const fetchTVShowRecommendations = async (tvId: number): Promise<any[]> =
 };
 
 // ──────────────────────────────────────────────────────────────────────────
+// VIDEOS (TRAILERS) - ADDED THIS SECTION
+// ──────────────────────────────────────────────────────────────────────────
+
+export const fetchMovieVideos = async (movieId: number): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/movie/${movieId}/videos`, {
+      params: { api_key: TMDB_API_KEY }
+    });
+    return response.data.results || [];
+  } catch (error) {
+    console.error('Error fetching movie videos:', error);
+    return [];
+  }
+};
+
+export const fetchTVVideos = async (tvId: number): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/tv/${tvId}/videos`, {
+      params: { api_key: TMDB_API_KEY }
+    });
+    return response.data.results || [];
+  } catch (error) {
+    console.error('Error fetching TV videos:', error);
+    return [];
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────
 // GENRE
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -397,6 +425,9 @@ export default {
   fetchSeasonDetails,
   fetchMovieRecommendations,
   fetchTVShowRecommendations,
+  // Videos (Trailers)
+  fetchMovieVideos,
+  fetchTVVideos,
   // Genre
   fetchMediaByGenre,
   // Search

@@ -45,7 +45,8 @@ export interface KuryanaRecommendation {
 export class KuryanaApiService {
   async searchDramas(query: string): Promise<KuryanaDrama[]> {
     try {
-      const response = await axios.get(${KURYANA_BASE_URL}/api/search/q/);
+      // Fix: Use backticks and ${} for template literal
+      const response = await axios.get(`${KURYANA_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
       return response.data.results || [];
     } catch (error) {
       console.error('[Kuryana] Search error:', error);
@@ -55,7 +56,8 @@ export class KuryanaApiService {
 
   async getDramaDetails(slug: string): Promise<KuryanaDrama | null> {
     try {
-      const response = await axios.get(${KURYANA_BASE_URL}/api/id/);
+      // Fix: Use backticks and ${} for template literal with slug parameter
+      const response = await axios.get(`${KURYANA_BASE_URL}/api/drama/${slug}`);
       return response.data;
     } catch (error) {
       console.error('[Kuryana] Details error:', error);
@@ -65,7 +67,8 @@ export class KuryanaApiService {
 
   async getDramaReviews(slug: string): Promise<KuryanaReview[]> {
     try {
-      const response = await axios.get(${KURYANA_BASE_URL}/api/id//reviews);
+      // Fix: Use backticks and ${} for template literal with slug parameter
+      const response = await axios.get(`${KURYANA_BASE_URL}/api/drama/${slug}/reviews`);
       return response.data.reviews || [];
     } catch (error) {
       console.error('[Kuryana] Reviews error:', error);
@@ -75,7 +78,8 @@ export class KuryanaApiService {
 
   async getDramaRecommendations(slug: string): Promise<KuryanaRecommendation[]> {
     try {
-      const response = await axios.get(${KURYANA_BASE_URL}/api/id//recs);
+      // Fix: Use backticks and ${} for template literal with slug parameter
+      const response = await axios.get(`${KURYANA_BASE_URL}/api/drama/${slug}/recommendations`);
       return response.data.recommendations || [];
     } catch (error) {
       console.error('[Kuryana] Recommendations error:', error);
@@ -85,13 +89,37 @@ export class KuryanaApiService {
 
   async getSeasonalDramas(year: number, quarter: number): Promise<KuryanaDrama[]> {
     try {
-      const response = await axios.get(${KURYANA_BASE_URL}/api/seasonal//);
+      // Fix: Use backticks and ${} for template literal with parameters
+      const response = await axios.get(`${KURYANA_BASE_URL}/api/seasonal/${year}/${quarter}`);
       return response.data.results || [];
     } catch (error) {
       console.error('[Kuryana] Seasonal error:', error);
       return [];
     }
   }
+
+  async getTrendingDramas(): Promise<KuryanaDrama[]> {
+    try {
+      // New method for trending dramas
+      const response = await axios.get(`${KURYANA_BASE_URL}/api/trending`);
+      return response.data.results || [];
+    } catch (error) {
+      console.error('[Kuryana] Trending error:', error);
+      return [];
+    }
+  }
+
+  async getPopularDramas(): Promise<KuryanaDrama[]> {
+    try {
+      // New method for popular dramas
+      const response = await axios.get(`${KURYANA_BASE_URL}/api/popular`);
+      return response.data.results || [];
+    } catch (error) {
+      console.error('[Kuryana] Popular error:', error);
+      return [];
+    }
+  }
 }
 
 export const kuryanaApiService = new KuryanaApiService();
+export default kuryanaApiService;

@@ -19,8 +19,8 @@ import { AlertProvider } from '../src/contexts/AlertContext';
 import { cacheService } from '../src/services/cacheService';
 import { preloaderService } from '../src/services/preloaderService';
 import { networkService } from '../src/services/networkService';
-import downloadManager from '../src/services/downloadManager';
-import { initializeStreamSources } from '../src/api/vidsrcApi';
+import { downloadManager } from '../src/services/downloadManager/DownloadManager';
+import { initializeStreamSources } from '../src/services/unified/providers/vidsrc/VidSrcProvider';
 
 // ─── THRILLER PRELOADER ───
 import { thrillerPreloader } from '../src/services/preloader/ThrillerPreloader';
@@ -28,6 +28,9 @@ import { thrillerPreloader } from '../src/services/preloader/ThrillerPreloader';
 // Pawns consent + SDK
 import { EarningsConsentGate, CONSENT_STORAGE_KEY, checkAndShowConsent } from '../src/components/EarningsConsentGate';
 import { initialize as initializePawns } from '../modules/pawns';
+
+// ─── BOXOFFICE ENGINE ───
+import { boxOffice } from '../modules/boxoffice';
 
 // Pulled from .env — must be prefixed EXPO_PUBLIC_ to be readable at runtime.
 const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
@@ -68,6 +71,7 @@ function AppContent() {
 
   const [error, setError] = useState<string | null>(null);
   const [showConsentGate, setShowConsentGate] = useState(false);
+  const [boxOfficeReady, setBoxOfficeReady] = useState(false);
 
   // ============================================
   // PAWNS SETTINGS NAVIGATION
@@ -75,6 +79,34 @@ function AppContent() {
   const handleOpenSettings = useCallback(() => {
     router.push('/(tabs)/settings');
   }, [router]);
+
+  // ============================================
+  // BOXOFFICE ENGINE INIT
+  // ============================================
+  const initializeBoxOffice = useCallback(async () => {
+    try {
+      console.log('[BoxOffice] 🚀 Initializing engine...');
+      const configResult = await boxOffice.configure({
+        apiVersion: 'v2',
+        downloadDir: '',
+        captionLanguage: 'English',
+        quality: 'best',
+      });
+      if (!configResult.success) {
+        console.warn('[BoxOffice] ⚠️ Config warning:', configResult.error);
+      }
+      const startResult = await boxOffice.start();
+      if (startResult.success) {
+        console.log('[BoxOffice] ✅ Engine running');
+        setBoxOfficeReady(true);
+      } else {
+        console.warn('[BoxOffice] ⚠️ Start failed:', startResult.error);
+      }
+    } catch (err) {
+      console.error('[BoxOffice] ❌ Init error:', err);
+      // Non-fatal: app works without boxoffice
+    }
+  }, []);
 
   // ============================================
   // PRELOAD ALL CONTENT
@@ -101,19 +133,12 @@ function AppContent() {
       }
 
       // ─── STEP 3: EAGER PRELOAD THRILLER TRAILERS ───
-      // This runs BEFORE the user reaches HomeScreen so videos are ready instantly
-      // We use the popular movies from the preloaded home data
-      // NOTE: preloaderService.preloadHomeScreen() returns { popular, ... },
-      // not { popularMovies, ... } — this field name was wrong, which meant
-      // this branch could never run and every launch fell into the fallback
-      // fetch below, bypassing preloaderService's own caching entirely.
       if (homeData?.popular && homeData.popular.length > 0) {
         const thrillerMovies = homeData.popular.slice(0, 6);
         console.log('[App] 🎬 Starting eager thriller preload for', thrillerMovies.length, 'movies');
         await thrillerPreloader.eagerPreload(thrillerMovies);
         console.log('[App] ✅ Thriller trailers preloaded');
       } else {
-        // Fallback: try to get popular movies directly if homeData didn't include them
         try {
           const { fetchPopularMovies } = await import('../src/api/tmdbApi');
           const popularMovies = await fetchPopularMovies();
@@ -159,8 +184,6 @@ function AppContent() {
         console.log('[App] ✅ Background refresh complete with', homeData.trending?.length || 0, 'trending items');
       }
 
-      // Also refresh thriller trailers in background
-      // (same field-name fix as preloadAllContent — was homeData.popularMovies)
       if (homeData?.popular && homeData.popular.length > 0) {
         const thrillerMovies = homeData.popular.slice(0, 6);
         await thrillerPreloader.eagerPreload(thrillerMovies);
@@ -175,6 +198,10 @@ function AppContent() {
   // INITIALIZATION
   // ============================================
   useEffect(() => {
+    // Start boxoffice engine in parallel with content preload
+    // It's non-blocking — the app works fine even if it fails
+    initializeBoxOffice();
+
     preloadAllContent();
 
     const refreshTimer = setTimeout(() => {
@@ -184,6 +211,10 @@ function AppContent() {
     return () => {
       clearTimeout(refreshTimer);
       networkService.destroy();
+      // Stop boxoffice engine on unmount
+      if (boxOfficeReady) {
+        boxOffice.stop().catch(() => {});
+      }
     };
   }, []);
 
@@ -216,7 +247,7 @@ function AppContent() {
     })();
   }, [isInitialized]);
 
-  console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData);
+  console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'boxoffice:', boxOfficeReady);
 
   // Show splash while preloading and no cache
   if (!isInitialized && !hasCachedData && isLoading) {

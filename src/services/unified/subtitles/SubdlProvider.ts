@@ -26,7 +26,8 @@ export class SubdlApiService {
       const params: any = { title, apikey: this.apiKey };
       if (language) params.language = language;
       
-      const response = await axios.get(${SUBDL_BASE_URL}/subtitles, { params });
+      // Fix: Use backticks and ${} for template literal
+      const response = await axios.get(`${SUBDL_BASE_URL}/subtitles`, { params });
       return response.data.subtitles || [];
     } catch (error) {
       console.error('[SubDL] Search error:', error);
@@ -36,7 +37,8 @@ export class SubdlApiService {
 
   async getSubtitleFile(id: string): Promise<string | null> {
     try {
-      const response = await axios.get(${SUBDL_BASE_URL}/subtitle/, {
+      // Fix: Use backticks and ${} for template literal
+      const response = await axios.get(`${SUBDL_BASE_URL}/subtitle/${id}`, {
         params: { apikey: this.apiKey }
       });
       return response.data.url || null;
@@ -48,7 +50,8 @@ export class SubdlApiService {
 
   async getLanguages(): Promise<{ code: string; name: string }[]> {
     try {
-      const response = await axios.get(${SUBDL_BASE_URL}/languages, {
+      // Fix: Use backticks and ${} for template literal
+      const response = await axios.get(`${SUBDL_BASE_URL}/languages`, {
         params: { apikey: this.apiKey }
       });
       return response.data.languages || [];
@@ -60,3 +63,4 @@ export class SubdlApiService {
 }
 
 export const subdlApiService = new SubdlApiService(process.env.SUBDL_API_KEY || '');
+export default subdlApiService;

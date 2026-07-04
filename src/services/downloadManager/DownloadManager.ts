@@ -1,4 +1,4 @@
-﻿// src/services/downloadManager/DownloadManager.ts
+// src/services/downloadManager/DownloadManager.ts
 import networkMonitor from './NetworkMonitor';
 import storageManager from './StorageManager';
 import downloadQueue from './DownloadQueue';
@@ -35,6 +35,9 @@ import {
   cleanupTempFile,
 } from '../../utils/downloadStorage';
 import { getImageUrl } from '../../api/tmdbApi';
+
+// Note: getActiveStreamSources is now imported via require in fetchAndStartDownload
+// to avoid circular dependency issues with the unified providers
 
 class DownloadManager {
   private activeDownloads: Map<any, any>;
@@ -189,7 +192,8 @@ class DownloadManager {
 
   async fetchAndStartDownload(entry: any) {
     try {
-      const { getActiveStreamSources } = require('../../api/vidsrcApi');
+      // Use require to avoid circular dependency with unified providers
+      const { getActiveStreamSources } = require('../../services/unified/providers/vidsrc/VidSrcProvider');
       const sources = getActiveStreamSources();
 
       const fluxSource = sources.find((s: any) => s.name === 'FluxSource');
@@ -298,7 +302,7 @@ class DownloadManager {
         return;
       }
 
-      // ─── Create industry-standard secure directory structure ───
+      // --- Create industry-standard secure directory structure ---
       const contentDir = await getSecureContentDirectory(
         entry.mediaType,
         entry.tmdbId,
@@ -311,7 +315,7 @@ class DownloadManager {
       await ensureDirectoryExists(`${contentDir}subtitles/`);
       await ensureDirectoryExists(`${contentDir}thumbnails/`);
 
-      // ─── Save metadata ───
+      // --- Save metadata ---
       await saveContentMetadata(contentDir, {
         title: entry.title,
         posterPath: entry.posterPath,
@@ -325,7 +329,7 @@ class DownloadManager {
         episodeTitle: entry.episodeTitle || undefined,
       });
 
-      // ─── Save download info ───
+      // --- Save download info ---
       await saveDownloadInfo(contentDir, {
         downloadId: entry.id,
         mediaType: entry.mediaType,
@@ -338,10 +342,10 @@ class DownloadManager {
         episode: entry.episode || undefined,
       });
 
-      // ─── Encrypt and save video ───
+      // --- Encrypt and save video ---
       const videoPath = await encryptAndSaveVideo(result.filePath, contentDir);
 
-      // ─── Download and save subtitles (if available) ───
+      // --- Download and save subtitles (if available) ---
       if (entry.subtitles && entry.subtitles.length > 0) {
         for (const sub of entry.subtitles) {
           try {
@@ -355,10 +359,10 @@ class DownloadManager {
         }
       }
 
-      // ─── Hide from media scanner ───
+      // --- Hide from media scanner ---
       await hideFileFromMediaScanner(contentDir);
 
-      // ─── Update entry with new file path ───
+      // --- Update entry with new file path ---
       await updateDownloadEntry(downloadId, {
         filePath: contentDir,
         fileSize: result.fileSize || 0,
@@ -675,7 +679,7 @@ class DownloadManager {
     return entry?.progress || 0;
   }
 
-  // ─── Get content for playback ───
+  // --- Get content for playback ---
   async getContentForPlayback(
     mediaType: string,
     tmdbId: string,
@@ -711,7 +715,7 @@ class DownloadManager {
     }
   }
 
-  // ─── Decrypt content for playback ───
+  // --- Decrypt content for playback ---
   async getDecryptedPlaybackPath(
     mediaType: string,
     tmdbId: string,
@@ -736,7 +740,7 @@ class DownloadManager {
     }
   }
 
-  // ─── Cleanup temp file ───
+  // --- Cleanup temp file ---
   async cleanupPlaybackTemp(tempPath: string): Promise<void> {
     await cleanupTempFile(tempPath);
   }

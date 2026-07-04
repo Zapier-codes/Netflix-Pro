@@ -1,5 +1,6 @@
 // src/api/subtitles/unifiedSubtitles.ts
-import { openSubtitlesService } from './openSubtitlesApi';
+// The file is at src/api/opensubtitlesApi.tsx, so we need to go up one level
+import { opensubtitlesApiService } from '../opensubtitlesApi';
 import { subdlApiService } from './subdlApi';
 
 export interface SubtitleResult {
@@ -10,6 +11,7 @@ export interface SubtitleResult {
   provider: 'opensubtitles' | 'subdl';
   rating?: number;
   downloads?: number;
+  fileId?: string;
 }
 
 export class UnifiedSubtitlesService {
@@ -31,17 +33,21 @@ export class UnifiedSubtitlesService {
     const results: SubtitleResult[] = [];
 
     try {
-      const osResults = await openSubtitlesService.searchSubtitles(tmdbId, language, season, episode);
-      for (const sub of osResults) {
-        results.push({
-          id: sub.id || sub.file_id,
-          language: sub.language || sub.language_name || language,
-          languageCode: sub.language_code || language,
-          url: sub.url || sub.link || '',
-          provider: 'opensubtitles',
-          rating: sub.ratings?.rating || 0,
-          downloads: sub.downloads || 0
-        });
+      const osResults = await opensubtitlesApiService.searchSubtitles(tmdbId, language, season, episode);
+      
+      if (osResults && Array.isArray(osResults)) {
+        for (const sub of osResults) {
+          results.push({
+            id: sub.id || sub.file_id || `os-${Date.now()}-${Math.random()}`,
+            language: sub.language || sub.language_name || language,
+            languageCode: sub.language_code || language,
+            url: sub.url || sub.link || '',
+            provider: 'opensubtitles',
+            rating: sub.ratings?.rating || 0,
+            downloads: sub.downloads || 0,
+            fileId: sub.file_id || sub.id
+          });
+        }
       }
     } catch (error) {
       console.warn('[UnifiedSubtitles] OpenSubtitles error:', error);
@@ -50,16 +56,20 @@ export class UnifiedSubtitlesService {
     if (results.length === 0) {
       try {
         const subdlResults = await subdlApiService.searchSubtitles(tmdbId, language);
-        for (const sub of subdlResults) {
-          results.push({
-            id: sub.id,
-            language: sub.language,
-            languageCode: sub.languageCode,
-            url: sub.url,
-            provider: 'subdl',
-            rating: sub.rating,
-            downloads: sub.downloads
-          });
+        
+        if (subdlResults && Array.isArray(subdlResults)) {
+          for (const sub of subdlResults) {
+            results.push({
+              id: sub.id || `subdl-${Date.now()}-${Math.random()}`,
+              language: sub.language || language,
+              languageCode: sub.languageCode || language,
+              url: sub.url || '',
+              provider: 'subdl',
+              rating: sub.rating || 0,
+              downloads: sub.downloads || 0,
+              fileId: sub.id
+            });
+          }
         }
       } catch (error) {
         console.warn('[UnifiedSubtitles] SubDL error:', error);
@@ -78,7 +88,7 @@ export class UnifiedSubtitlesService {
   async downloadSubtitle(id: string, provider: 'opensubtitles' | 'subdl'): Promise<string | null> {
     try {
       if (provider === 'opensubtitles') {
-        return await openSubtitlesService.downloadSubtitle(id);
+        return await opensubtitlesApiService.downloadSubtitle(id);
       } else {
         return await subdlApiService.getSubtitleFile(id);
       }
@@ -99,3 +109,4 @@ export class UnifiedSubtitlesService {
 }
 
 export const unifiedSubtitlesService = UnifiedSubtitlesService.getInstance();
+export default unifiedSubtitlesService;

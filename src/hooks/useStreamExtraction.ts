@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { extractM3U8Stream, extractStreamFromSpecificSource } from '../utils/streamExtractor';
 import { extractLiveStreamM3U8 } from '../api/streameastApi';
-import { getActiveStreamSources } from '../api/vidsrcApi';
+import { getActiveStreamSources } from '../services/unified/providers/vidsrc/VidSrcProvider';
 import {
   getCachedStreamUrl,
   saveStreamUrl,
@@ -612,3 +612,4 @@ export const useStreamExtraction = ({
     reset,
   };
 };
+

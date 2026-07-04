@@ -1,0 +1,22 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["expo.modules.boxoffice.BoxOfficePackage"],
+    "gradle": {
+      "buildGradle": "android/build.gradle"
+    }
+  },
+  "nitro": {
+    "modules": ["expo.modules.boxoffice.nitro.BoxOfficeNitroPackage"],
+    "android": {
+      "cppBridge": "nitro/android/src/main/cpp/BoxOfficeNitroBridge.cpp",
+      "gradle": "nitro/android/build.gradle"
+    }
+  },
+  "python": {
+    "enabled": true,
+    "package": "boxoffice_api",
+    "requirements": "android/src/main/python/requirements.txt",
+    "entryPoint": "boxoffice_api.main"
+  }
+}
