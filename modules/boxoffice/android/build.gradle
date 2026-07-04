@@ -2,13 +2,14 @@
 
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
+apply plugin: 'com.chaquo.python'
 
 group = 'expo.modules.boxoffice'
 version = '1.0.0'
 
 def expoModulesCoreVersion = "55.0.25"
 def nitroModulesVersion = "0.36.1"
-def chaquopyVersion = "15.0.1"
+def chaquopyVersion = "16.0.0"  // Update to latest
 
 buildscript {
     repositories {
@@ -19,7 +20,7 @@ buildscript {
     dependencies {
         classpath "com.android.tools.build:gradle:8.5.0"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21"
-        classpath "com.chaquo.python:gradle:15.0.1"
+        // Chaquopy plugin is applied via plugins DSL or apply plugin above
     }
 }
 
@@ -32,14 +33,14 @@ android {
         targetSdkVersion 35
         versionCode 1
         versionName "1.0.0"
+    }
 
-        // Chaquopy Python configuration
-        python {
-            version "3.12"
-            buildPython "python3"
-            pip {
-                install "-r", "src/main/python/requirements.txt"
-            }
+    // Chaquopy Python configuration - MOVED OUT of defaultConfig
+    python {
+        version "3.12"
+        buildPython "python3"
+        pip {
+            install "-r", "src/main/python/requirements.txt"
         }
     }
 
@@ -80,22 +81,10 @@ repositories {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
-    
-    // Expo modules core
     implementation "expo.modules:expo-modules-core:$expoModulesCoreVersion"
-    
-    // React Native
     implementation "com.facebook.react:react-native:0.83.6"
-    
-    // Nitro modules
     implementation "com.margelo.nitro:react-native-nitro-modules:$nitroModulesVersion"
-    
-    // Chaquopy Python runtime
     implementation "com.chaquo.python:runtime:$chaquopyVersion"
-    
-    // Coroutines for async operations
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
-    
-    // JSON handling
     implementation "org.json:json:20231013"
 }
