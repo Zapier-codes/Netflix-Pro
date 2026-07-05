@@ -1,10 +1,19 @@
 name: Build Android Python Wheels
 
 on:
-  workflow_dispatch: {}
-  push:
-    tags:
-      - "android-wheels-v*"
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'GitHub release tag to publish wheels to'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'GitHub release tag to publish wheels to'
+        required: true
+        default: 'android-wheels-latest'
+        type: string
 
 jobs:
   build-wheels:
@@ -24,7 +33,7 @@ jobs:
           ref: v2.33.2
           path: pydantic-core
 
-      - name: Set up Python
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -63,20 +72,15 @@ jobs:
           name: android-wheels
           path: wheels/*.whl
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.event.inputs.release_tag }}
+          name: ${{ inputs.release_tag || github.event.inputs.release_tag }}
           files: wheels/*.whl
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
           body: |
             Prebuilt Android wheels for pydantic-core and jiter.
-
-            **Python version:** 3.13
-            **Architectures:** arm64-v8a, x86_64
-            **Packages:**
-            - pydantic-core v2.33.2
-            - jiter v0.14.0
+            **Python:** 3.13 | **ABIs:** arm64-v8a, x86_64
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,9 +6,23 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  build:
+  # ──────────────────────────────────────────────────────────────────────
+  # STEP 1: Build wheels FIRST (reusable workflow call)
+  # This ensures wheels exist before the APK build starts.
+  # ──────────────────────────────────────────────────────────────────────
+  build-wheels:
+    uses: ./.github/workflows/build-android-wheels.yml
+    with:
+      release_tag: android-wheels-latest
+
+  # ──────────────────────────────────────────────────────────────────────
+  # STEP 2: Build APK after wheels are ready
+  # needs: build-wheels ensures synchronous execution
+  # ──────────────────────────────────────────────────────────────────────
+  build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
+    needs: build-wheels  # Wait for wheels to finish
 
     steps:
       - name: Free disk space
@@ -106,37 +120,62 @@ jobs:
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> android/local.properties
 
       # ──────────────────────────────────────────────────────────────────────
-      # pydantic-core and jiter have no prebuilt Android wheel in Chaquopy's
-      # own package repository, so they're cross-compiled separately by the
-      # build-android-wheels.yml workflow (via cibuildwheel) and published
-      # as a GitHub Release. This step downloads those .whl files into the
-      # boxoffice module's wheels/ directory, where build.gradle's
-      # `options("--find-links", ...)` line tells pip to look for them.
-      # Pin ANDROID_WHEELS_TAG to whatever release tag build-android-wheels.yml published.
+      # Download wheels from the release created by build-wheels job above.
+      # Since build-wheels just finished, the release is guaranteed to exist.
       # ──────────────────────────────────────────────────────────────────────
-      - name: Download prebuilt Android wheels (pydantic-core, jiter)
+      - name: Download prebuilt Android wheels
         env:
-          ANDROID_WHEELS_TAG: android-wheels-v1
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
           mkdir -p "$WHEELS_DIR"
           
-          gh release download "$ANDROID_WHEELS_TAG" \
+          # Download from the release tag that build-wheels just published
+          gh release download "android-wheels-latest" \
             --repo "${{ github.repository }}" \
             --pattern "*.whl" \
             --dir "$WHEELS_DIR" \
             --clobber
           
-          echo "✅ Android wheels downloaded:"
+          echo "✅ Wheels downloaded:"
           ls -la "$WHEELS_DIR"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Cache Chaquopy Python packages. The cache key includes the
-      # requirements.txt hash AND the wheels directory contents, so it
-      # invalidates whenever either the Python deps or the prebuilt wheels
-      # change.
-      # ──────────────────────────────────────────────────────────────────────
+      - name: Verify wheel compatibility
+        run: |
+          WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
+          
+          echo "🔍 Verifying wheels..."
+          for whl in "$WHEELS_DIR"/*.whl; do
+            [ -f "$whl" ] || continue
+            name=$(basename "$whl")
+            echo "  📋 $name"
+            
+            if [[ "$name" == *cp313* ]]; then
+              echo "     ✅ Python 3.13"
+            elif [[ "$name" == *cp312* ]]; then
+              echo "     ⚠️  Python 3.12 wheel — MISMATCH!"
+              exit 1
+            fi
+            
+            if [[ "$name" == *android_arm64_v8a* ]]; then
+              echo "     ✅ arm64-v8a"
+            elif [[ "$name" == *android_x86_64* ]]; then
+              echo "     ✅ x86_64"
+            fi
+          done
+          
+          # Fail fast if required wheels are missing
+          if ! ls "$WHEELS_DIR"/pydantic_core*.whl 1>/dev/null 2>&1; then
+            echo "❌ Missing pydantic-core wheel!"
+            exit 1
+          fi
+          if ! ls "$WHEELS_DIR"/jiter*.whl 1>/dev/null 2>&1; then
+            echo "❌ Missing jiter wheel!"
+            exit 1
+          fi
+          
+          echo "✅ All required wheels present and compatible"
+
       - name: Cache Chaquopy Python packages
         id: chaquopy-cache
         uses: actions/cache@v4
@@ -192,28 +231,8 @@ jobs:
           test -f modules/boxoffice/android/build.gradle || { echo "❌ missing build.gradle"; exit 1; }
           test -f modules/boxoffice/android/src/main/python/requirements.txt || { echo "❌ missing requirements.txt"; exit 1; }
           test -f modules/boxoffice/expo-module.config.json || { echo "❌ missing expo-module.config.json"; exit 1; }
-          
-          WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
-          test -n "$(ls -A $WHEELS_DIR/*.whl 2>/dev/null)" || { echo "❌ no prebuilt Android wheels found"; exit 1; }
-          
+          test -n "$(ls -A modules/boxoffice/android/src/main/python/wheels/*.whl 2>/dev/null)" || { echo "❌ no prebuilt Android wheels found"; exit 1; }
           echo "✅ boxoffice module structure valid"
-          echo "📦 Wheels found:"
-          ls -la "$WHEELS_DIR"
-          
-          # Verify wheel tags match Chaquopy's Python version (3.13)
-          for whl in "$WHEELS_DIR"/*.whl; do
-            name=$(basename "$whl")
-            if [[ "$name" == *cp313* ]]; then
-              echo "  ✅ $name — Python 3.13 compatible"
-            elif [[ "$name" == *cp312* ]]; then
-              echo "  ❌ $name — Python 3.12 wheel, MISMATCH with Chaquopy 3.13!"
-              exit 1
-            else
-              echo "  ⚠️  $name — Unknown Python version"
-            fi
-          done
-          
-          cat modules/boxoffice/android/src/main/python/requirements.txt
 
       - name: Build Debug APK
         run: |
