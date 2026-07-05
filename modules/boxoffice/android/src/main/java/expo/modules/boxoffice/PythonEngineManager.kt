@@ -14,10 +14,10 @@ class PythonEngineManager(
 
     init {
         engineModule = python.getModule(packageName)
-        engineClass = engineModule.get(engineClassName)
+        engineClass = engineModule.get(engineClassName)!!
     }
 
-    fun configure(config: Map<String, Any>): Map<String, Any> {
+    fun configure(config: Map<String, Any?>): Map<String, Any> {
         ensureEngineInstance()
         val result = engineInstance!!.callAttr("configure", mapToPyDict(config))
         return pyObjectToMap(result)
@@ -41,7 +41,7 @@ class PythonEngineManager(
         return pyObjectToMap(result)
     }
 
-    fun sendCommand(command: String, params: Map<String, Any>): Map<String, Any> {
+    fun sendCommand(command: String, params: Map<String, Any?>): Map<String, Any> {
         ensureEngineInstance()
         val result = engineInstance!!.callAttr("send_command", command, mapToPyDict(params))
         return pyObjectToMap(result)
@@ -88,17 +88,27 @@ class PythonEngineManager(
         }
     }
 
-    private fun mapToPyDict(map: Map<String, Any>): PyObject {
-        val pyDict = python.builtins.get("dict").call()
+    /**
+     * Look up the Python type name of a PyObject (e.g. "dict", "list", "NoneType").
+     * Chaquopy's PyObject has no isDict/isNone/isBool/etc. convenience properties,
+     * so type checks go through the real attribute API instead.
+     */
+    private fun pyTypeName(pyObject: PyObject): String {
+        return pyObject.get("__class__")!!.get("__name__")!!.toString()
+    }
+
+    private fun mapToPyDict(map: Map<String, Any?>): PyObject {
+        val pyDict = python.builtins.get("dict")!!.call()
         for ((key, value) in map) {
-            val pyValue = when (value) {
-                is String -> python.builtins.get("str").call(value)
-                is Int -> python.builtins.get("int").call(value)
-                is Double -> python.builtins.get("float").call(value)
-                is Boolean -> python.builtins.get("bool").call(value)
-                is Map<*, *> -> mapToPyDict(value as Map<String, Any>)
-                is List<*> -> listToPyList(value)
-                else -> python.builtins.get("str").call(value.toString())
+            val pyValue = when {
+                value == null -> python.builtins.get("None")!!
+                value is String -> python.builtins.get("str")!!.call(value)
+                value is Int -> python.builtins.get("int")!!.call(value)
+                value is Double -> python.builtins.get("float")!!.call(value)
+                value is Boolean -> python.builtins.get("bool")!!.call(value)
+                value is Map<*, *> -> mapToPyDict(value as Map<String, Any?>)
+                value is List<*> -> listToPyList(value)
+                else -> python.builtins.get("str")!!.call(value.toString())
             }
             pyDict.callAttr("__setitem__", key, pyValue)
         }
@@ -106,16 +116,17 @@ class PythonEngineManager(
     }
 
     private fun listToPyList(list: List<*>): PyObject {
-        val pyList = python.builtins.get("list").call()
+        val pyList = python.builtins.get("list")!!.call()
         for (item in list) {
-            val pyItem = when (item) {
-                is String -> python.builtins.get("str").call(item)
-                is Int -> python.builtins.get("int").call(item)
-                is Double -> python.builtins.get("float").call(item)
-                is Boolean -> python.builtins.get("bool").call(item)
-                is Map<*, *> -> mapToPyDict(item as Map<String, Any>)
-                is List<*> -> listToPyList(item)
-                else -> python.builtins.get("str").call(item.toString())
+            val pyItem = when {
+                item == null -> python.builtins.get("None")!!
+                item is String -> python.builtins.get("str")!!.call(item)
+                item is Int -> python.builtins.get("int")!!.call(item)
+                item is Double -> python.builtins.get("float")!!.call(item)
+                item is Boolean -> python.builtins.get("bool")!!.call(item)
+                item is Map<*, *> -> mapToPyDict(item as Map<String, Any?>)
+                item is List<*> -> listToPyList(item)
+                else -> python.builtins.get("str")!!.call(item.toString())
             }
             pyList.callAttr("append", pyItem)
         }
@@ -124,7 +135,7 @@ class PythonEngineManager(
 
     private fun pyObjectToMap(pyObject: PyObject): Map<String, Any> {
         val result = mutableMapOf<String, Any>()
-        if (pyObject.isDict) {
+        if (pyTypeName(pyObject) == "dict") {
             val keys = pyObject.callAttr("keys").asList()
             for (key in keys) {
                 val keyStr = key.toString()
@@ -136,14 +147,14 @@ class PythonEngineManager(
     }
 
     private fun pyObjectToValue(pyObject: PyObject): Any {
-        return when {
-            pyObject.isNone -> ""
-            pyObject.isBool -> pyObject.toBoolean()
-            pyObject.isInt -> pyObject.toInt()
-            pyObject.isFloat -> pyObject.toDouble()
-            pyObject.isStr -> pyObject.toString()
-            pyObject.isDict -> pyObjectToMap(pyObject)
-            pyObject.isList -> pyObjectToList(pyObject)
+        return when (pyTypeName(pyObject)) {
+            "NoneType" -> ""
+            "bool" -> pyObject.toBoolean()
+            "int" -> pyObject.toInt()
+            "float" -> pyObject.toDouble()
+            "str" -> pyObject.toString()
+            "dict" -> pyObjectToMap(pyObject)
+            "list", "tuple" -> pyObjectToList(pyObject)
             else -> pyObject.toString()
         }
     }
@@ -160,10 +171,14 @@ class PythonEngineManager(
     // ==================== STATIC CONVERSION (for inner class) ====================
 
     companion object {
+        private fun pyTypeNameStatic(pyObject: PyObject): String {
+            return pyObject.get("__class__")!!.get("__name__")!!.toString()
+        }
+
         @JvmStatic
         fun pyObjectToMapStatic(pyObject: PyObject): Map<String, Any> {
             val result = mutableMapOf<String, Any>()
-            if (pyObject.isDict) {
+            if (pyTypeNameStatic(pyObject) == "dict") {
                 val keys = pyObject.callAttr("keys").asList()
                 for (key in keys) {
                     val keyStr = key.toString()
@@ -176,14 +191,14 @@ class PythonEngineManager(
 
         @JvmStatic
         private fun pyObjectToValueStatic(pyObject: PyObject): Any {
-            return when {
-                pyObject.isNone -> ""
-                pyObject.isBool -> pyObject.toBoolean()
-                pyObject.isInt -> pyObject.toInt()
-                pyObject.isFloat -> pyObject.toDouble()
-                pyObject.isStr -> pyObject.toString()
-                pyObject.isDict -> pyObjectToMapStatic(pyObject)
-                pyObject.isList -> pyObjectToListStatic(pyObject)
+            return when (pyTypeNameStatic(pyObject)) {
+                "NoneType" -> ""
+                "bool" -> pyObject.toBoolean()
+                "int" -> pyObject.toInt()
+                "float" -> pyObject.toDouble()
+                "str" -> pyObject.toString()
+                "dict" -> pyObjectToMapStatic(pyObject)
+                "list", "tuple" -> pyObjectToListStatic(pyObject)
                 else -> pyObject.toString()
             }
         }
