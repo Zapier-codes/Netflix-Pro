@@ -4,11 +4,13 @@ buildscript {
   repositories {
     google()
     mavenCentral()
+    maven { url 'https://chaquo.com/maven' }   // hosts the Chaquopy plugin
   }
   dependencies {
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+    classpath('com.chaquo.python:gradle:15.0.1')   // matches boxoffice module's chaquopyVersion
   }
 }
 

@@ -11,19 +11,16 @@ def expoModulesCoreVersion = "55.0.25"
 def nitroModulesVersion = "0.36.1"
 def chaquopyVersion = "15.0.1"
 
-// REMOVE the entire buildscript block from here — it goes in root android/build.gradle
-
 android {
     namespace "expo.modules.boxoffice"
-    compileSdk 35  // Changed from compileSdkVersion to compileSdk for AGP 8.5+
+    compileSdk 36   // bumped to match project-wide compileSdk
 
     defaultConfig {
-        minSdk 24           // Changed from minSdkVersion to minSdk
-        targetSdk 35        // Changed from targetSdkVersion to targetSdk
+        minSdk 24
+        targetSdk 36   // bumped to match project-wide targetSdk
         versionCode 1
         versionName "1.0.0"
 
-        // python block stays inside defaultConfig for Chaquopy 15.x
         python {
             version "3.12"
             buildPython "python3"
