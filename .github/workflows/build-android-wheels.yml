@@ -1,0 +1,82 @@
+name: Build Android Python Wheels
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "android-wheels-v*"
+
+jobs:
+  build-wheels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout jiter source
+        uses: actions/checkout@v4
+        with:
+          repository: pydantic/jiter
+          ref: v0.14.0
+          path: jiter
+
+      - name: Checkout pydantic-core source
+        uses: actions/checkout@v4
+        with:
+          repository: pydantic/pydantic-core
+          ref: v2.33.2
+          path: pydantic-core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install cibuildwheel
+        run: pip install cibuildwheel
+
+      - name: Build jiter for Android
+        working-directory: jiter/crates/jiter-python
+        env:
+          CIBW_PLATFORM: android
+          CIBW_BUILD: "cp313-android_arm64_v8a cp313-android_x86_64"
+          CIBW_ARCHS_ANDROID: "arm64_v8a x86_64"
+          CIBW_TEST_SKIP: "*-android_*"
+        run: cibuildwheel --output-dir ../../../wheels
+
+      - name: Build pydantic-core for Android
+        working-directory: pydantic-core
+        env:
+          CIBW_PLATFORM: android
+          CIBW_BUILD: "cp313-android_arm64_v8a cp313-android_x86_64"
+          CIBW_ARCHS_ANDROID: "arm64_v8a x86_64"
+          CIBW_TEST_SKIP: "*-android_*"
+          CIBW_BEFORE_BUILD: >
+            pip install --no-index --find-links ../../../wheels jiter
+        run: cibuildwheel --output-dir ../wheels
+
+      - name: List built wheels
+        run: |
+          echo "Built wheels:"
+          ls -la wheels/
+
+      - name: Upload wheels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-wheels
+          path: wheels/*.whl
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wheels/*.whl
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            Prebuilt Android wheels for pydantic-core and jiter.
+
+            **Python version:** 3.13
+            **Architectures:** arm64-v8a, x86_64
+            **Packages:**
+            - pydantic-core v2.33.2
+            - jiter v0.14.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

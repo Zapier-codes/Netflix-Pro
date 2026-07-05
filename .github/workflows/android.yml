@@ -61,16 +61,6 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'modules/**/android/build.gradle') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      # ──────────────────────────────────────────────────────────────────────
-      # node_modules is keyed strictly on package-lock.json's hash. If the
-      # lockfile hasn't changed since the last successful run, this restores
-      # a full cache hit and the install step below is skipped entirely —
-      # no re-resolving. If the lockfile changed (a dependency was added,
-      # removed, or bumped), the key changes, cache-hit is false, npm ci
-      # installs fresh, and actions/cache automatically saves node_modules
-      # under the NEW key at the end of the job — so next run hits the cache
-      # again with the updated dependency already baked in.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Cache node_modules
         id: node-modules-cache
         uses: actions/cache@v4
@@ -78,22 +68,10 @@ jobs:
           path: node_modules
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Only runs on a cache miss (lockfile changed or first run ever).
-      # npm ci installs exactly what's in package-lock.json — no resolution,
-      # no lockfile regeneration, no silent version drift. Commit an
-      # up-to-date package-lock.json for this to work; if package.json and
-      # package-lock.json are out of sync, npm ci fails loudly instead of
-      # quietly re-resolving, which is what we want in CI.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --legacy-peer-deps
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Needed so EXPO_PUBLIC_* vars get inlined into the JS bundle at
-      # build time. ENV_FILE secret should be your full .env, base64-encoded.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Decode .env file
         run: |
           echo "${{ secrets.ENV_FILE }}" | base64 -d > .env
@@ -102,13 +80,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # ──────────────────────────────────────────────────────────────────────
-      # SDK components are pinned to exact versions below, so the cache key
-      # doesn't need to hash anything — it only needs to change when those
-      # pinned versions change. On a hit, the platform/build-tools/ndk
-      # folders are restored straight into ANDROID_SDK_ROOT and the install
-      # step is skipped entirely, saving the sdkmanager download+unpack.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Cache Android SDK components
         id: android-sdk-cache
         uses: actions/cache@v4
@@ -124,11 +95,6 @@ jobs:
         run: |
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # These env vars are needed by later steps regardless of whether the
-      # SDK components were just installed or restored from cache, so they
-      # stay outside the conditional install step above.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Set NDK env vars
         run: |
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> $GITHUB_ENV
@@ -140,9 +106,36 @@ jobs:
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> android/local.properties
 
       # ──────────────────────────────────────────────────────────────────────
-      # Cache Chaquopy Python packages to avoid re-downloading moviebox-api
-      # and its dependencies on every build. The cache key includes the
-      # requirements.txt hash so it invalidates when Python deps change.
+      # pydantic-core and jiter have no prebuilt Android wheel in Chaquopy's
+      # own package repository, so they're cross-compiled separately by the
+      # build-android-wheels.yml workflow (via cibuildwheel) and published
+      # as a GitHub Release. This step downloads those .whl files into the
+      # boxoffice module's wheels/ directory, where build.gradle's
+      # `options("--find-links", ...)` line tells pip to look for them.
+      # Pin ANDROID_WHEELS_TAG to whatever release tag build-android-wheels.yml published.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Download prebuilt Android wheels (pydantic-core, jiter)
+        env:
+          ANDROID_WHEELS_TAG: android-wheels-v1
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
+          mkdir -p "$WHEELS_DIR"
+          
+          gh release download "$ANDROID_WHEELS_TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.whl" \
+            --dir "$WHEELS_DIR" \
+            --clobber
+          
+          echo "✅ Android wheels downloaded:"
+          ls -la "$WHEELS_DIR"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Cache Chaquopy Python packages. The cache key includes the
+      # requirements.txt hash AND the wheels directory contents, so it
+      # invalidates whenever either the Python deps or the prebuilt wheels
+      # change.
       # ──────────────────────────────────────────────────────────────────────
       - name: Cache Chaquopy Python packages
         id: chaquopy-cache
@@ -151,13 +144,8 @@ jobs:
           path: |
             modules/boxoffice/android/build/python
             modules/boxoffice/android/build/chaquopy
-          key: chaquopy-${{ runner.os }}-${{ hashFiles('modules/boxoffice/android/src/main/python/requirements.txt') }}
+          key: chaquopy-${{ runner.os }}-${{ hashFiles('modules/boxoffice/android/src/main/python/requirements.txt', 'modules/boxoffice/android/src/main/python/wheels/*.whl') }}
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Debug-only workflow, always generates a fresh debug keystore so
-      # :app:validateSigningDebug has a file to find. Unconditional now —
-      # no build_type branching to fall through on push events.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Generate debug keystore
         run: |
           keytool -genkeypair -v \
@@ -170,11 +158,6 @@ jobs:
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # The AAR is pinned to release v1.0.0 in the URL below, so the cache
-      # key is static — it only needs to change if that version bumps.
-      # On a hit, the ~100MB+ download is skipped entirely.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Cache ffmpeg-kit AAR
         id: ffmpeg-cache
         uses: actions/cache@v4
@@ -190,27 +173,11 @@ jobs:
             -o android/libs/ffmpeg-kit-full-gpl.aar
           echo "AAR downloaded: $(du -sh android/libs/ffmpeg-kit-full-gpl.aar)"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # These env vars tell Chaquopy where to find the Python interpreter
-      # and ensure the boxoffice module's Python code is built into the APK.
-      # CHAQUOPY_PYTHON_VERSION pins the Python version for reproducible builds.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Set Chaquopy env vars
         run: |
-          echo "CHAQUOPY_PYTHON_VERSION=3.12" >> $GITHUB_ENV
+          echo "CHAQUOPY_PYTHON_VERSION=3.13" >> $GITHUB_ENV
           echo "CHAQUOPY_NO_LICENSE=DIALOG" >> $GITHUB_ENV
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Gradle repositories are scoped per-project: when :app resolves its
-      # own dependency graph, it only searches repositories it (or a root
-      # allprojects block) declared — not repositories declared inside
-      # pawns-sdk's own build.gradle. :app's flatDir repo already points at
-      # android/libs (that's where it successfully finds ffmpeg-kit's AAR
-      # above), so pawns-sdk's local AARs need to land in that same folder
-      # for :app:debugRuntimeClasspath to resolve them. This mirrors them
-      # in without touching any build.gradle beyond the pawns-sdk flatDir
-      # fix already made.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Mirror pawns-sdk local AARs into android/libs
         run: |
           mkdir -p android/libs
@@ -219,17 +186,33 @@ jobs:
           echo "✅ pawns-sdk AARs mirrored into android/libs"
           ls -la android/libs
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Verify boxoffice module structure before build to catch missing
-      # files early instead of failing deep in the Gradle build.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Verify boxoffice module
         run: |
           echo "Checking boxoffice module structure..."
           test -f modules/boxoffice/android/build.gradle || { echo "❌ missing build.gradle"; exit 1; }
           test -f modules/boxoffice/android/src/main/python/requirements.txt || { echo "❌ missing requirements.txt"; exit 1; }
           test -f modules/boxoffice/expo-module.config.json || { echo "❌ missing expo-module.config.json"; exit 1; }
+          
+          WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
+          test -n "$(ls -A $WHEELS_DIR/*.whl 2>/dev/null)" || { echo "❌ no prebuilt Android wheels found"; exit 1; }
+          
           echo "✅ boxoffice module structure valid"
+          echo "📦 Wheels found:"
+          ls -la "$WHEELS_DIR"
+          
+          # Verify wheel tags match Chaquopy's Python version (3.13)
+          for whl in "$WHEELS_DIR"/*.whl; do
+            name=$(basename "$whl")
+            if [[ "$name" == *cp313* ]]; then
+              echo "  ✅ $name — Python 3.13 compatible"
+            elif [[ "$name" == *cp312* ]]; then
+              echo "  ❌ $name — Python 3.12 wheel, MISMATCH with Chaquopy 3.13!"
+              exit 1
+            else
+              echo "  ⚠️  $name — Unknown Python version"
+            fi
+          done
+          
           cat modules/boxoffice/android/src/main/python/requirements.txt
 
       - name: Build Debug APK
