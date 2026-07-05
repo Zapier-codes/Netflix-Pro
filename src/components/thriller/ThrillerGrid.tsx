@@ -14,7 +14,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { ThrillerItem } from '../../services/preloader/ThrillerPreloader';
-import { getImageUrl } from '../../api/tmdbApi';
+import { getImageUrl } from '../../services/unified/metadata/TMDBMetadata';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

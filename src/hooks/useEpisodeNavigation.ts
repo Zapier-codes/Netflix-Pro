@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { fetchTVShowDetails, fetchSeasonDetails } from '../api/tmdbApi';
+import { fetchTVShowDetails, fetchSeasonDetails } from '../services/unified/metadata/TMDBMetadata';
 import { getEpisodeWatchProgress } from '../utils/storage';
 
 export const useEpisodeNavigation = ({

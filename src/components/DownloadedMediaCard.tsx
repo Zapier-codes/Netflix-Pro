@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getImageUrl } from '../api/tmdbApi';
+import { getImageUrl } from '../services/unified/metadata/TMDBMetadata';
 import { formatFileSize } from '../utils/downloadStorage';
 
 const { width } = Dimensions.get('window');

@@ -11,7 +11,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
-import { getImageUrl } from '../api/tmdbApi';
+import { getImageUrl } from '../services/unified/metadata/TMDBMetadata';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_HEIGHT = 200; // Compact height (reduced from 300-400px)

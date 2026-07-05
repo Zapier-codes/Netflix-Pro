@@ -34,7 +34,7 @@ import {
   decryptFileToTemp,
   cleanupTempFile,
 } from '../../utils/downloadStorage';
-import { getImageUrl } from '../../api/tmdbApi';
+import { getImageUrl } from '../unified/metadata/TMDBMetadata';
 
 // Note: getActiveStreamSources is now imported via require in fetchAndStartDownload
 // to avoid circular dependency issues with the unified providers

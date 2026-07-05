@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Nitro module exports for BoxOffice.
  * Re-exports the JSI module and all shared types.
  */
@@ -16,6 +16,7 @@ export {
 
 export type {
   SearchResultsPager,
+  PlatformInfo,
   ContentImage,
   SearchResultItem,
   SearchResults,

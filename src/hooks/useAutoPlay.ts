@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { fetchTVShowDetails, fetchSeasonDetails } from '../api/tmdbApi';
+import { fetchTVShowDetails, fetchSeasonDetails } from '../services/unified/metadata/TMDBMetadata';
 import { getAutoPlaySetting } from '../utils/storage';
 
 const TWO_MINUTE_THRESHOLD_SECONDS = 120;

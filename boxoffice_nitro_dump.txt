@@ -1,0 +1,376 @@
+﻿377: import { NitroModules, type HybridObject, type AnyMap } from 'react-native-nitro-modules'
+378: 
+379: /**
+380:  * BoxOffice Nitro Module - JSI interface for moviebox-api SDK operations.
+381:  * Maps to the real moviebox-api Python SDK (v1/v2) search, discovery,
+382:  * details, and download pipeline.
+383:  */
+384: 
+385: // ==================== ENUMS ====================
+386: 
+387: export enum SubjectType {
+388:   ALL = 'ALL',
+389:   MOVIES = 'MOVIES',
+390:   TV_SERIES = 'TV_SERIES',
+391:   EDUCATION = 'EDUCATION',
+392:   MUSIC = 'MUSIC',
+393:   ANIME = 'ANIME',
+394:   OTHER = 'OTHER',
+395: }
+396: 
+397: export enum ApiVersion {
+398:   V1 = 'v1',
+399:   V2 = 'v2',
+400: }
+401: 
+402: // ==================== MODELS ====================
+403: 
+404: export interface SearchResultsPager {
+405:   hasMore: boolean
+406:   nextPage: number | null
+407:   page: number
+408:   perPage: number
+409:   totalCount: number
+410: }
+411: 
+412: export interface ContentImage {
+413:   url: string
+414:   width: number
+415:   height: number
+416:   size: number
+417:   format: string
+418:   thumbnail: string
+419:   blurHash: string
+420:   gif?: string
+421:   avgHueLight: string
+422:   avgHueDark: string
+423:   id: string
+424: }
+425: 
+426: export interface SearchResultItem {
+427:   subjectId: string
+428:   subjectType: SubjectType
+429:   title: string
+430:   description?: string
+431:   releaseDate?: string
+432:   duration?: number
+433:   genre: string[]
+434:   cover?: ContentImage
+435:   countryName?: string
+436:   imdbRatingValue?: number
+437:   detailPath: string
+438:   hasResource: boolean
+439:   subtitles: string[]
+440:   corner?: string
+441:   stafflist?: AnyMap[]
+442:   appointmentCnt?: number
+443:   appointmentDate?: string
+444: }
+445: 
+446: export interface SearchResults {
+447:   items: SearchResultItem[]
+448:   pager: SearchResultsPager
+449:   query: string
+450:   version: ApiVersion
+451: }
+452: 
+453: export interface SuggestedItem {
+454:   type?: SubjectType
+455:   subject?: string | null
+456:   word: string
+457: }
+458: 
+459: export interface SearchSuggestions {
+460:   items: SuggestedItem[]
+461:   keyword: string
+462:   version: ApiVersion
+463: }
+464: 
+465: export interface TrendingResults {
+466:   data: SearchResultItem[]
+467:   pager: SearchResultsPager
+468:   version: ApiVersion
+469: }
+470: 
+471: export interface ContentCategory {
+472:   type: string
+473:   position: number
+474:   title: string
+475:   subjects: SearchResultItem[]
+476:   url?: string
+477:   opId?: string
+478: }
+479: 
+480: export interface HomepageContent {
+481:   categories: ContentCategory[]
+482:   platformList: { name: string; uploadBy: string }[]
+483:   version: ApiVersion
+484: }
+485: 
+486: export interface HotContent {
+487:   movies: SearchResultItem[]
+488:   tvSeries: SearchResultItem[]
+489:   version: ApiVersion
+490: }
+491: 
+492: export interface PopularSearchItem {
+493:   title: string
+494: }
+495: 
+496: export interface PopularSearches {
+497:   data: PopularSearchItem[]
+498:   version: ApiVersion
+499: }
+500: 
+501: export interface VideoAddress {
+502:   videoId: string
+503:   definition: string
+504:   url: string
+505:   duration: number
+506:   width: number
+507:   height: number
+508:   size: number
+509:   fps: number
+510:   type: number
+511: }
+512: 
+513: export interface SubjectTrailer {
+514:   videoAddress: VideoAddress
+515:   cover: ContentImage
+516: }
+517: 
+518: export interface MediaFile {
+519:   id: string
+520:   url: string
+521:   resolution: number
+522:   size: number
+523: }
+524: 
+525: export interface CaptionFile {
+526:   id: string
+527:   lan: string
+528:   lanName: string
+529:   url: string
+530:   size: number
+531:   delay: number
+532: }
+533: 
+534: export interface DownloadableFiles {
+535:   downloads: MediaFile[]
+536:   captions: CaptionFile[]
+537:   limited: boolean
+538:   limitedCode?: string
+539:   hasResource: boolean
+540: }
+541: 
+542: export interface StarsModel {
+543:   avatarUrl: string
+544:   character: string
+545:   detailPath: string
+546:   name: string
+547:   staffId: string
+548:   staffType: number
+549: }
+550: 
+551: export interface ResourceModel {
+552:   seasons: AnyMap[]
+553:   source: string
+554:   uploadBy: string
+555: }
+556: 
+557: export interface MetadataModel {
+558:   description: string
+559:   image: string
+560:   keyWords: string[]
+561:   referer?: string
+562:   title: string
+563:   url?: string
+564: }
+565: 
+566: export interface PostListItem {
+567:   id: string
+568:   title: string
+569:   content: string
+570:   createTime: string
+571: }
+572: 
+573: export interface PostList {
+574:   items: PostListItem[]
+575:   pager: SearchResultsPager
+576: }
+577: 
+578: export interface MovieDetails {
+579:   subject: SearchResultItem
+580:   stars: StarsModel[]
+581:   resource: ResourceModel
+582:   metadata: MetadataModel
+583:   postList: PostList
+584:   isForbid: boolean
+585:   watchTimeLimit: number
+586:   version: ApiVersion
+587: }
+588: 
+589: export interface TVSeriesDetails {
+590:   subject: SearchResultItem
+591:   stars: StarsModel[]
+592:   resource: ResourceModel
+593:   metadata: MetadataModel
+594:   postList: PostList
+595:   version: ApiVersion
+596: }
+597: 
+598: export interface V2ItemDetails {
+599:   subject: SearchResultItem
+600:   stars: StarsModel[]
+601:   resource: ResourceModel
+602:   metadata: MetadataModel
+603:   isForbid: boolean
+604:   watchTimeLimit: number
+605:   version: ApiVersion
+606: }
+607: 
+608: export interface DownloadedFile {
+609:   savedTo: string
+610:   size: number
+611: }
+612: 
+613: export interface DownloadMovieResult {
+614:   movieFile: DownloadedFile
+615:   subtitleFile?: DownloadedFile | null
+616: }
+617: 
+618: export interface EpisodeDownload {
+619:   savedTo: string
+620:   size: number
+621: }
+622: 
+623: export interface DownloadTVSeriesResult {
+624:   episodes: Record<string, EpisodeDownload>
+625:   total: number
+626: }
+627: 
+628: export interface DownloadStatus {
+629:   downloadId: string
+630:   downloadedSize: number
+631:   expectedSize: number
+632:   percent: number
+633:   isComplete: boolean
+634:   savedTo?: string
+635: }
+636: 
+637: export interface DownloadStatusList {
+638:   data: DownloadStatus[]
+639: }
+640: 
+641: export interface Recommendations {
+642:   data: SearchResultItem[]
+643:   pager: SearchResultsPager
+644:   version: ApiVersion
+645: }
+646: 
+647: export interface EngineStatus {
+648:   status: string
+649:   running: boolean
+650:   defaultVersion: ApiVersion
+651:   timestamp: string
+652: }
+653: 
+654: export interface CommandResult {
+655:   success: boolean
+656:   data?: AnyMap
+657:   error?: string
+658:   message?: string
+659:   timestamp?: string
+660: }
+661: 
+662: export interface PongResult {
+663:   success: boolean
+664:   response: string
+665:   timestamp: string
+666:   sdkAvailable: boolean
+667:   sdkVersion: string
+668: }
+669: 
+670: // ==================== EVENTS ====================
+671: 
+672: export interface StatusChangeEvent {
+673:   status: string
+674:   timestamp: string
+675: }
+676: 
+677: export interface CommandExecutedEvent {
+678:   command: string
+679:   success: boolean
+680:   timestamp: string
+681: }
+682: 
+683: export interface DownloadProgressEvent {
+684:   downloadId: string
+685:   downloadedSize: number
+686:   expectedSize: number
+687:   percent: number
+688:   isComplete: boolean
+689:   savedTo?: string
+690: }
+691: 
+692: export interface ErrorEvent {
+693:   errorCode: string
+694:   errorMessage: string
+695:   command?: string
+696: }
+697: 
+698: export interface BoxOfficeConfig {
+699:   apiVersion?: ApiVersion
+700:   downloadDir?: string
+701:   captionLanguage?: string
+702:   quality?: string
+703: }
+704: 
+705: // ==================== NITRO INTERFACE ====================
+706: 
+707: export interface BoxOfficeNitroModule extends HybridObject<{ android: 'kotlin' }> {
+708:   // Lifecycle
+709:   configure(config: BoxOfficeConfig): Promise<CommandResult>
+710:   start(): Promise<CommandResult>
+711:   stop(): Promise<CommandResult>
+712:   getStatus(): Promise<EngineStatus>
+713: 
+714:   // Search
+715:   search(query: string, page: number, perPage: number, subjectType: SubjectType, version: ApiVersion): Promise<SearchResults>
+716:   searchSuggestions(query: string, version: ApiVersion): Promise<SearchSuggestions>
+717: 
+718:   // Discovery
+719:   getTrending(page: number, perPage: number, version: ApiVersion): Promise<TrendingResults>
+720:   getHomepage(version: ApiVersion): Promise<HomepageContent>
+721:   getHotContent(version: ApiVersion): Promise<HotContent>
+722:   getPopularSearches(version: ApiVersion): Promise<PopularSearches>
+723: 
+724:   // Details
+725:   getMovieDetails(urlOrItem: string, version: ApiVersion): Promise<MovieDetails>
+726:   getTVSeriesDetails(urlOrItem: string, version: ApiVersion): Promise<TVSeriesDetails>
+727:   getItemDetails(urlOrItem: string): Promise<V2ItemDetails>
+728: 
+729:   // Downloadable files
+730:   getDownloadableFiles(item: SearchResultItem, subjectType: SubjectType, version: ApiVersion): Promise<DownloadableFiles>
+731: 
+732:   // Downloads
+733:   downloadMovie(title: string, quality: string, captionLanguage: string, downloadDir: string, year: number): Promise<DownloadMovieResult>
+734:   downloadTVSeries(title: string, season: number, episode: number, limit: number, quality: string, captionLanguage: string, downloadDir: string, autoMode: boolean): Promise<DownloadTVSeriesResult>
+735:   getDownloadStatus(downloadId?: string): Promise<DownloadStatusList>
+736:   cancelDownload(downloadId: string): Promise<CommandResult>
+737: 
+738:   // Recommendations
+739:   getRecommendations(urlOrItem: string, page: number, perPage: number, version: ApiVersion): Promise<Recommendations>
+740: 
+741:   // Events
+742:   addListener(event: 'onBoxOfficeStatusChange', callback: (event: StatusChangeEvent) => void): void
+743:   addListener(event: 'onBoxOfficeCommandExecuted', callback: (event: CommandExecutedEvent) => void): void
+744:   addListener(event: 'onBoxOfficeDownloadProgress', callback: (event: DownloadProgressEvent) => void): void
+745:   addListener(event: 'onBoxOfficeError', callback: (event: ErrorEvent) => void): void
+746:   removeListener(event: string, callback: () => void): void
+747: }
+748: 
+749: export const BoxOfficeNitroModule = NitroModules.createHybridObject<BoxOfficeNitroModule>('BoxOfficeNitroModule')
+750: 
+751: 
+752: 

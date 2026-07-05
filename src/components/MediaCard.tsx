@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
-import { getImageUrl } from '../api/tmdbApi';
+import { getImageUrl } from '../services/unified/metadata/TMDBMetadata';
 import ImagePlaceholder from './ImagePlaceholder';
 import Badge from './Badge';
 import { SPORT_LOGO_MAP } from '../api/streameastApi';

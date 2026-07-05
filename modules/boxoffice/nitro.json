@@ -1,0 +1,13 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": ["boxoffice"],
+  "ios": {
+    "iosModuleName": "BoxOffice"
+  },
+  "android": {
+    "androidNamespace": ["boxoffice"],
+    "androidCxxLibName": "BoxOffice"
+  },
+  "autolinking": {},
+  "ignorePaths": ["**/node_modules"]
+}

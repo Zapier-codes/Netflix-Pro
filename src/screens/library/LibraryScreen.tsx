@@ -23,7 +23,7 @@ import {
   formatFileSize,
   DOWNLOAD_STATUS,
 } from '../../utils/downloadStorage';
-import { getImageUrl } from '../../api/tmdbApi';
+import { getImageUrl } from '../../services/unified/metadata/TMDBMetadata';
 
 type DownloadsSubTab = 'movies' | 'seasonal';
 

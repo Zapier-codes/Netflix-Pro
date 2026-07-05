@@ -1,6 +1,6 @@
 // src/services/preloader/ThrillerPreloader.ts
 import { cacheManager } from '../cache/CacheManager';
-import { getImageUrl } from '../../api/tmdbApi';
+import { getImageUrl } from '../unified/metadata/TMDBMetadata';
 import { search, getStreamInfo, StreamInfoItem, InfoItem } from '../../../modules/mavin-engine';
 
 export interface ThrillerItem {

@@ -22,7 +22,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
 // API
-import { searchMedia, getImageUrl } from '../../api/tmdbApi';
+import { searchMedia, getImageUrl } from '../../services/unified/metadata/TMDBMetadata';
 
 // Utils
 import { saveSearchQuery, getSearchHistory, removeSearchQuery, clearSearchHistory } from '../../utils/storage';

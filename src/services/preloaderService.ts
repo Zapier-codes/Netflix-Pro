@@ -7,7 +7,7 @@ import {
   fetchTopRatedMovies, 
   fetchTopRatedTVShows,
   fetchUpcomingMovies,
-} from '../api/tmdbApi';
+} from './unified/metadata/TMDBMetadata';
 
 export class PreloaderService {
   private static instance: PreloaderService;

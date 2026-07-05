@@ -1,11 +1,11 @@
-/**
+﻿/**
  * BoxOffice Bridge - Main client API for the BoxOffice module.
  * Provides a typed interface to the moviebox-api Python SDK
  * for search, discovery, details, and download operations.
  */
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native'
-import { BoxOfficeNitroModule } from '../../nitro/BoxOfficeNitroModule.nitro'
+import { BoxOfficeNitroModule } from '../nitro/BoxOfficeNitroModule.nitro'
 
 // ==================== ENUMS ====================
 
@@ -350,7 +350,7 @@ class BoxOfficeBridge {
 
   onStatusChange(callback: (event: StatusChangeEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addListener('onBoxOfficeStatusChange', callback)
+      BoxOfficeNitroModule.addStatusChangeListener(callback)
       return () => BoxOfficeNitroModule.removeListener('onBoxOfficeStatusChange', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeStatusChange', callback)
@@ -359,7 +359,7 @@ class BoxOfficeBridge {
 
   onCommandExecuted(callback: (event: CommandExecutedEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addListener('onBoxOfficeCommandExecuted', callback)
+      BoxOfficeNitroModule.addCommandExecutedListener(callback)
       return () => BoxOfficeNitroModule.removeListener('onBoxOfficeCommandExecuted', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeCommandExecuted', callback)
@@ -368,7 +368,7 @@ class BoxOfficeBridge {
 
   onDownloadProgress(callback: (event: DownloadProgressEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addListener('onBoxOfficeDownloadProgress', callback)
+      BoxOfficeNitroModule.addDownloadProgressListener(callback)
       return () => BoxOfficeNitroModule.removeListener('onBoxOfficeDownloadProgress', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeDownloadProgress', callback)
@@ -377,7 +377,7 @@ class BoxOfficeBridge {
 
   onError(callback: (event: ErrorEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addListener('onBoxOfficeError', callback)
+      BoxOfficeNitroModule.addErrorListener(callback)
       return () => BoxOfficeNitroModule.removeListener('onBoxOfficeError', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeError', callback)
@@ -607,3 +607,4 @@ class BoxOfficeBridge {
 
 export const boxOffice = BoxOfficeBridge.getInstance()
 export default BoxOfficeBridge
+

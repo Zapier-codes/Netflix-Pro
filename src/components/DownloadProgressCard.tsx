@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getImageUrl } from '../api/tmdbApi';
+import { getImageUrl } from '../services/unified/metadata/TMDBMetadata';
 import { formatFileSize, DOWNLOAD_STATUS } from '../utils/downloadStorage';
 
 const DownloadProgressCard = ({
