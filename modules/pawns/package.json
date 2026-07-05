@@ -1,5 +1,5 @@
 {
-  "name": "pawns-sdk",
+  "name": "pawns",
   "version": "1.0.0",
   "description": "Pawns bandwidth sharing SDK module",
   "main": "index.ts",
