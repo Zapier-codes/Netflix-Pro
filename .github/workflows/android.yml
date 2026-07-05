@@ -6,12 +6,21 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # STEP 1: Build wheels FIRST — must grant write permission so the
+  # reusable workflow can create/update the GitHub Release.
+  # ──────────────────────────────────────────────────────────────────────
   build-wheels:
     uses: ./.github/workflows/build-android-wheels.yml
     secrets: inherit
+    permissions:
+      contents: write
     with:
       release_tag: android-wheels-latest
 
+  # ──────────────────────────────────────────────────────────────────────
+  # STEP 2: Build APK after wheels are ready
+  # ──────────────────────────────────────────────────────────────────────
   build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
