@@ -1,7 +1,7 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": ["expo.modules.boxoffice.BoxOfficePackage"],
+    "modules": [],
     "gradle": {
       "buildGradle": "android/build.gradle"
     }
