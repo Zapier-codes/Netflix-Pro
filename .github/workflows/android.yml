@@ -6,23 +6,16 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────
-  # STEP 1: Build wheels FIRST (reusable workflow call)
-  # This ensures wheels exist before the APK build starts.
-  # ──────────────────────────────────────────────────────────────────────
   build-wheels:
     uses: ./.github/workflows/build-android-wheels.yml
+    secrets: inherit
     with:
       release_tag: android-wheels-latest
 
-  # ──────────────────────────────────────────────────────────────────────
-  # STEP 2: Build APK after wheels are ready
-  # needs: build-wheels ensures synchronous execution
-  # ──────────────────────────────────────────────────────────────────────
   build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
-    needs: build-wheels  # Wait for wheels to finish
+    needs: build-wheels
 
     steps:
       - name: Free disk space
@@ -119,10 +112,6 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> android/local.properties
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Download wheels from the release created by build-wheels job above.
-      # Since build-wheels just finished, the release is guaranteed to exist.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Download prebuilt Android wheels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,7 +119,6 @@ jobs:
           WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
           mkdir -p "$WHEELS_DIR"
           
-          # Download from the release tag that build-wheels just published
           gh release download "android-wheels-latest" \
             --repo "${{ github.repository }}" \
             --pattern "*.whl" \
@@ -153,7 +141,7 @@ jobs:
             if [[ "$name" == *cp313* ]]; then
               echo "     ✅ Python 3.13"
             elif [[ "$name" == *cp312* ]]; then
-              echo "     ⚠️  Python 3.12 wheel — MISMATCH!"
+              echo "     ❌ Python 3.12 — MISMATCH!"
               exit 1
             fi
             
@@ -164,7 +152,6 @@ jobs:
             fi
           done
           
-          # Fail fast if required wheels are missing
           if ! ls "$WHEELS_DIR"/pydantic_core*.whl 1>/dev/null 2>&1; then
             echo "❌ Missing pydantic-core wheel!"
             exit 1

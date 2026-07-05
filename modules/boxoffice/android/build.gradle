@@ -32,15 +32,12 @@ android {
     }
 }
 
-// NEW Chaquopy 15+ DSL: top-level block
 chaquopy {
     defaultConfig {
         version = "3.13"
 
         pip {
-            // Absolute path to wheels directory
             options("--find-links", file("src/main/python/wheels").absolutePath)
-            // Force binary-only for packages we have wheels for
             options("--only-binary", "pydantic-core,jiter")
 
             install("pydantic-core==2.33.2")

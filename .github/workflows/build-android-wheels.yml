@@ -18,6 +18,8 @@ on:
 jobs:
   build-wheels:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout jiter source
         uses: actions/checkout@v4
@@ -41,10 +43,6 @@ jobs:
       - name: Install cibuildwheel
         run: pip install cibuildwheel
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Build jiter FIRST — pydantic-core needs it as a build dependency.
-      # Output to an absolute path that we can reference later.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Build jiter for Android
         working-directory: jiter/crates/jiter-python
         env:
@@ -61,11 +59,6 @@ jobs:
           echo "✅ Jiter wheels:"
           ls -la "${{ github.workspace }}/wheels/"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # Build pydantic-core SECOND — install jiter from the absolute wheels
-      # directory before building. CIBW_BEFORE_BUILD runs inside cibuildwheel's
-      # build environment, so we must use an absolute path (not relative).
-      # ──────────────────────────────────────────────────────────────────────
       - name: Build pydantic-core for Android
         working-directory: pydantic-core
         env:
@@ -73,8 +66,6 @@ jobs:
           CIBW_BUILD: "cp313-android_arm64_v8a cp313-android_x86_64"
           CIBW_ARCHS_ANDROID: "arm64_v8a x86_64"
           CIBW_TEST_SKIP: "*-android_*"
-          # CRITICAL FIX: Use absolute path with github.workspace.
-          # Relative paths break because cibuildwheel copies source to a temp dir.
           CIBW_BEFORE_BUILD: "pip install --no-index --find-links ${{ github.workspace }}/wheels jiter"
         run: |
           cibuildwheel --output-dir "${{ github.workspace }}/wheels"
