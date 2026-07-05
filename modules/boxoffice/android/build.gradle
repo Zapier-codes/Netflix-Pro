@@ -44,8 +44,7 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 }
 
 dependencies {
-    implementation "expo.modules:expo-modules-core:55.0.25"
+    implementation project(':expo-modules-core')
+    implementation project(':react-native-nitro-modules')
     implementation "com.facebook.react:react-native:0.83.6"
-    implementation "com.margelo.nitro:react-native-nitro-modules:0.36.1"
-    implementation "com.chaquo.python:runtime:17.0.0"
 }
