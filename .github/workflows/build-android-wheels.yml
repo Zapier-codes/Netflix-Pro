@@ -23,7 +23,7 @@ jobs:
     env:
       WHEELS_DIR: ${{ github.workspace }}/wheels
       # Bump the trailing -vN when you change build config (versions, flags, etc.)
-      CACHE_KEY: android-wheels-${{ runner.os }}-jiter-0.14.0-pydantic-core-2.33.2-cp313-v1
+      CACHE_KEY: android-wheels-Linux-jiter-0.14.0-pydantic-core-2.33.2-cp313-v1
 
     steps:
       # ──────────────────────────────────────────────────────────────────────
