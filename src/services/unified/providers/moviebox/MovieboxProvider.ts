@@ -3,9 +3,10 @@
  * Bridges to the native BoxOffice module for search, discovery, stream extraction, and social features.
  */
 
-import { IStreamProvider, ProviderConfig, StreamSource, StreamRequest } from '../../types/ProviderTypes'
+import { IStreamProvider, StreamBackendConfig } from '../../types/ProviderTypes'
+import { StreamSource, StreamQuality } from '../../types/StreamTypes'
 import { boxOffice, SubjectType, ApiVersion, SearchResultItem, DownloadableFiles } from '../../../../../modules/boxoffice'
-import { supabase } from '../../../../lib/supabase'
+import { supabase } from '../../../../services/supabase/supabaseClient'
 
 export interface Review {
   id: string
@@ -54,20 +55,21 @@ export class MovieboxProvider implements IStreamProvider {
   readonly supportsTV = true
   readonly supportsAnime = false
 
-  private config: ProviderConfig
+  private config: StreamBackendConfig
   private baseHeaders: Record<string, string>
 
-  constructor(config: ProviderConfig = {}) {
+  constructor(config: StreamBackendConfig = {}) {
     this.config = {
       timeout: 30000,
       retryCount: 2,
+      defaultQuality: 'auto',
       ...config,
     }
     this.baseHeaders = {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.0',
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'en-US,en;q=0.9',
-      ...config.headers,
+      ...(config as any).headers,
     }
   }
 
@@ -90,7 +92,12 @@ export class MovieboxProvider implements IStreamProvider {
 
   // ==================== STREAMS ====================
 
-  async getStreams(request: StreamRequest): Promise<StreamSource[]> {
+  async getStreams(request: {
+    id: string
+    type: 'movie' | 'tv'
+    season?: number
+    episode?: number
+  }): Promise<StreamSource[]> {
     const { id, type, season, episode } = request
     const detailPath = id
 
@@ -117,17 +124,27 @@ export class MovieboxProvider implements IStreamProvider {
     }
 
     return files.downloads.map((file, index) => ({
+      id: `moviebox-${index}-${Date.now()}`,
+      provider: this.name,
       url: file.url,
       quality: this.resolutionToQuality(file.resolution),
       type: this.guessStreamType(file.url),
       headers: this.baseHeaders,
       subtitles: files.captions.map(cap => ({
+        id: `moviebox-sub-${cap.lan}-${Date.now()}`,
         url: cap.url,
-        language: cap.lan,
-        label: cap.lanName,
+        lang: cap.lan,
+        language: cap.lanName || cap.lan,
+        label: cap.lanName || cap.lan,
+        format: 'vtt',
+        provider: this.name,
+        isDefault: false,
+        isForced: false,
+        isSDH: false,
       })),
-      provider: this.name,
-      index,
+      duration: undefined,
+      size: undefined,
+      isProxyRequired: false,
     }))
   }
 
@@ -289,8 +306,8 @@ export class MovieboxProvider implements IStreamProvider {
 
   // ==================== HELPERS ====================
 
-  private resolutionToQuality(resolution: number): string {
-    if (resolution >= 2160) return '4k'
+  private resolutionToQuality(resolution: number): StreamQuality {
+    if (resolution >= 2160) return '4K'
     if (resolution >= 1440) return '1440p'
     if (resolution >= 1080) return '1080p'
     if (resolution >= 720) return '720p'
@@ -299,11 +316,12 @@ export class MovieboxProvider implements IStreamProvider {
     return 'auto'
   }
 
-  private guessStreamType(url: string): 'hls' | 'dash' | 'mp4' | 'unknown' {
+  private guessStreamType(url: string): 'hls' | 'dash' | 'mp4' | 'mkv' | 'm3u8' | 'iframe' | 'direct' {
     if (url.includes('.m3u8')) return 'hls'
     if (url.includes('.mpd')) return 'dash'
     if (url.includes('.mp4')) return 'mp4'
-    return 'unknown'
+    if (url.includes('.mkv')) return 'mkv'
+    return 'direct'
   }
 
   private mapReview(data: any): Review {

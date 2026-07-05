@@ -9,38 +9,27 @@ version = '1.0.0'
 
 def expoModulesCoreVersion = "55.0.25"
 def nitroModulesVersion = "0.36.1"
-def chaquopyVersion = "16.0.0"  // Update to latest
+def chaquopyVersion = "15.0.1"
 
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-        maven { url "https://chaquo.com/maven" }
-    }
-    dependencies {
-        classpath "com.android.tools.build:gradle:8.5.0"
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21"
-        // Chaquopy plugin is applied via plugins DSL or apply plugin above
-    }
-}
+// REMOVE the entire buildscript block from here — it goes in root android/build.gradle
 
 android {
     namespace "expo.modules.boxoffice"
-    compileSdkVersion 35
+    compileSdk 35  // Changed from compileSdkVersion to compileSdk for AGP 8.5+
 
     defaultConfig {
-        minSdkVersion 24
-        targetSdkVersion 35
+        minSdk 24           // Changed from minSdkVersion to minSdk
+        targetSdk 35        // Changed from targetSdkVersion to targetSdk
         versionCode 1
         versionName "1.0.0"
-    }
 
-    // Chaquopy Python configuration - MOVED OUT of defaultConfig
-    python {
-        version "3.12"
-        buildPython "python3"
-        pip {
-            install "-r", "src/main/python/requirements.txt"
+        // python block stays inside defaultConfig for Chaquopy 15.x
+        python {
+            version "3.12"
+            buildPython "python3"
+            pip {
+                install "-r", "src/main/python/requirements.txt"
+            }
         }
     }
 

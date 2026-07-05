@@ -62,7 +62,6 @@ export interface UnifiedMovie {
   // Extended
   budget?: number;
   revenue?: number;
-  tagline?: string;
   director?: string;
   writer?: string;
   cast?: CastMember[];
@@ -361,6 +360,24 @@ export interface UnifiedComment {
   season?: UnifiedSeason;
   episode?: UnifiedEpisode;
   list?: UnifiedList;
+}
+
+// ============================================================================
+// FLAT RESULT TYPE (consumed by UnifiedMediaService)
+// ============================================================================
+
+export interface IMetadataResult {
+  id: string;
+  title: string;
+  type: 'movie' | 'tv';
+  year?: number;
+  poster?: string;
+  backdrop?: string;
+  overview?: string;
+  rating?: number;
+  genres?: string[];
+  runtime?: number;
+  cast?: CastMember[];
 }
 
 // ============================================================================

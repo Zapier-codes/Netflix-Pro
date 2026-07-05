@@ -1,5 +1,0 @@
-// modules/boxoffice/android/settings.gradle
-
-rootProject.name = 'boxoffice'
-
-include ':app'

@@ -3,11 +3,16 @@
  * Handles provider priority, failover, and health checks.
  */
 
-import { IStreamProvider, ProviderType, StreamSource, ProviderHealth } from './types/ProviderTypes'
+import { 
+  IStreamProvider, 
+  StreamProviderId, 
+  StreamProviderHealthStatus,
+  StreamBackendConfig 
+} from './types/ProviderTypes'
 import { ProviderFactory } from './ProviderFactory'
 
 export interface RegisteredProvider {
-  type: ProviderType
+  type: StreamProviderId
   instance: IStreamProvider
   priority: number
   isHealthy: boolean
@@ -16,8 +21,8 @@ export interface RegisteredProvider {
 }
 
 export class ProviderRegistry {
-  private providers: Map<ProviderType, RegisteredProvider> = new Map()
-  private defaultPriority: Record<ProviderType, number> = {
+  private providers: Map<StreamProviderId, RegisteredProvider> = new Map()
+  private defaultPriority: Record<StreamProviderId, number> = {
     vidsrc: 1,
     moviebox: 2,
     xyra: 3,
@@ -27,7 +32,7 @@ export class ProviderRegistry {
   /**
    * Register a provider with the registry.
    */
-  register(type: ProviderType, priority?: number): void {
+  register(type: StreamProviderId, priority?: number): void {
     if (this.providers.has(type)) {
       console.warn(`[ProviderRegistry] Provider ${type} already registered, overwriting`)
     }
@@ -49,14 +54,14 @@ export class ProviderRegistry {
   /**
    * Register multiple providers at once.
    */
-  registerMultiple(types: ProviderType[]): void {
+  registerMultiple(types: StreamProviderId[]): void {
     types.forEach(type => this.register(type))
   }
 
   /**
    * Unregister a provider.
    */
-  unregister(type: ProviderType): void {
+  unregister(type: StreamProviderId): void {
     this.providers.delete(type)
     console.log(`[ProviderRegistry] Unregistered ${type}`)
   }
@@ -64,7 +69,7 @@ export class ProviderRegistry {
   /**
    * Get a provider by type.
    */
-  get(type: ProviderType): IStreamProvider | undefined {
+  get(type: StreamProviderId): IStreamProvider | undefined {
     const registered = this.providers.get(type)
     if (!registered || !registered.isHealthy) return undefined
     registered.lastUsed = Date.now()
@@ -99,7 +104,7 @@ export class ProviderRegistry {
   /**
    * Mark a provider as failed.
    */
-  reportFailure(type: ProviderType): void {
+  reportFailure(type: StreamProviderId): void {
     const provider = this.providers.get(type)
     if (!provider) return
 
@@ -113,7 +118,7 @@ export class ProviderRegistry {
   /**
    * Mark a provider as healthy.
    */
-  reportSuccess(type: ProviderType): void {
+  reportSuccess(type: StreamProviderId): void {
     const provider = this.providers.get(type)
     if (!provider) return
 
@@ -124,12 +129,12 @@ export class ProviderRegistry {
   /**
    * Run health check on all providers.
    */
-  async healthCheck(): Promise<ProviderHealth[]> {
-    const checks: Promise<ProviderHealth>[] = []
+  async healthCheck(): Promise<StreamProviderHealthStatus[]> {
+    const checks: Promise<StreamProviderHealthStatus>[] = []
 
     for (const [type, registered] of this.providers) {
       checks.push(
-        (async (): Promise<ProviderHealth> => {
+        (async (): Promise<StreamProviderHealthStatus> => {
           try {
             const isHealthy = await registered.instance.healthCheck()
             registered.isHealthy = isHealthy
@@ -158,7 +163,7 @@ export class ProviderRegistry {
   /**
    * Get all registered provider types.
    */
-  getRegisteredTypes(): ProviderType[] {
+  getRegisteredTypes(): StreamProviderId[] {
     return Array.from(this.providers.keys())
   }
 

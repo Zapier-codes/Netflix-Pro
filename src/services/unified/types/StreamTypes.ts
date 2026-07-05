@@ -16,8 +16,11 @@ export interface StreamSource {
   type: 'hls' | 'dash' | 'mp4' | 'mkv' | 'm3u8' | 'iframe' | 'direct';
   language?: string;
   subtitleUrl?: string;
+  subtitles?: UnifiedSubtitleTrack[];
   isProxyRequired?: boolean;
   expiresAt?: number;
+  duration?: number;
+  size?: number;
 }
 
 export type StreamQuality = 
@@ -29,6 +32,8 @@ export type StreamQuality =
   | '480p' 
   | '360p' 
   | '240p' 
+  | '144p'
+  | 'auto'
   | 'unknown';
 
 export interface StreamRequest {
@@ -131,13 +136,17 @@ export interface ProviderCapabilities {
 
 export interface NormalizedStream {
   id: string;
-  mediaId: string;
-  mediaType: 'movie' | 'show' | 'episode';
-  sources: StreamSource[];
-  subtitles: UnifiedSubtitleTrack[];
-  timestamp: number;
-  expiresAt: number;
+  url: string;
+  quality: StreamQuality;
+  originalQuality: string;
   provider: string;
+  type: StreamSource['type'];
+  headers: Record<string, string>;
+  subtitles: UnifiedSubtitleTrack[];
+  isHLS: boolean;
+  isDASH: boolean;
+  duration?: number;
+  size?: number;
 }
 
 export interface StreamCacheEntry {

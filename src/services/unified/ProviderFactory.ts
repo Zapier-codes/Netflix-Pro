@@ -1,19 +1,21 @@
 /**
  * ProviderFactory - Factory for creating streaming provider instances.
- * Maps provider names to their implementations with configurable options.
+ * Maps provider names to their implementations using adapters.
  */
 
 import {
   IStreamProvider,
-  ProviderType,
-  ProviderConfig,
-  StreamQuality,
-  StreamSource,
+  StreamProviderId,
+  StreamBackendConfig,
 } from './types/ProviderTypes'
-import { ConsumetProvider } from './providers/consumet/ConsumetProvider'
+import { StreamQuality } from './types/StreamTypes'
+
+// Import adapters from the correct paths
+import { ConsumetStreamAdapter } from './providers/adapters/ConsumetStreamAdapter'
+import { XyraStreamAdapter } from './providers/adapters/XyraStreamAdapter'
+import { VidSrcStreamAdapter } from './providers/adapters/VidSrcStreamAdapter'
+// Moviebox already implements IStreamProvider directly
 import { MovieboxProvider } from './providers/moviebox/MovieboxProvider'
-import { VidSrcProvider } from './providers/vidsrc/VidSrcProvider'
-import { XyraProvider } from './providers/xyra/XyraProvider'
 
 export interface ProviderFactoryOptions {
   defaultQuality?: StreamQuality
@@ -28,8 +30,8 @@ export class ProviderFactory {
    * Create or get a cached provider instance.
    */
   static getProvider(
-    type: ProviderType,
-    config?: ProviderConfig,
+    type: StreamProviderId,
+    config?: StreamBackendConfig,
     options?: ProviderFactoryOptions
   ): IStreamProvider {
     const key = `${type}-${JSON.stringify(config)}`
@@ -47,11 +49,11 @@ export class ProviderFactory {
    * Create a fresh provider instance without caching.
    */
   static createProvider(
-    type: ProviderType,
-    config?: ProviderConfig,
+    type: StreamProviderId,
+    config?: StreamBackendConfig,
     options?: ProviderFactoryOptions
   ): IStreamProvider {
-    const mergedConfig: ProviderConfig = {
+    const mergedConfig: StreamBackendConfig = {
       ...config,
       defaultQuality: options?.defaultQuality ?? 'auto',
       timeout: options?.timeout ?? 30000,
@@ -60,13 +62,13 @@ export class ProviderFactory {
 
     switch (type) {
       case 'consumet':
-        return new ConsumetProvider(mergedConfig)
+        return new ConsumetStreamAdapter(mergedConfig)
       case 'moviebox':
         return new MovieboxProvider(mergedConfig)
       case 'vidsrc':
-        return new VidSrcProvider(mergedConfig)
+        return new VidSrcStreamAdapter(mergedConfig)
       case 'xyra':
-        return new XyraProvider(mergedConfig)
+        return new XyraStreamAdapter(mergedConfig)
       default:
         throw new Error(`Unknown provider type: ${type}`)
     }
@@ -75,15 +77,15 @@ export class ProviderFactory {
   /**
    * Get all available provider types.
    */
-  static getAvailableProviders(): ProviderType[] {
+  static getAvailableProviders(): StreamProviderId[] {
     return ['consumet', 'moviebox', 'vidsrc', 'xyra']
   }
 
   /**
    * Get providers that support a specific content type.
    */
-  static getProvidersForContent(contentType: 'movie' | 'tv' | 'anime'): ProviderType[] {
-    const map: Record<string, ProviderType[]> = {
+  static getProvidersForContent(contentType: 'movie' | 'tv' | 'anime'): StreamProviderId[] {
+    const map: Record<string, StreamProviderId[]> = {
       movie: ['consumet', 'moviebox', 'vidsrc', 'xyra'],
       tv: ['consumet', 'moviebox', 'vidsrc', 'xyra'],
       anime: ['consumet', 'xyra'],

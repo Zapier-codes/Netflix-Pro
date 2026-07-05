@@ -1,7 +1,7 @@
-// src/api/subtitles/unifiedSubtitles.ts
-// The file is at src/api/opensubtitlesApi.tsx, so we need to go up one level
-import { opensubtitlesApiService } from '../opensubtitlesApi';
-import { subdlApiService } from './subdlApi';
+// src/services/unified/subtitles/UnifiedSubtitles.ts
+
+import opensubtitlesApiService from './OpenSubtitlesProvider';
+import subdlApiService from './SubdlProvider';
 
 export interface SubtitleResult {
   id: string;
@@ -85,6 +85,17 @@ export class UnifiedSubtitlesService {
     return results;
   }
 
+  async getSubtitles(options: {
+    imdbId?: string;
+    tmdbId?: string;
+    season?: number;
+    episode?: number;
+    language?: string;
+  }): Promise<SubtitleResult[]> {
+    const id = options.tmdbId ?? options.imdbId ?? '';
+    return this.searchSubtitles(id, options.language ?? 'en', options.season, options.episode);
+  }
+
   async downloadSubtitle(id: string, provider: 'opensubtitles' | 'subdl'): Promise<string | null> {
     try {
       if (provider === 'opensubtitles') {
@@ -110,3 +121,4 @@ export class UnifiedSubtitlesService {
 
 export const unifiedSubtitlesService = UnifiedSubtitlesService.getInstance();
 export default unifiedSubtitlesService;
+export { UnifiedSubtitlesService as UnifiedSubtitles };

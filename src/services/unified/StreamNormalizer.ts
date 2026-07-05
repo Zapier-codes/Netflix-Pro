@@ -15,7 +15,7 @@ export interface NormalizationOptions {
 
 export class StreamNormalizer {
   private static qualityRank: Record<StreamQuality, number> = {
-    '4k': 8,
+    '4K': 8,
     '2160p': 8,
     '1440p': 7,
     '1080p': 6,

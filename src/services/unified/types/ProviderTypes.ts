@@ -3,6 +3,21 @@
  * Defines all type interfaces for stream and metadata providers
  */
 
+import { StreamSource as MediaStreamSource, StreamQuality } from './StreamTypes';
+import { IMetadataResult } from './MetadataTypes';
+
+// Import stream types from StreamTypes to avoid duplication
+import {
+  StreamSource,
+  StreamRequest,
+  StreamMeta,
+  StreamProvider as StreamProviderType,
+  StreamProviderConfig as StreamProviderConfigType,
+} from './StreamTypes';
+
+// Re-export them so they're available from ProviderTypes
+export type { StreamSource, StreamRequest, StreamMeta, StreamProviderType, StreamProviderConfigType };
+
 // ============================================================================
 // BASE PROVIDER TYPES
 // ============================================================================
@@ -29,7 +44,7 @@ export interface BaseProvider {
 export interface StreamProvider extends BaseProvider {
   type: 'stream';
   capabilities: StreamCapabilities;
-  config: StreamProviderConfig;
+  config: StreamProviderConfigType;
   
   getStreams(request: StreamRequest): Promise<StreamResult>;
   resolveStream(sourceId: string): Promise<ResolvedStream>;
@@ -49,38 +64,11 @@ export interface StreamCapabilities {
   supportedCountries?: string[];
 }
 
-export interface StreamRequest {
-  mediaType: 'movie' | 'show' | 'episode';
-  tmdbId?: number;
-  imdbId?: string;
-  tvdbId?: number;
-  title?: string;
-  year?: number;
-  season?: number;
-  episode?: number;
-  language?: string;
-  quality?: string;
-}
-
 export interface StreamResult {
   sources: StreamSource[];
   subtitles?: SubtitleTrack[];
   meta?: StreamMeta;
   expiresAt?: number;
-}
-
-export interface StreamSource {
-  id: string;
-  provider: string;
-  url: string;
-  quality: string;
-  type: 'hls' | 'dash' | 'mp4' | 'mkv' | 'm3u8' | 'iframe' | 'direct';
-  headers?: Record<string, string>;
-  language?: string;
-  isProxyRequired?: boolean;
-  duration?: number;
-  size?: number;
-  codec?: string;
 }
 
 export interface ResolvedStream {
@@ -89,19 +77,6 @@ export interface ResolvedStream {
   type: 'hls' | 'dash' | 'mp4' | 'mkv' | 'm3u8' | 'iframe' | 'direct';
   quality: string;
   duration?: number;
-}
-
-export interface StreamMeta {
-  title: string;
-  originalTitle?: string;
-  year?: number;
-  season?: number;
-  episode?: number;
-  episodeTitle?: string;
-  poster?: string;
-  backdrop?: string;
-  duration?: number;
-  plot?: string;
 }
 
 // ============================================================================
@@ -559,13 +534,6 @@ export interface ProviderConfig {
   requestDelay: number;
 }
 
-export interface StreamProviderConfig extends ProviderConfig {
-  maxSources: number;
-  preferProxy: boolean;
-  qualityPreference: string[];
-  languagePreference: string[];
-}
-
 export interface MetadataProviderConfig extends ProviderConfig {
   maxResults: number;
   extendedInfo: boolean;
@@ -617,7 +585,7 @@ export interface ProviderRegistry {
 // ============================================================================
 
 export interface ProviderFactory {
-  createStreamProvider(config: StreamProviderConfig): StreamProvider;
+  createStreamProvider(config: StreamProviderConfigType): StreamProvider;
   createMetadataProvider(config: MetadataProviderConfig): MetadataProvider;
   createSubtitleProvider(config: SubtitleProviderConfig): SubtitleProvider;
   createSocialProvider(config: SocialProviderConfig): SocialProvider;
@@ -689,4 +657,79 @@ export interface RankingCriteria {
   speed?: number;
   freshness?: number;
   popularity?: number;
+}
+
+// ============================================================================
+// STREAMING BACKEND TYPES
+// (identifiers for concrete streaming implementations)
+// ============================================================================
+
+export type StreamProviderId = 'consumet' | 'moviebox' | 'vidsrc' | 'xyra';
+
+export interface IStreamProvider {
+  name: string;
+  getStreams(request: {
+    id: string;
+    type: 'movie' | 'tv';
+    season?: number;
+    episode?: number;
+  }): Promise<MediaStreamSource[]>;
+  healthCheck(): Promise<boolean>;
+}
+
+export interface StreamProviderHealthStatus {
+  provider: StreamProviderId;
+  isHealthy: boolean;
+  responseTime: number;
+  lastChecked: number;
+}
+
+export interface StreamBackendConfig {
+  defaultQuality?: StreamQuality;
+  timeout?: number;
+  retryCount?: number;
+  [key: string]: unknown;
+}
+
+// ============================================================================
+// UNIFIED SERVICE TYPES (consumed by UnifiedMediaService)
+// ============================================================================
+
+export interface UnifiedSearchOptions {
+  query: string;
+  type?: 'movie' | 'tv';
+  year?: number;
+  limit?: number;
+}
+
+export interface UnifiedStreamOptions {
+  id: string;
+  type: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+  preferredQuality?: StreamQuality;
+}
+
+export interface UnifiedSubtitleOptions {
+  imdbId?: string;
+  tmdbId?: string;
+  season?: number;
+  episode?: number;
+  language?: string;
+}
+
+export interface UnifiedMediaResult {
+  id: string;
+  title: string;
+  type: 'movie' | 'tv';
+  year?: number;
+  poster?: string;
+  backdrop?: string;
+  overview?: string;
+  rating?: number;
+  genres?: string[];
+  runtime?: number;
+  cast?: unknown[];
+  sources: MediaStreamSource[];
+  metadata: IMetadataResult;
 }
