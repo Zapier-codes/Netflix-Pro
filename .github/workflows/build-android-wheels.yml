@@ -41,6 +41,10 @@ jobs:
       - name: Install cibuildwheel
         run: pip install cibuildwheel
 
+      # ──────────────────────────────────────────────────────────────────────
+      # Build jiter FIRST — pydantic-core needs it as a build dependency.
+      # Output to an absolute path that we can reference later.
+      # ──────────────────────────────────────────────────────────────────────
       - name: Build jiter for Android
         working-directory: jiter/crates/jiter-python
         env:
@@ -48,8 +52,20 @@ jobs:
           CIBW_BUILD: "cp313-android_arm64_v8a cp313-android_x86_64"
           CIBW_ARCHS_ANDROID: "arm64_v8a x86_64"
           CIBW_TEST_SKIP: "*-android_*"
-        run: cibuildwheel --output-dir ../../../wheels
+        run: |
+          mkdir -p "${{ github.workspace }}/wheels"
+          cibuildwheel --output-dir "${{ github.workspace }}/wheels"
 
+      - name: Verify jiter wheels built
+        run: |
+          echo "✅ Jiter wheels:"
+          ls -la "${{ github.workspace }}/wheels/"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Build pydantic-core SECOND — install jiter from the absolute wheels
+      # directory before building. CIBW_BEFORE_BUILD runs inside cibuildwheel's
+      # build environment, so we must use an absolute path (not relative).
+      # ──────────────────────────────────────────────────────────────────────
       - name: Build pydantic-core for Android
         working-directory: pydantic-core
         env:
@@ -57,27 +73,29 @@ jobs:
           CIBW_BUILD: "cp313-android_arm64_v8a cp313-android_x86_64"
           CIBW_ARCHS_ANDROID: "arm64_v8a x86_64"
           CIBW_TEST_SKIP: "*-android_*"
-          CIBW_BEFORE_BUILD: >
-            pip install --no-index --find-links ../../../wheels jiter
-        run: cibuildwheel --output-dir ../wheels
-
-      - name: List built wheels
+          # CRITICAL FIX: Use absolute path with github.workspace.
+          # Relative paths break because cibuildwheel copies source to a temp dir.
+          CIBW_BEFORE_BUILD: "pip install --no-index --find-links ${{ github.workspace }}/wheels jiter"
         run: |
-          echo "Built wheels:"
-          ls -la wheels/
+          cibuildwheel --output-dir "${{ github.workspace }}/wheels"
+
+      - name: List all built wheels
+        run: |
+          echo "📦 All built wheels:"
+          ls -la "${{ github.workspace }}/wheels/"
 
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-wheels
-          path: wheels/*.whl
+          path: ${{ github.workspace }}/wheels/*.whl
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag || github.event.inputs.release_tag }}
           name: ${{ inputs.release_tag || github.event.inputs.release_tag }}
-          files: wheels/*.whl
+          files: ${{ github.workspace }}/wheels/*.whl
           body: |
             Prebuilt Android wheels for pydantic-core and jiter.
             **Python:** 3.13 | **ABIs:** arm64-v8a, x86_64
