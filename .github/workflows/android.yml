@@ -6,10 +6,6 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────
-  # STEP 1: Build wheels FIRST — must grant write permission so the
-  # reusable workflow can create/update the GitHub Release.
-  # ──────────────────────────────────────────────────────────────────────
   build-wheels:
     uses: ./.github/workflows/build-android-wheels.yml
     secrets: inherit
@@ -18,9 +14,6 @@ jobs:
     with:
       release_tag: android-wheels-latest
 
-  # ──────────────────────────────────────────────────────────────────────
-  # STEP 2: Build APK after wheels are ready
-  # ──────────────────────────────────────────────────────────────────────
   build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
@@ -67,6 +60,17 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
+
+      # ──────────────────────────────────────────────────────────────────────
+      # CRITICAL: Chaquopy needs Python 3.13 installed on the build host
+      # as its "build Python" for cross-compilation. Without this, the
+      # :boxoffice:installDebugPythonRequirements task fails with
+      # "Couldn't find Python 3.13".
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Set up Python 3.13 for Chaquopy
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
       - name: Cache Gradle
         uses: actions/cache@v4
