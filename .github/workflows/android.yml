@@ -117,12 +117,12 @@ jobs:
             ${{ env.ANDROID_SDK_ROOT }}/platforms
             ${{ env.ANDROID_SDK_ROOT }}/build-tools
             ${{ env.ANDROID_SDK_ROOT }}/ndk
-          key: android-sdk-${{ runner.os }}-platform34-buildtools34.0.0-ndk27.1.12297006
+          key: android-sdk-${{ runner.os }}-platform36-buildtools36.0.0-ndk27.1.12297006
 
       - name: Install SDK components
         if: steps.android-sdk-cache.outputs.cache-hit != 'true'
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;27.1.12297006"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
 
       # ──────────────────────────────────────────────────────────────────────
       # These env vars are needed by later steps regardless of whether the
@@ -236,7 +236,9 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --build-cache --stacktrace
+          ./gradlew assembleDebug \
+            --no-daemon --build-cache --stacktrace \
+            -PreactNativeArchitectures=arm64-v8a,x86_64
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -Dorg.gradle.daemon=false"
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
