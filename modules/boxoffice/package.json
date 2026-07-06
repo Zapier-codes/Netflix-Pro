@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "boxoffice",
   "version": "1.0.0",
   "description": "BoxOffice Nitro module - JSI interface for moviebox-api SDK operations",

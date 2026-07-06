@@ -1,4 +1,4 @@
-﻿package expo.modules.boxoffice.nitro
+package com.margelo.nitro.boxoffice
 
 import com.margelo.nitro.boxoffice.*
 import com.margelo.nitro.core.Promise

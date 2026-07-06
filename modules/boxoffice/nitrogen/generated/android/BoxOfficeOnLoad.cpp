@@ -21,6 +21,7 @@
 #include "JFunc_void_DownloadProgressEvent.hpp"
 #include "JFunc_void_ErrorEvent.hpp"
 #include "JFunc_void.hpp"
+#include <NitroModules/DefaultConstructableObject.hpp>
 
 namespace margelo::nitro::boxoffice {
 
@@ -30,7 +31,14 @@ int initialize(JavaVM* vm) {
   });
 }
 
-
+struct JHybridBoxOfficeNitroModuleSpecImpl: public jni::JavaClass<JHybridBoxOfficeNitroModuleSpecImpl, JHybridBoxOfficeNitroModuleSpec::JavaPart> {
+  static constexpr auto kJavaDescriptor = "Lcom/margelo/nitro/boxoffice/HybridBoxOfficeNitroModule;";
+  static std::shared_ptr<JHybridBoxOfficeNitroModuleSpec> create() {
+    static const auto constructorFn = javaClassStatic()->getConstructor<JHybridBoxOfficeNitroModuleSpecImpl::javaobject()>();
+    jni::local_ref<JHybridBoxOfficeNitroModuleSpec::JavaPart> javaPart = javaClassStatic()->newObject(constructorFn);
+    return javaPart->getJHybridBoxOfficeNitroModuleSpec();
+  }
+};
 
 void registerAllNatives() {
   using namespace margelo::nitro;
@@ -45,7 +53,12 @@ void registerAllNatives() {
   margelo::nitro::boxoffice::JFunc_void_cxx::registerNatives();
 
   // Register Nitro Hybrid Objects
-  
+  HybridObjectRegistry::registerHybridObjectConstructor(
+    "BoxOfficeNitroModule",
+    []() -> std::shared_ptr<HybridObject> {
+      return JHybridBoxOfficeNitroModuleSpecImpl::create();
+    }
+  );
 }
 
 } // namespace margelo::nitro::boxoffice

@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "https://nitro.margelo.com/nitro.schema.json",
   "cxxNamespace": ["boxoffice"],
   "ios": {
@@ -10,7 +10,10 @@
   },
   "autolinking": {
     "BoxOfficeNitroModule": {
-      "kotlin": "expo.modules.boxoffice.nitro.HybridBoxOfficeNitroModule"
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridBoxOfficeNitroModule"
+      }
     }
   },
   "ignorePaths": ["**/node_modules"]
