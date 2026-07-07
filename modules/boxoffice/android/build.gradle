@@ -12,6 +12,7 @@ version = '1.0.0'
 android {
     namespace "expo.modules.boxoffice"
     compileSdk 36
+    ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig {
         minSdk 24
