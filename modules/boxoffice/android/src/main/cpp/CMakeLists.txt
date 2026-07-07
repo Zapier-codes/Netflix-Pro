@@ -14,6 +14,7 @@ file(GLOB_RECURSE GENERATED_SHARED_SOURCES "${NITROGEN_DIR}/shared/c++/*.cpp")
 include_directories(
     ${NITROGEN_DIR}/android/c++
     ${NITROGEN_DIR}/shared/c++
+    ${NITROGEN_DIR}/android        # <-- ADD THIS: BoxOfficeOnLoad.hpp lives here
     ${CMAKE_SOURCE_DIR}
 )
 
