@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.22.1)
+cmake_minimum_required(VERSION 3.22.1)
 project("BoxOffice")
 
 set(CMAKE_CXX_STANDARD 20)
@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_definitions(BUILDING_BOXOFFICE_WITH_GENERATED_CMAKE_PROJECT)
 
-set(NITROGEN_DIR "${CMAKE_SOURCE_DIR}/../../../../../nitrogen/generated")
+set(NITROGEN_DIR "${CMAKE_SOURCE_DIR}/../../../../nitrogen/generated")
 
 file(GLOB_RECURSE GENERATED_ANDROID_SOURCES "${NITROGEN_DIR}/android/c++/*.cpp")
 file(GLOB_RECURSE GENERATED_SHARED_SOURCES "${NITROGEN_DIR}/shared/c++/*.cpp")

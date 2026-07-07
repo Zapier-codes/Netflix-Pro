@@ -1,16 +1,9 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": [],
+    "modules": ["expo.modules.boxoffice.nitro.BoxOfficeNitroPackage"],
     "gradle": {
       "buildGradle": "android/build.gradle"
-    }
-  },
-  "nitro": {
-    "modules": ["expo.modules.boxoffice.nitro.BoxOfficeNitroPackage"],
-    "android": {
-      "cppBridge": "nitro/android/src/main/cpp/BoxOfficeNitroBridge.cpp",
-      "gradle": "nitro/android/build.gradle"
     }
   },
   "python": {

@@ -1,6 +1,6 @@
 // app/_layout.tsx
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, Text, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -36,26 +36,7 @@ import { boxOffice } from '../modules/boxoffice';
 const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
 
 // ============================================
-// SPLASH SCREEN COMPONENT
-// ============================================
-const SplashScreen = () => {
-  const { colors } = useTheme();
-
-  return (
-    <View style={[styles.splashContainer, { backgroundColor: colors.background }]}>
-      <View style={styles.splashContent}>
-        <Text style={[styles.splashTitle, { color: colors.gold }]}>🎬 Netflix Pro</Text>
-        <ActivityIndicator size="large" color={colors.gold} />
-        <Text style={[styles.splashSubtitle, { color: colors.textSub }]}>
-          Loading your content...
-        </Text>
-      </View>
-    </View>
-  );
-};
-
-// ============================================
-// MAIN APP CONTENT (formerly App.tsx's AppContent)
+// MAIN APP CONTENT
 // ============================================
 function AppContent() {
   const router = useRouter();
@@ -249,9 +230,11 @@ function AppContent() {
 
   console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'boxoffice:', boxOfficeReady);
 
-  // Show splash while preloading and no cache
+  // ─── REMOVED CUSTOM SPLASH SCREEN ───
+  // The native splash screen (from app.config.ts) handles the initial loading
+  // We show nothing while loading, letting the native splash do its job
   if (!isInitialized && !hasCachedData && isLoading) {
-    return <SplashScreen />;
+    return null; // Native splash is still visible
   }
 
   // Show error if no cache and error occurred
@@ -314,26 +297,6 @@ export default function RootLayout() {
 // STYLES
 // ============================================
 const styles = StyleSheet.create({
-  splashContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  splashContent: {
-    alignItems: 'center',
-    gap: 16,
-    padding: 20,
-  },
-  splashTitle: {
-    fontSize: 34,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  splashSubtitle: {
-    fontSize: 14,
-    marginTop: 4,
-  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
