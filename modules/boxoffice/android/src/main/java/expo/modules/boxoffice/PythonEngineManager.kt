@@ -2,6 +2,8 @@ package expo.modules.boxoffice
 
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 class PythonEngineManager(
     private val packageName: String,
@@ -11,6 +13,14 @@ class PythonEngineManager(
     private val engineModule: PyObject
     private val engineClass: PyObject
     private var engineInstance: PyObject? = null
+
+    // Tracks the pyCallback PyObjects handed to Python's register_event_callback,
+    // keyed by eventType, so they can be handed back to unregister_event_callback.
+    // Needed because register_event_callback(event_type, callback) on the Python
+    // side (main.py) requires the *same* callback object to remove it from its
+    // internal list - unregister_event_callback(event_type, callback) takes two
+    // required arguments, not one.
+    private val registeredCallbacks = ConcurrentHashMap<String, CopyOnWriteArrayList<PyObject>>()
 
     init {
         engineModule = python.getModule(packageName)
@@ -64,17 +74,29 @@ class PythonEngineManager(
         val pyCallback = wrapperModule.callAttr("make_callback")
 
         engineInstance!!.callAttr("register_event_callback", eventType, pyCallback)
+
+        registeredCallbacks.getOrPut(eventType) { CopyOnWriteArrayList() }.add(pyCallback)
     }
 
     fun unregisterEventCallback(eventType: String) {
         ensureEngineInstance()
-        engineInstance!!.callAttr("unregister_event_callback", eventType)
+        val callbacks = registeredCallbacks[eventType] ?: return
+        for (callback in callbacks) {
+            try {
+                engineInstance!!.callAttr("unregister_event_callback", eventType, callback)
+            } catch (e: Exception) {
+                // Isolate per-callback failures so one bad unregister call
+                // doesn't stop the rest from being cleaned up.
+            }
+        }
+        registeredCallbacks.remove(eventType)
     }
 
     fun cleanup() {
         try {
             engineInstance?.callAttr("stop")
             engineInstance = null
+            registeredCallbacks.clear()
         } catch (e: Exception) {
             // Ignore
         }
