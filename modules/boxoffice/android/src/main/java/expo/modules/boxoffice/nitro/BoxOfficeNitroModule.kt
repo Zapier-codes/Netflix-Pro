@@ -56,51 +56,24 @@ private fun parseSubjectType(value: String?, default: SubjectTypeValue = Subject
 // generated types.
 
 private fun Double?.toVariant(): Variant_NullType_Double =
-    if (this == null) Variant_NullType_Double.create(NullType()) else Variant_NullType_Double.create(this)
+    if (this == null) Variant_NullType_Double.create(NullType.NULL) else Variant_NullType_Double.create(this)
 
 private fun String?.toVariant(): Variant_NullType_String =
-    if (this == null) Variant_NullType_String.create(NullType()) else Variant_NullType_String.create(this)
+    if (this == null) Variant_NullType_String.create(NullType.NULL) else Variant_NullType_String.create(this)
 
 private fun DownloadedFile?.toVariant(): Variant_NullType_DownloadedFile =
-    if (this == null) Variant_NullType_DownloadedFile.create(NullType()) else Variant_NullType_DownloadedFile.create(this)
+    if (this == null) Variant_NullType_DownloadedFile.create(NullType.NULL) else Variant_NullType_DownloadedFile.create(this)
 
 /**
- * Converts a loosely-typed value coming back from Python (String, Number,
- * Boolean, null, List<*>, Map<*, *>) into an AnyMap-compatible structure.
- * Only Map values become AnyMap itself; use [anyMapArrayOf] for `Array<AnyMap>`
- * fields where each element must individually be an AnyMap.
- *
- * NOTE: verify the exact AnyMap setter names (setString/setDouble/setBoolean/
- * setArray/setObject/setNull) against the version of AnyMap.kt shipped in
- * node_modules/react-native-nitro-modules for your installed Nitro version -
- * these are stable across recent releases but this file could not be
- * inspected directly in this session.
+ * Converts a loosely-typed Map from Python into an AnyMap.
+ * AnyValue.fromAny() handles all the recursion through nested maps/lists automatically.
  */
 private fun mapToAnyMap(map: Map<*, *>): AnyMap {
     val result = AnyMap()
     for ((k, v) in map) {
-        val key = k.toString()
-        when (v) {
-            null -> result.setNull(key)
-            is String -> result.setString(key, v)
-            is Boolean -> result.setBoolean(key, v)
-            is Int -> result.setDouble(key, v.toDouble())
-            is Long -> result.setDouble(key, v.toDouble())
-            is Double -> result.setDouble(key, v)
-            is Number -> result.setDouble(key, v.toDouble())
-            is Map<*, *> -> result.setObject(key, mapToAnyMap(v))
-            is List<*> -> result.setArray(key, v.map { anyToAnyMapValue(it) }.toTypedArray())
-            else -> result.setString(key, v.toString())
-        }
+        result.setAny(k.toString(), v)
     }
     return result
-}
-
-private fun anyToAnyMapValue(value: Any?): Any = when (value) {
-    null -> NullType()
-    is Map<*, *> -> mapToAnyMap(value)
-    is List<*> -> value.map { anyToAnyMapValue(it) }.toTypedArray()
-    else -> value
 }
 
 /** Converts a `List<Map<*, *>>` (as returned by Python) into `Array<AnyMap>`. */
