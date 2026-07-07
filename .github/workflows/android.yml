@@ -285,7 +285,7 @@ jobs:
           fi
           ./gradlew assembleDebug \
             --no-daemon --build-cache --stacktrace \
-            -PreactNativeArchitectures=arm64_v8a,x86_64
+            -PreactNativeArchitectures=arm64-v8a,x86_64
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -Dorg.gradle.daemon=false"
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
