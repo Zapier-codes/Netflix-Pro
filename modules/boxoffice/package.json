@@ -1,18 +1,32 @@
 {
-  "name": "boxoffice",
-  "version": "1.0.0",
-  "description": "BoxOffice Nitro module - JSI interface for moviebox-api SDK operations",
-  "main": "index.ts",
-  "keywords": ["expo", "react-native", "nitro", "boxoffice"],
-  "peerDependencies": {
-    "expo": "*",
-    "expo-modules-core": "*",
-    "react": "*",
-    "react-native": "*",
-    "react-native-nitro-modules": "*"
-  },
-  "platforms": ["android"],
-  "scripts": {
-    "android": "cd android && ./gradlew build"
-  }
+    "name":  "boxoffice",
+    "version":  "1.0.0",
+    "description":  "BoxOffice Nitro module - JSI interface for moviebox-api SDK operations",
+    "main":  "index.ts",
+    "keywords":  [
+                     "expo",
+                     "react-native",
+                     "nitro",
+                     "boxoffice"
+                 ],
+    "peerDependencies":  {
+                             "expo":  "*",
+                             "expo-modules-core":  "*",
+                             "react":  "*",
+                             "react-native":  "*",
+                             "react-native-nitro-modules":  "*"
+                         },
+    "platforms":  [
+                      "android"
+                  ],
+    "scripts":  {
+                    "android":  "cd android \u0026\u0026 ./gradlew build"
+                },
+    "expo":  {
+                 "autolinking":  {
+                                     "android":  {
+                                                     "package":  "expo.modules.boxoffice.BoxOfficePackage"
+                                                 }
+                                 }
+             }
 }
