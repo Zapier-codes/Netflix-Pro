@@ -1,4 +1,4 @@
-﻿package expo.modules.boxoffice.nitro
+package expo.modules.boxoffice.nitro
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
