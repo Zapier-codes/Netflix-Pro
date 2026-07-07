@@ -37,6 +37,10 @@ android {
         }
     }
 
+    buildFeatures {
+        prefab true
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -71,5 +75,6 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 dependencies {
     implementation project(':expo-modules-core')
     implementation project(':react-native-nitro-modules')
-    implementation "com.facebook.react:react-native:0.83.6"
+    implementation "com.facebook.react:react-android"
+    implementation "com.facebook.fbjni:fbjni"
 }
