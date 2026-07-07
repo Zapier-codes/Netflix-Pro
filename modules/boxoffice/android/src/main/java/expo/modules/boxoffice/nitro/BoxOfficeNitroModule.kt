@@ -7,6 +7,9 @@ import com.chaquo.python.android.AndroidPlatform
 import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.boxoffice.*
+import com.margelo.nitro.core.AnyMap
+import com.margelo.nitro.core.NullType
+import com.margelo.nitro.core.Promise
 import expo.modules.boxoffice.BoxOfficeEventEmitter
 import expo.modules.boxoffice.PythonEngineManager
 import kotlinx.coroutines.*
@@ -42,11 +45,75 @@ private fun parseSubjectType(value: String?, default: SubjectTypeValue = Subject
         }
     }
 
+// ==================== TYPE CONVERSION HELPERS ====================
+// Nitrogen generates `Array<T>` (not Kotlin `List<T>`) for every array-typed
+// struct field, and wraps nullable primitives that appear inside structs
+// carrying an explicit `| null` in the .nitro.ts spec as sealed
+// Variant_NullType_X classes instead of a plain `X?`. It also represents
+// untyped JSON-like data (Python dict results with no fixed shape) as
+// AnyMap rather than a raw Map/Any. These helpers bridge the loosely-typed
+// Map<String, Any?> coming back from PythonEngineManager into those exact
+// generated types.
+
+private fun Double?.toVariant(): Variant_NullType_Double =
+    if (this == null) Variant_NullType_Double.create(NullType()) else Variant_NullType_Double.create(this)
+
+private fun String?.toVariant(): Variant_NullType_String =
+    if (this == null) Variant_NullType_String.create(NullType()) else Variant_NullType_String.create(this)
+
+private fun DownloadedFile?.toVariant(): Variant_NullType_DownloadedFile =
+    if (this == null) Variant_NullType_DownloadedFile.create(NullType()) else Variant_NullType_DownloadedFile.create(this)
+
+/**
+ * Converts a loosely-typed value coming back from Python (String, Number,
+ * Boolean, null, List<*>, Map<*, *>) into an AnyMap-compatible structure.
+ * Only Map values become AnyMap itself; use [anyMapArrayOf] for `Array<AnyMap>`
+ * fields where each element must individually be an AnyMap.
+ *
+ * NOTE: verify the exact AnyMap setter names (setString/setDouble/setBoolean/
+ * setArray/setObject/setNull) against the version of AnyMap.kt shipped in
+ * node_modules/react-native-nitro-modules for your installed Nitro version -
+ * these are stable across recent releases but this file could not be
+ * inspected directly in this session.
+ */
+private fun mapToAnyMap(map: Map<*, *>): AnyMap {
+    val result = AnyMap()
+    for ((k, v) in map) {
+        val key = k.toString()
+        when (v) {
+            null -> result.setNull(key)
+            is String -> result.setString(key, v)
+            is Boolean -> result.setBoolean(key, v)
+            is Int -> result.setDouble(key, v.toDouble())
+            is Long -> result.setDouble(key, v.toDouble())
+            is Double -> result.setDouble(key, v)
+            is Number -> result.setDouble(key, v.toDouble())
+            is Map<*, *> -> result.setObject(key, mapToAnyMap(v))
+            is List<*> -> result.setArray(key, v.map { anyToAnyMapValue(it) }.toTypedArray())
+            else -> result.setString(key, v.toString())
+        }
+    }
+    return result
+}
+
+private fun anyToAnyMapValue(value: Any?): Any = when (value) {
+    null -> NullType()
+    is Map<*, *> -> mapToAnyMap(value)
+    is List<*> -> value.map { anyToAnyMapValue(it) }.toTypedArray()
+    else -> value
+}
+
+/** Converts a `List<Map<*, *>>` (as returned by Python) into `Array<AnyMap>`. */
+private fun anyMapArrayOf(list: List<*>?): Array<AnyMap> =
+    (list ?: emptyList<Any?>())
+        .mapNotNull { it as? Map<*, *> }
+        .map { mapToAnyMap(it) }
+        .toTypedArray()
+
 class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : HybridBoxOfficeNitroModuleSpec() {
 
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private lateinit var engineManager: PythonEngineManager
     private lateinit var eventEmitter: BoxOfficeEventEmitter
@@ -153,7 +220,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     // ==================== LIFECYCLE ====================
 
     override fun configure(config: BoxOfficeConfig): Promise<CommandResult> {
-        return Promise(scope) {
+        return Promise.async {
             val configMap = hashMapOf<String, Any>()
             config.apiVersion?.let { configMap["api_version"] = it.toApiString() }
             config.downloadDir?.let { configMap["download_dir"] = it }
@@ -162,7 +229,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
             val result = engineManager.configure(configMap)
             CommandResult(
                 success = result["success"] as? Boolean ?: false,
-                data = result["data"],
+                data = (result["data"] as? Map<*, *>)?.let { mapToAnyMap(it) },
                 error = result["error"] as? String,
                 message = result["message"] as? String,
                 timestamp = result["timestamp"] as? String
@@ -171,11 +238,11 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun start(): Promise<CommandResult> {
-        return Promise(scope) {
+        return Promise.async {
             val result = engineManager.start()
             CommandResult(
                 success = result["success"] as? Boolean ?: false,
-                data = result["data"],
+                data = (result["data"] as? Map<*, *>)?.let { mapToAnyMap(it) },
                 error = result["error"] as? String,
                 message = result["message"] as? String,
                 timestamp = result["timestamp"] as? String
@@ -184,11 +251,11 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun stop(): Promise<CommandResult> {
-        return Promise(scope) {
+        return Promise.async {
             val result = engineManager.stop()
             CommandResult(
                 success = result["success"] as? Boolean ?: false,
-                data = result["data"],
+                data = (result["data"] as? Map<*, *>)?.let { mapToAnyMap(it) },
                 error = result["error"] as? String,
                 message = result["message"] as? String,
                 timestamp = result["timestamp"] as? String
@@ -197,7 +264,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun getStatus(): Promise<EngineStatus> {
-        return Promise(scope) {
+        return Promise.async {
             val result = engineManager.getStatus()
             EngineStatus(
                 status = result["status"] as? String ?: "unknown",
@@ -211,7 +278,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     // ==================== SEARCH ====================
 
     override fun search(query: String, page: Double, perPage: Double, subjectType: SubjectTypeValue, version: ApiVersionValue): Promise<SearchResults> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "query" to query,
                 "page" to page.toInt(),
@@ -224,10 +291,10 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
             val pager = result["pager"] as? Map<String, Any?> ?: emptyMap()
 
             SearchResults(
-                items = data.map { mapToSearchResultItem(it) },
+                items = data.map { mapToSearchResultItem(it) }.toTypedArray(),
                 pager = SearchResultsPager(
                     hasMore = pager["hasMore"] as? Boolean ?: false,
-                    nextPage = pager["nextPage"] as? Double,
+                    nextPage = (pager["nextPage"] as? Number)?.toDouble().toVariant(),
                     page = (pager["page"] as? Number)?.toDouble() ?: 1.0,
                     perPage = (pager["perPage"] as? Number)?.toDouble() ?: 24.0,
                     totalCount = (pager["totalCount"] as? Number)?.toDouble() ?: 0.0
@@ -239,7 +306,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun searchSuggestions(query: String, version: ApiVersionValue): Promise<SearchSuggestions> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "query" to query,
                 "version" to version.toApiString()
@@ -251,10 +318,10 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
                 items = data.map {
                     SuggestedItem(
                         type = (it["type"] as? String)?.let { t -> parseSubjectType(t) },
-                        subject = it["subject"] as? String,
+                        subject = (it["subject"] as? String).toVariant(),
                         word = it["word"] as? String ?: ""
                     )
-                },
+                }.toTypedArray(),
                 keyword = result["keyword"] as? String ?: query,
                 version = parseApiVersion(result["version"] as? String, version)
             )
@@ -264,7 +331,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     // ==================== DISCOVERY ====================
 
     override fun getTrending(page: Double, perPage: Double, version: ApiVersionValue): Promise<TrendingResults> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "page" to page.toInt(),
                 "per_page" to perPage.toInt(),
@@ -275,10 +342,10 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
             val pager = result["pager"] as? Map<String, Any?> ?: emptyMap()
 
             TrendingResults(
-                data = data.map { mapToSearchResultItem(it) },
+                data = data.map { mapToSearchResultItem(it) }.toTypedArray(),
                 pager = SearchResultsPager(
                     hasMore = pager["hasMore"] as? Boolean ?: false,
-                    nextPage = pager["nextPage"] as? Double,
+                    nextPage = (pager["nextPage"] as? Number)?.toDouble().toVariant(),
                     page = (pager["page"] as? Number)?.toDouble() ?: 1.0,
                     perPage = (pager["perPage"] as? Number)?.toDouble() ?: 24.0,
                     totalCount = (pager["totalCount"] as? Number)?.toDouble() ?: 0.0
@@ -289,7 +356,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun getHomepage(version: ApiVersionValue): Promise<HomepageContent> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>("version" to version.toApiString())
             val result = engineManager.sendCommand("get_homepage", params)
             val data = result["data"] as? Map<String, Any?> ?: emptyMap()
@@ -301,41 +368,41 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
                         type = it["type"] as? String ?: "",
                         position = (it["position"] as? Number)?.toDouble() ?: 0.0,
                         title = it["title"] as? String ?: "",
-                        subjects = (it["subjects"] as? List<Map<String, Any?>>)?.map { sub -> mapToSearchResultItem(sub) } ?: emptyList(),
+                        subjects = (it["subjects"] as? List<Map<String, Any?>>)?.map { sub -> mapToSearchResultItem(sub) }?.toTypedArray() ?: emptyArray(),
                         url = it["url"] as? String,
                         opId = it["opId"] as? String
                     )
-                },
+                }.toTypedArray(),
                 platformList = (data["platformList"] as? List<Map<String, Any?>>)?.map {
                     PlatformInfo(name = it["name"] as? String ?: "", uploadBy = it["uploadBy"] as? String ?: "")
-                } ?: emptyList(),
+                }?.toTypedArray() ?: emptyArray(),
                 version = parseApiVersion(result["version"] as? String, version)
             )
         }
     }
 
     override fun getHotContent(version: ApiVersionValue): Promise<HotContent> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>("version" to version.toApiString())
             val result = engineManager.sendCommand("get_hot_content", params)
             val data = result["data"] as? Map<String, Any?> ?: emptyMap()
 
             HotContent(
-                movies = (data["movies"] as? List<Map<String, Any?>>)?.map { mapToSearchResultItem(it) } ?: emptyList(),
-                tvSeries = (data["tv_series"] as? List<Map<String, Any?>>)?.map { mapToSearchResultItem(it) } ?: emptyList(),
+                movies = (data["movies"] as? List<Map<String, Any?>>)?.map { mapToSearchResultItem(it) }?.toTypedArray() ?: emptyArray(),
+                tvSeries = (data["tv_series"] as? List<Map<String, Any?>>)?.map { mapToSearchResultItem(it) }?.toTypedArray() ?: emptyArray(),
                 version = parseApiVersion(result["version"] as? String, version)
             )
         }
     }
 
     override fun getPopularSearches(version: ApiVersionValue): Promise<PopularSearches> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>("version" to version.toApiString())
             val result = engineManager.sendCommand("get_popular_searches", params)
             val data = result["data"] as? List<Map<String, Any?>> ?: emptyList()
 
             PopularSearches(
-                data = data.map { PopularSearchItem(title = it["title"] as? String ?: "") },
+                data = data.map { PopularSearchItem(title = it["title"] as? String ?: "") }.toTypedArray(),
                 version = parseApiVersion(result["version"] as? String, version)
             )
         }
@@ -344,7 +411,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     // ==================== DETAILS ====================
 
     override fun getMovieDetails(urlOrItem: String, version: ApiVersionValue): Promise<MovieDetails> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "url_or_item" to urlOrItem,
                 "version" to version.toApiString()
@@ -354,7 +421,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
 
             MovieDetails(
                 subject = mapToSearchResultItem(data["subject"] as? Map<String, Any?> ?: emptyMap()),
-                stars = (data["stars"] as? List<Map<String, Any?>>)?.map { mapToStarsModel(it) } ?: emptyList(),
+                stars = (data["stars"] as? List<Map<String, Any?>>)?.map { mapToStarsModel(it) }?.toTypedArray() ?: emptyArray(),
                 resource = mapToResourceModel(data["resource"] as? Map<String, Any?> ?: emptyMap()),
                 metadata = mapToMetadataModel(data["metadata"] as? Map<String, Any?> ?: emptyMap()),
                 postList = mapToPostList(data["postList"] as? Map<String, Any?> ?: emptyMap()),
@@ -366,7 +433,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun getTVSeriesDetails(urlOrItem: String, version: ApiVersionValue): Promise<TVSeriesDetails> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "url_or_item" to urlOrItem,
                 "version" to version.toApiString()
@@ -376,7 +443,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
 
             TVSeriesDetails(
                 subject = mapToSearchResultItem(data["subject"] as? Map<String, Any?> ?: emptyMap()),
-                stars = (data["stars"] as? List<Map<String, Any?>>)?.map { mapToStarsModel(it) } ?: emptyList(),
+                stars = (data["stars"] as? List<Map<String, Any?>>)?.map { mapToStarsModel(it) }?.toTypedArray() ?: emptyArray(),
                 resource = mapToResourceModel(data["resource"] as? Map<String, Any?> ?: emptyMap()),
                 metadata = mapToMetadataModel(data["metadata"] as? Map<String, Any?> ?: emptyMap()),
                 postList = mapToPostList(data["postList"] as? Map<String, Any?> ?: emptyMap()),
@@ -386,14 +453,14 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun getItemDetails(urlOrItem: String): Promise<V2ItemDetails> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>("url_or_item" to urlOrItem)
             val result = engineManager.sendCommand("get_item_details", params)
             val data = result["data"] as? Map<String, Any?> ?: emptyMap()
 
             V2ItemDetails(
                 subject = mapToSearchResultItem(data["subject"] as? Map<String, Any?> ?: emptyMap()),
-                stars = (data["stars"] as? List<Map<String, Any?>>)?.map { mapToStarsModel(it) } ?: emptyList(),
+                stars = (data["stars"] as? List<Map<String, Any?>>)?.map { mapToStarsModel(it) }?.toTypedArray() ?: emptyArray(),
                 resource = mapToResourceModel(data["resource"] as? Map<String, Any?> ?: emptyMap()),
                 metadata = mapToMetadataModel(data["metadata"] as? Map<String, Any?> ?: emptyMap()),
                 isForbid = data["isForbid"] as? Boolean ?: false,
@@ -406,7 +473,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     // ==================== DOWNLOADABLE FILES ====================
 
     override fun getDownloadableFiles(item: SearchResultItem, subjectType: SubjectTypeValue, version: ApiVersionValue): Promise<DownloadableFiles> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "item" to item,
                 "subject_type" to subjectType.toApiString(),
@@ -423,7 +490,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
                         resolution = (it["resolution"] as? Number)?.toDouble() ?: 0.0,
                         size = (it["size"] as? Number)?.toDouble() ?: 0.0
                     )
-                } ?: emptyList(),
+                }?.toTypedArray() ?: emptyArray(),
                 captions = (data["captions"] as? List<Map<String, Any?>>)?.map {
                     CaptionFile(
                         id = it["id"] as? String ?: "",
@@ -433,7 +500,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
                         size = (it["size"] as? Number)?.toDouble() ?: 0.0,
                         delay = (it["delay"] as? Number)?.toDouble() ?: 0.0
                     )
-                } ?: emptyList(),
+                }?.toTypedArray() ?: emptyArray(),
                 limited = data["limited"] as? Boolean ?: false,
                 limitedCode = data["limitedCode"] as? String,
                 hasResource = data["hasResource"] as? Boolean ?: false
@@ -444,7 +511,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     // ==================== DOWNLOADS ====================
 
     override fun downloadMovie(title: String, quality: String, captionLanguage: String, downloadDir: String, year: Double): Promise<DownloadMovieResult> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "title" to title,
                 "quality" to quality,
@@ -467,13 +534,13 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
                         savedTo = it["saved_to"] as? String ?: "",
                         size = (it["size"] as? Number)?.toDouble() ?: 0.0
                     )
-                }
+                }.toVariant()
             )
         }
     }
 
     override fun downloadTVSeries(title: String, season: Double, episode: Double, limit: Double, quality: String, captionLanguage: String, downloadDir: String, autoMode: Boolean): Promise<DownloadTVSeriesResult> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "title" to title,
                 "season" to season.toInt(),
@@ -501,7 +568,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     }
 
     override fun getDownloadStatus(downloadId: String?): Promise<DownloadStatusList> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>()
             downloadId?.let { params["download_id"] = it }
             val result = engineManager.sendCommand("get_download_status", params)
@@ -517,17 +584,19 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
                         isComplete = it["is_complete"] as? Boolean ?: false,
                         savedTo = it["saved_to"] as? String
                     )
-                }
+                }.toTypedArray()
             )
         }
     }
 
     override fun cancelDownload(downloadId: String): Promise<CommandResult> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>("download_id" to downloadId)
             val result = engineManager.sendCommand("cancel_download", params)
             CommandResult(
                 success = result["success"] as? Boolean ?: false,
+                data = (result["data"] as? Map<*, *>)?.let { mapToAnyMap(it) },
+                error = result["error"] as? String,
                 message = result["message"] as? String,
                 timestamp = result["timestamp"] as? String
             )
@@ -537,7 +606,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
     // ==================== RECOMMENDATIONS ====================
 
     override fun getRecommendations(urlOrItem: String, page: Double, perPage: Double, version: ApiVersionValue): Promise<Recommendations> {
-        return Promise(scope) {
+        return Promise.async {
             val params = hashMapOf<String, Any>(
                 "url_or_item" to urlOrItem,
                 "page" to page.toInt(),
@@ -549,10 +618,10 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
             val pager = result["pager"] as? Map<String, Any?> ?: emptyMap()
 
             Recommendations(
-                data = data.map { mapToSearchResultItem(it) },
+                data = data.map { mapToSearchResultItem(it) }.toTypedArray(),
                 pager = SearchResultsPager(
                     hasMore = pager["hasMore"] as? Boolean ?: false,
-                    nextPage = pager["nextPage"] as? Double,
+                    nextPage = (pager["nextPage"] as? Number)?.toDouble().toVariant(),
                     page = (pager["page"] as? Number)?.toDouble() ?: 1.0,
                     perPage = (pager["perPage"] as? Number)?.toDouble() ?: 24.0,
                     totalCount = (pager["totalCount"] as? Number)?.toDouble() ?: 0.0
@@ -713,7 +782,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
             description = map["description"] as? String,
             releaseDate = map["releaseDate"] as? String,
             duration = (map["duration"] as? Number)?.toDouble(),
-            genre = (map["genre"] as? List<String>) ?: emptyList(),
+            genre = (map["genre"] as? List<String>)?.toTypedArray() ?: emptyArray(),
             cover = cover?.let {
                 ContentImage(
                     url = it["url"] as? String ?: "",
@@ -733,9 +802,9 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
             imdbRatingValue = (map["imdbRatingValue"] as? Number)?.toDouble(),
             detailPath = map["detailPath"] as? String ?: "",
             hasResource = map["hasResource"] as? Boolean ?: false,
-            subtitles = (map["subtitles"] as? List<String>) ?: emptyList(),
+            subtitles = (map["subtitles"] as? List<String>)?.toTypedArray() ?: emptyArray(),
             corner = map["corner"] as? String,
-            stafflist = map["stafflist"] as? List<Any?>,
+            stafflist = (map["stafflist"] as? List<*>)?.let { anyMapArrayOf(it) },
             appointmentCnt = (map["appointmentCnt"] as? Number)?.toDouble(),
             appointmentDate = map["appointmentDate"] as? String
         )
@@ -754,7 +823,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
 
     private fun mapToResourceModel(map: Map<String, Any?>): ResourceModel {
         return ResourceModel(
-            seasons = (map["seasons"] as? List<Any?>) ?: emptyList(),
+            seasons = anyMapArrayOf(map["seasons"] as? List<*>),
             source = map["source"] as? String ?: "",
             uploadBy = map["uploadBy"] as? String ?: ""
         )
@@ -764,7 +833,7 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
         return MetadataModel(
             description = map["description"] as? String ?: "",
             image = map["image"] as? String ?: "",
-            keyWords = (map["keyWords"] as? List<String>) ?: emptyList(),
+            keyWords = (map["keyWords"] as? List<String>)?.toTypedArray() ?: emptyArray(),
             referer = map["referer"] as? String,
             title = map["title"] as? String ?: "",
             url = map["url"] as? String
@@ -783,10 +852,10 @@ class BoxOfficeNitroModule(private val reactContext: ReactApplicationContext) : 
                     content = it["content"] as? String ?: "",
                     createTime = it["createTime"] as? String ?: ""
                 )
-            },
+            }.toTypedArray(),
             pager = SearchResultsPager(
                 hasMore = pager["hasMore"] as? Boolean ?: false,
-                nextPage = pager["nextPage"] as? Double,
+                nextPage = (pager["nextPage"] as? Number)?.toDouble().toVariant(),
                 page = (pager["page"] as? Number)?.toDouble() ?: 1.0,
                 perPage = (pager["perPage"] as? Number)?.toDouble() ?: 24.0,
                 totalCount = (pager["totalCount"] as? Number)?.toDouble() ?: 0.0
