@@ -95,6 +95,11 @@ dependencies {
     implementation project(':boxoffice')
     implementation(name: 'ffmpeg-kit-full-gpl', ext: 'aar')
     implementation("com.facebook.react:react-android")
+    
+    // Add this to exclude duplicate FFmpegKit classes from palash-ffmpeg-kit-react-native-sf
+    implementation(project(':palash-ffmpeg-kit-react-native-sf')) {
+        exclude group: 'io.github.jamaismagic.ffmpeg'
+    }
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

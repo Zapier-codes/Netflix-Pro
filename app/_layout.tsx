@@ -1,18 +1,19 @@
 // app/_layout.tsx
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text, Platform } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider as ReduxProvider } from 'react-redux';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Store
 import { store } from '../src/store/store';
 import { useAppStore } from '../src/store/zustand/store';
 
 // Theme & Alerts
-import { ThemeProvider, useTheme } from '../src/contexts/ThemeContext';
+import { ThemeProvider, useTheme, useIsDark } from '../src/contexts/ThemeContext';
 import { AlertProvider } from '../src/contexts/AlertContext';
 
 // Services
@@ -34,6 +35,86 @@ import { boxOffice } from '../modules/boxoffice';
 
 // Pulled from .env — must be prefixed EXPO_PUBLIC_ to be readable at runtime.
 const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
+
+// ============================================
+// LOADING SCREEN
+// ============================================
+function LoadingScreen() {
+  const { colors, isDark } = useTheme();
+  
+  return (
+    <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+      {!isDark && (
+        <LinearGradient
+          colors={colors.backgroundGradient}
+          style={StyleSheet.absoluteFillObject}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      )}
+      <View style={styles.loadingContent}>
+        <View style={[styles.loadingLogo, { borderColor: colors.gold }]}>
+          <Text style={[styles.loadingLogoText, { color: colors.gold }]}>N</Text>
+        </View>
+        <View style={styles.loadingDots}>
+          {[0, 1, 2].map((i) => (
+            <View
+              key={i}
+              style={[
+                styles.loadingDot,
+                {
+                  backgroundColor: colors.gold,
+                  opacity: 0.3 + (i * 0.25),
+                },
+              ]}
+            />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ============================================
+// ERROR SCREEN
+// ============================================
+function ErrorScreen({ error, onRetry }: { error: string; onRetry: () => void }) {
+  const { colors, isDark } = useTheme();
+  
+  return (
+    <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
+      {!isDark && (
+        <LinearGradient
+          colors={colors.backgroundGradient}
+          style={StyleSheet.absoluteFillObject}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      )}
+      <View style={[
+        styles.errorCard,
+        {
+          backgroundColor: isDark ? colors.surfaceRaised : 'rgba(255,255,255,0.7)',
+          borderWidth: isDark ? 0 : 0.5,
+          borderColor: isDark ? 'transparent' : 'rgba(255,255,255,0.3)',
+          shadowColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(66,133,244,0.1)',
+        }
+      ]}>
+        <Text style={[styles.errorIcon, { color: colors.gold }]}>🎬</Text>
+        <Text style={[styles.errorTitle, { color: colors.text }]}>Something went wrong</Text>
+        <Text style={[styles.errorText, { color: colors.textSub }]}>{error}</Text>
+        <View style={[styles.errorRetryContainer, { backgroundColor: colors.goldFill }]}>
+          <Text
+            style={[styles.errorRetry, { color: colors.gold }]}
+            onPress={onRetry}
+          >
+            Try Again
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
 
 // ============================================
 // MAIN APP CONTENT
@@ -244,37 +325,37 @@ function AppContent() {
 
   console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'boxoffice:', boxOfficeReady);
 
-  // ─── REMOVED CUSTOM SPLASH SCREEN ───
-  // The native splash screen (from app.config.ts) handles the initial loading
-  // We show nothing while loading, letting the native splash do its job
+  // ─── SHOW LOADING SCREEN ───
+  // Show loading while initializing without cache
   if (!isInitialized && !hasCachedData && isLoading) {
-    return null; // Native splash is still visible
+    return <LoadingScreen />;
   }
 
-  // Show error if no cache and error occurred
+  // ─── SHOW ERROR SCREEN ───
   if (error && !hasCachedData && isInitialized) {
     return (
-      <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorTitle, { color: colors.error }]}>⚠️ Something went wrong</Text>
-        <Text style={[styles.errorText, { color: colors.textSub }]}>{error}</Text>
-        <Text
-          style={[styles.errorRetry, { color: colors.gold }]}
-          onPress={() => {
-            setError(null);
-            preloadAllContent();
-          }}
-        >
-          Tap to retry
-        </Text>
-      </View>
+      <ErrorScreen 
+        error={error} 
+        onRetry={() => {
+          setError(null);
+          preloadAllContent();
+        }} 
+      />
     );
   }
 
-  // Main app - content is either cached or preloading in background
+  // ─── MAIN APP ───
   return (
     <SafeAreaProvider>
       <StatusBar hidden />
-      <Stack>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: 'transparent',
+          },
+        }}
+      >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="movie/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="sports" options={{ headerShown: false }} />
@@ -311,29 +392,81 @@ export default function RootLayout() {
 // STYLES
 // ============================================
 const styles = StyleSheet.create({
+  // ─── Loading Screen ───
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    alignItems: 'center',
+    gap: 24,
+  },
+  loadingLogo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  loadingLogoText: {
+    fontSize: 40,
+    fontWeight: '800',
+  },
+  loadingDots: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  loadingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  // ─── Error Screen ───
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 30,
+    padding: 24,
+  },
+  errorCard: {
+    maxWidth: 340,
+    width: '100%',
+    padding: 32,
+    borderRadius: 20,
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    backdropFilter: Platform.OS === 'ios' ? 'blur(20px)' : undefined,
+  },
+  errorIcon: {
+    fontSize: 48,
+    marginBottom: 16,
   },
   errorTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 12,
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   errorText: {
-    fontSize: 16,
+    fontSize: 15,
     textAlign: 'center',
     marginBottom: 24,
-    lineHeight: 24,
+    lineHeight: 22,
+  },
+  errorRetryContainer: {
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   errorRetry: {
     fontSize: 16,
     fontWeight: '600',
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 8,
-    backgroundColor: 'rgba(212, 175, 55, 0.15)',
   },
 });

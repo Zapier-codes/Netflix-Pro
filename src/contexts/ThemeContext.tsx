@@ -7,9 +7,12 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 
 export interface ThemeColors {
   background: string;
+  backgroundGradient: string[];
   surface: string;
   surfaceRaised: string;
   surfaceHigh: string;
+  surfaceGlass: string;
+  surfaceGlassBorder: string;
   text: string;
   textSub: string;
   textMuted: string;
@@ -34,13 +37,18 @@ export interface ThemeColors {
   tabBarActive: string;
   tabBarInactive: string;
   watermarkOpacity: number;
+  shadowColor: string;
+  glassBlur: number;
 }
 
 const DARK_THEME: ThemeColors = {
   background: '#000000',
+  backgroundGradient: ['#000000', '#0a0a0a', '#000000'],
   surface: '#0D0D0D',
   surfaceRaised: '#161616',
   surfaceHigh: '#1F1F1F',
+  surfaceGlass: 'rgba(255,255,255,0.05)',
+  surfaceGlassBorder: 'rgba(255,255,255,0.08)',
   text: '#FFFFFF',
   textSub: '#888888',
   textMuted: '#4A4A4A',
@@ -65,13 +73,18 @@ const DARK_THEME: ThemeColors = {
   tabBarActive: '#D4AF37',
   tabBarInactive: '#888888',
   watermarkOpacity: 0.08,
+  shadowColor: 'rgba(0,0,0,0.5)',
+  glassBlur: 20,
 };
 
 const LIGHT_THEME: ThemeColors = {
-  background: '#E8F0F8',
-  surface: '#FFFFFF',
-  surfaceRaised: '#F8FAFE',
-  surfaceHigh: '#F0F4FA',
+  background: '#E8F0F8', // Soft blue-gray base
+  backgroundGradient: ['#E8F0F8', '#D4E4F7', '#C8D8EF'], // Glassy blue gradient
+  surface: 'rgba(255, 255, 255, 0.65)',
+  surfaceRaised: 'rgba(255, 255, 255, 0.75)',
+  surfaceHigh: 'rgba(255, 255, 255, 0.85)',
+  surfaceGlass: 'rgba(255, 255, 255, 0.3)',
+  surfaceGlassBorder: 'rgba(255, 255, 255, 0.4)',
   text: '#1A2A3A',
   textSub: '#4A5568',
   textMuted: '#718096',
@@ -92,10 +105,12 @@ const LIGHT_THEME: ThemeColors = {
   playerGradientEnd: '#D4C4B0',
   sliderTrack: 'rgba(0, 0, 0, 0.12)',
   sliderThumb: '#B8860B',
-  tabBarBackground: '#FFFFFF',
+  tabBarBackground: 'rgba(255, 255, 255, 0.7)',
   tabBarActive: '#B8860B',
   tabBarInactive: '#718096',
   watermarkOpacity: 0.04,
+  shadowColor: 'rgba(66, 133, 244, 0.15)',
+  glassBlur: 30,
 };
 
 interface ThemeContextValue {
@@ -134,7 +149,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 export const useTheme = (): ThemeContextValue => {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
-    // Fallback to dark theme if context not available
     return {
       mode: 'dark',
       colors: DARK_THEME,

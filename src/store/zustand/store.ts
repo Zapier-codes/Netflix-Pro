@@ -73,7 +73,7 @@ export interface AppState {
 }
 
 const defaultSettings = {
-  theme: 'dark' as const,
+  theme: 'system' as const,
   wifiOnlyDownload: true,
   maxConcurrentDownloads: 3,
   autoDeleteWatchedDays: 7,
@@ -157,6 +157,17 @@ export const useAppStore = create<AppState>()(
     {
       name: 'app-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      // Bumping version + migrate forces any device that already persisted
+      // the old hardcoded 'dark' default to fall back to 'system' once.
+      // Without this, changing defaultSettings.theme above only affects
+      // brand-new installs — existing AsyncStorage data would still win.
+      version: 2,
+      migrate: (persistedState: any, fromVersion) => {
+        if (fromVersion < 2 && persistedState?.theme === 'dark') {
+          return { ...persistedState, theme: 'system' };
+        }
+        return persistedState;
+      },
       partialize: (state) => ({
         theme: state.theme,
         wifiOnlyDownload: state.wifiOnlyDownload,

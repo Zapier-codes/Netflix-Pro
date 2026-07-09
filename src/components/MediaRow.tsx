@@ -1,3 +1,4 @@
+// src/components/MediaRow.tsx - already fine, just ensure no background
 import React from 'react';
 import { View, Text, FlatList, StyleSheet } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
@@ -11,9 +12,6 @@ interface MediaRowProps {
   onRemovePress?: (item: any) => void;
   isContinueWatching?: boolean;
   isLiveStream?: boolean;
-  // Set of media IDs the current user has already watched, used to
-  // suppress the recency badge on cards in this row. Optional — rows
-  // that don't care about the badge (e.g. Live Streams) can omit it.
   watchedIds?: Set<number | string>;
 }
 
@@ -29,17 +27,13 @@ const MediaRow: React.FC<MediaRowProps> = ({
 }) => {
   const { colors, isDark } = useTheme();
 
-  // ─── If no data, don't render ───
   if (!data || data.length === 0) {
     return null;
   }
 
   return (
     <View style={styles.container}>
-      {/* ─── Title ─── */}
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-
-      {/* ─── Horizontal FlatList ─── */}
       <FlatList
         horizontal
         data={data}
@@ -67,6 +61,7 @@ const MediaRow: React.FC<MediaRowProps> = ({
 const styles = StyleSheet.create({
   container: {
     marginBottom: 24,
+    // No backgroundColor here - let the gradient show through
   },
   title: {
     fontSize: 18,

@@ -29,6 +29,7 @@ import {
   GestureDetector,
   GestureHandlerRootView,
 } from 'react-native-gesture-handler';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Zustand Stores
 import {
@@ -177,7 +178,7 @@ const EdgeSwipeZone = React.memo(
 );
 
 const HomeScreen = () => {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { showToast } = useAlert();
   const router = useRouter();
   const { networkStatus, setLoading: setAppLoading } = useAppStore();
@@ -249,7 +250,6 @@ const HomeScreen = () => {
   const handleViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: HomeListItem }> }) => {
       const visible = viewableItems.some((v) => v.item.id === 'thriller-grid');
-      // Defer state update to next frame to avoid blocking scroll
       setTimeout(() => {
         setThrillerGridVisible(visible);
       }, 0);
@@ -565,6 +565,7 @@ const HomeScreen = () => {
   // ─── Continue Watching Handlers ───
   const handleInfoPress = useCallback(
     (item: any) => {
+      const mediaId = item.mediaId;
       router.push({
         pathname: `/movie/${mediaId}`,
         params: cleanParams({
@@ -638,15 +639,15 @@ const HomeScreen = () => {
   const renderSkeletonRow = useCallback(
     (id: string) => (
       <View key={id} style={styles.skeletonRow}>
-        <View style={[styles.skeletonTitle, { backgroundColor: colors.surfaceRaised }]} />
+        <View style={[styles.skeletonTitle, { backgroundColor: isDark ? colors.surfaceRaised : 'rgba(0,0,0,0.06)' }]} />
         <View style={styles.skeletonCards}>
           {[...Array(4)].map((_, i) => (
-            <View key={i} style={[styles.skeletonCard, { backgroundColor: colors.surfaceRaised }]} />
+            <View key={i} style={[styles.skeletonCard, { backgroundColor: isDark ? colors.surfaceRaised : 'rgba(0,0,0,0.04)' }]} />
           ))}
         </View>
       </View>
     ),
-    [colors.surfaceRaised]
+    [isDark, colors.surfaceRaised]
   );
 
   // ─── List Data ───
@@ -739,8 +740,24 @@ const HomeScreen = () => {
   // ─── Main Render ───
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      {/* ─── Background ─── */}
+      {!isDark && (
+        <LinearGradient
+          colors={colors.backgroundGradient}
+          style={StyleSheet.absoluteFillObject}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      )}
+      
+      {/* ─── Dark Mode Background ─── */}
+      {isDark && (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.background }]} />
+      )}
+
+      {/* ─── Main Content ─── */}
       <SafeAreaView
-        style={[styles.container, { backgroundColor: colors.background }]}
+        style={[styles.container, { backgroundColor: 'transparent' }]}
         edges={['top']}
       >
         <Animated.View style={[styles.innerContainer, contentAnimatedStyle]}>
@@ -757,7 +774,15 @@ const HomeScreen = () => {
           {/* ─── Offline Banner ─── */}
           {isOffline && (
             <TouchableOpacity
-              style={[styles.offlineBanner, { backgroundColor: colors.surfaceRaised }]}
+              style={[
+                styles.offlineBanner,
+                {
+                  backgroundColor: isDark ? colors.surfaceRaised : 'rgba(255,255,255,0.7)',
+                  borderWidth: 0.5,
+                  borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.3)',
+                  shadowColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(66,133,244,0.1)',
+                }
+              ]}
               onPress={() => router.push('/downloads')}
               activeOpacity={0.8}
             >
@@ -776,7 +801,7 @@ const HomeScreen = () => {
             renderItem={renderItem}
             keyExtractor={keyExtractor}
             getItemLayout={getItemLayout}
-            style={styles.scrollView}
+            style={[styles.scrollView, { backgroundColor: 'transparent' }]}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             onScroll={scrollHandler}
@@ -796,7 +821,7 @@ const HomeScreen = () => {
                 onRefresh={onRefresh}
                 tintColor={colors.gold}
                 colors={[colors.gold]}
-                progressBackgroundColor={colors.surface}
+                progressBackgroundColor={isDark ? colors.surface : 'rgba(255,255,255,0.8)'}
               />
             }
           />
@@ -820,8 +845,13 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  innerContainer: { flex: 1 },
+  container: { 
+    flex: 1, 
+    backgroundColor: 'transparent' 
+  },
+  innerContainer: { 
+    flex: 1 
+  },
   headerContainer: {
     position: 'absolute',
     top: 0,
@@ -844,8 +874,15 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: HEADER_HEIGHT,
     marginBottom: 10,
-    borderRadius: 10,
+    borderRadius: 12,
     zIndex: 50,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+    ...(Platform.OS === 'ios' && {
+      backdropFilter: 'blur(20px)',
+    }),
   },
   offlineBannerText: {
     flex: 1,
@@ -882,4 +919,3 @@ const styles = StyleSheet.create({
 });
 
 export default HomeScreen;
-

@@ -29,9 +29,6 @@ const CELL_WIDTH =
   GRID_COLUMNS;
 const CELL_HEIGHT = CELL_WIDTH * 1.2;
 
-// ─── Max simultaneous video players ───
-const MAX_ACTIVE_PLAYERS = 6;
-
 interface ThrillerGridProps {
   items: ThrillerItem[];
   loading?: boolean;
@@ -39,8 +36,15 @@ interface ThrillerGridProps {
   onItemPress: (item: any) => void;
 }
 
-// ─── Global active player counter ───
-let activePlayerCount = 0;
+// (Removed: previously used a module-level `activePlayerCount` shared across
+// every ThrillerGrid mount for the app's lifetime, gated by a
+// MAX_ACTIVE_PLAYERS cap equal to the grid's own size (6). If a cell's
+// cleanup ever failed to run — Fast Refresh, a fast remount when `loading`
+// flips and the FlatList's key changes, navigating away mid-preload — the
+// counter could get stuck above zero and permanently cap future grids below
+// 6 playing videos. Since the cap already matched the full grid size, it
+// wasn't preventing anything real, so staggering is now purely local
+// per-cell timing with no shared/leakable state.)
 
 // ─── Shuffle helper ───
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -74,21 +78,14 @@ const ThrillerCell: React.FC<{
 
   // ─── Staggered mount ───
   useEffect(() => {
-    let claimedSlot = false;
-
     const timer = setTimeout(() => {
-      if (activePlayerCount < MAX_ACTIVE_PLAYERS && isVisible) {
-        activePlayerCount++;
-        claimedSlot = true;
+      if (isVisible) {
         setCanMountPlayer(true);
       }
     }, indexRef.current * 200);
 
     return () => {
       clearTimeout(timer);
-      if (claimedSlot) {
-        activePlayerCount = Math.max(0, activePlayerCount - 1);
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVisible]);

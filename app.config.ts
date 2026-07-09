@@ -1,4 +1,4 @@
-const packageJson = require('./package.json');
+﻿const packageJson = require('./package.json');
 const IS_DEV = process.env.APP_VARIANT === 'development';
 
 console.log('[CONFIG] Loading app.config.ts...');
@@ -13,7 +13,7 @@ export default {
     version: packageJson.version,
     orientation: "default",
     icon: IS_DEV ? "./assets/icon-dev.png" : "./assets/icon.png",
-    userInterfaceStyle: "dark",
+    userInterfaceStyle: "automatic",
     newArchEnabled: true,
     platforms: ["android"],
     // ⚠️ THIS IS CRITICAL - Added entryPoint
@@ -65,7 +65,3 @@ export default {
     }
   }
 };
-
-
-
-
