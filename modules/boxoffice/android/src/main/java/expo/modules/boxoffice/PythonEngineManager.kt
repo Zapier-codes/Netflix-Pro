@@ -142,14 +142,18 @@ class PythonEngineManager(
         return pyList
     }
 
+    /**
+     * Convert a Python dict PyObject into a Kotlin Map.
+     * Uses PyObject.asMap(), which gives a container-access (Python "[]")
+     * view of the dict as Map<PyObject, PyObject> - this sidesteps the
+     * dict_keys/dict_values view objects entirely, which do NOT support
+     * __getitem__ and therefore blow up if passed through .asList().
+     */
     private fun pyObjectToMap(pyObject: PyObject): Map<String, Any> {
         val result = mutableMapOf<String, Any>()
         if (pyTypeName(pyObject) == "dict") {
-            val keys = pyObject.callAttr("keys").asList()
-            for (key in keys) {
-                val keyStr = key.toString()
-                val value = pyObject.callAttr("__getitem__", key)
-                result[keyStr] = pyObjectToValue(value)
+            for ((key, value) in pyObject.asMap()) {
+                result[key.toString()] = pyObjectToValue(value)
             }
         }
         return result
@@ -188,11 +192,8 @@ class PythonEngineManager(
         fun pyObjectToMapStatic(pyObject: PyObject): Map<String, Any> {
             val result = mutableMapOf<String, Any>()
             if (pyTypeNameStatic(pyObject) == "dict") {
-                val keys = pyObject.callAttr("keys").asList()
-                for (key in keys) {
-                    val keyStr = key.toString()
-                    val value = pyObject.callAttr("__getitem__", key)
-                    result[keyStr] = pyObjectToValueStatic(value)
+                for ((key, value) in pyObject.asMap()) {
+                    result[key.toString()] = pyObjectToValueStatic(value)
                 }
             }
             return result
