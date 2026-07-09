@@ -16,7 +16,6 @@ export default {
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     platforms: ["android"],
-    // ⚠️ THIS IS CRITICAL - Added entryPoint
     entryPoint: "./App.tsx",
     splash: {
       image: "./assets/splash-icon.png",
@@ -49,14 +48,7 @@ export default {
         "supportsPictureInPicture": true
       }],
       "expo-secure-store",
-      "expo-background-task",
-      [
-        './ffmpeg-kit-plugin.js',
-        {
-          iosUrl: 'https://github.com/NooruddinLakhani/ffmpeg-kit-ios-full-gpl/archive/refs/tags/latest.zip',
-          androidUrl: 'https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar',
-        },
-      ],
+      "expo-background-task"
     ],
     assetBundlePatterns: ["**/*"],
     owner: "Zapier-codes",
