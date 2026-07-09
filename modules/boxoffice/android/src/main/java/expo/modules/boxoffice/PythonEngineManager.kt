@@ -2,6 +2,9 @@ package expo.modules.boxoffice
 
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import android.content.Context
+import com.facebook.react.common.ApplicationHolder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -9,9 +12,17 @@ class PythonEngineManager(
     private val packageName: String,
     private val engineClassName: String
 ) {
-    private val python: Python = Python.getInstance()
-    private val engineModule: PyObject
-    private val engineClass: PyObject
+    // Don't initialize Python here - use lazy delegation
+    private val python: Python by lazy {
+        if (!Python.isStarted()) {
+            val context = ApplicationHolder.getApplication()
+            Python.start(AndroidPlatform(context))
+        }
+        Python.getInstance()
+    }
+    
+    private val engineModule: PyObject by lazy { python.getModule(packageName) }
+    private val engineClass: PyObject by lazy { engineModule.get(engineClassName)!! }
     private var engineInstance: PyObject? = null
 
     // Tracks the pyCallback PyObjects handed to Python's register_event_callback,
@@ -22,10 +33,7 @@ class PythonEngineManager(
     // required arguments, not one.
     private val registeredCallbacks = ConcurrentHashMap<String, CopyOnWriteArrayList<PyObject>>()
 
-    init {
-        engineModule = python.getModule(packageName)
-        engineClass = engineModule.get(engineClassName)!!
-    }
+    // No init block needed anymore - everything is lazy
 
     fun configure(config: Map<String, Any?>): Map<String, Any> {
         ensureEngineInstance()

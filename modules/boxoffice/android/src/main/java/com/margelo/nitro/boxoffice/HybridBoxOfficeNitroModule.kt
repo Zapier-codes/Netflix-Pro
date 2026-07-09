@@ -1,9 +1,13 @@
 package com.margelo.nitro.boxoffice
 
+import android.content.Context
 import com.margelo.nitro.boxoffice.*
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.core.AnyMap
 import expo.modules.boxoffice.PythonEngineManager
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import com.facebook.react.common.ApplicationHolder
 
 class HybridBoxOfficeNitroModule : HybridBoxOfficeNitroModuleSpec() {
 
@@ -12,7 +16,16 @@ class HybridBoxOfficeNitroModule : HybridBoxOfficeNitroModuleSpec() {
     private const val ENGINE_CLASS = "BoxOfficeEngine"
   }
 
+  // Initialize Python before using engine manager
+  private fun ensurePythonStarted() {
+    if (!Python.isStarted()) {
+      val context = ApplicationHolder.getApplication()
+      Python.start(AndroidPlatform(context))
+    }
+  }
+
   private val engineManager: PythonEngineManager by lazy {
+    ensurePythonStarted()
     PythonEngineManager(PYTHON_PACKAGE, ENGINE_CLASS)
   }
 
