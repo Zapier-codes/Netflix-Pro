@@ -1,12 +1,65 @@
 // src/services/downloadManager/FFmpegConverter.ts
-import { FFmpegKit, FFmpegKitConfig, ReturnCode, Level } from 'ffmpeg-kit-react-native';
-import { AppState } from 'react-native';
+import { FFmpegKit, FFmpegKitConfig, ReturnCode, Level } from 'palash-ffmpeg-kit-react-native-sf';
+import { AppState, Platform } from 'react-native';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
 
+// ─── MODULE-LEVEL INITIALIZATION ───
+let isFFmpegInitialized = false;
+let ffmpegInitError: Error | null = null;
+let ffmpegFullyFunctional = false;
+
+async function initializeFFmpeg(): Promise<boolean> {
+  if (isFFmpegInitialized) return ffmpegFullyFunctional;
+  if (ffmpegInitError) return false;
+
+  try {
+    console.log('[FFmpegConverter] Module-level initialization...');
+    
+    if (!FFmpegKit || !FFmpegKitConfig) {
+      console.warn('[FFmpegConverter] FFmpegKit modules not available');
+      ffmpegInitError = new Error('FFmpegKit modules not available');
+      return false;
+    }
+
+    try {
+      await FFmpegKitConfig.init();
+      console.log('[FFmpegConverter] FFmpegKitConfig.init() completed');
+      ffmpegFullyFunctional = true;
+    } catch (initError) {
+      console.warn('[FFmpegConverter] FFmpegKitConfig.init() failed:', initError);
+    }
+
+    try {
+      if (FFmpegKitConfig && typeof FFmpegKitConfig.setLogLevel === 'function') {
+        const logLevel = Level?.AV_LOG_QUIET;
+        if (logLevel !== undefined) {
+          FFmpegKitConfig.setLogLevel(logLevel);
+        }
+      }
+    } catch (logError) {
+      console.log('[FFmpegConverter] Log level setting skipped');
+    }
+    
+    isFFmpegInitialized = true;
+    console.log('[FFmpegConverter] Module-level initialization complete');
+    return ffmpegFullyFunctional;
+  } catch (error) {
+    console.warn('[FFmpegConverter] Module-level initialization failed:', error);
+    ffmpegInitError = error instanceof Error ? error : new Error(String(error));
+    isFFmpegInitialized = true;
+    return false;
+  }
+}
+
+setTimeout(() => {
+  initializeFFmpeg().catch(() => {});
+}, 0);
+
+// ─── FFMPEG CONVERTER CLASS ───
 class FFmpegConverter {
   private isConverting: boolean = false;
   private currentSessionId: string | null = null;
-  private appState: string = 'active'; // Safe default
+  private appState: string = 'active';
   private appStateSubscription: any = null;
   private onProgressCallback: ((data: any) => void) | null = null;
   private wasCancelledDueToBackground: boolean = false;
@@ -24,30 +77,23 @@ class FFmpegConverter {
     if (this.isInitialized) return;
     
     try {
-      // Check if FFmpegKitConfig is available
-      if (FFmpegKitConfig && typeof FFmpegKitConfig.setLogLevel === 'function') {
-        FFmpegKitConfig.setLogLevel(Level.AV_LOG_QUIET);
-        console.log('[FFmpegConverter] Initialized successfully');
-      } else {
-        console.warn('[FFmpegConverter] FFmpegKitConfig not available');
-      }
+      await initializeFFmpeg();
       
-      // Safely get current app state
       try {
         this.appState = AppState.currentState || 'active';
       } catch {
         this.appState = 'active';
       }
       
-      // Only add listener if AppState is available
       if (AppState && typeof AppState.addEventListener === 'function') {
         this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
       }
       
       this.isInitialized = true;
+      console.log('[FFmpegConverter] Class initialized');
     } catch (error) {
-      console.warn('[FFmpegConverter] Initialization failed:', error);
-      // Don't throw - allow app to continue without FFmpeg
+      console.warn('[FFmpegConverter] Class initialization failed:', error);
+      this.isInitialized = true;
     }
   }
 
@@ -55,9 +101,7 @@ class FFmpegConverter {
     if (this.appStateSubscription) {
       try {
         this.appStateSubscription.remove();
-      } catch (error) {
-        // Ignore unsubscribe errors
-      }
+      } catch (error) {}
       this.appStateSubscription = null;
     }
     this.cancelConversion();
@@ -76,7 +120,6 @@ class FFmpegConverter {
   };
 
   async convertHLSToMP4(segmentsDir: string, outputPath: string, onProgress?: (data: any) => void) {
-    // Ensure FFmpeg is initialized
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -115,7 +158,6 @@ class FFmpegConverter {
   }
 
   async executeConversion(segmentsDir: string, outputPath: string, onProgress?: (data: any) => void) {
-    // Ensure FFmpeg is initialized
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -136,7 +178,6 @@ class FFmpegConverter {
       const hasInit = await this.hasInitSegment(segmentsDirClean);
       const isFragmentedMp4 = segmentFiles[0]?.endsWith('.m4s') || hasInit;
 
-      // Create an HLS playlist with discontinuity markers for missing segments
       const playlistPath = `${segmentsDirClean}ffmpeg_playlist.m3u8`;
       let playlistContent = '#EXTM3U\n';
       playlistContent += '#EXT-X-VERSION:3\n';
@@ -148,7 +189,6 @@ class FFmpegConverter {
         playlistContent += `#EXT-X-MAP:URI="${segmentsDirClean}init.mp4"\n`;
       }
 
-      // Parse segment numbers and detect gaps
       const segmentNumbers = segmentFiles.map(f => {
         const match = f.match(/segment_(\d+)/);
         return match ? parseInt(match[1]) : -1;
@@ -157,22 +197,17 @@ class FFmpegConverter {
       let lastSegmentNum = -1;
       for (let i = 0; i < segmentFiles.length; i++) {
         const currentNum = segmentNumbers[i] || i;
-
-        // Add discontinuity marker if there's a gap in segment numbers
         if (lastSegmentNum >= 0 && currentNum !== lastSegmentNum + 1) {
           playlistContent += '#EXT-X-DISCONTINUITY\n';
         }
-
         playlistContent += '#EXTINF:4.5,\n';
         playlistContent += `${segmentsDirClean}${segmentFiles[i]}\n`;
         lastSegmentNum = currentNum;
       }
 
       playlistContent += '#EXT-X-ENDLIST\n';
-
       await LegacyFileSystem.writeAsStringAsync(playlistPath, playlistContent);
 
-      // Use HLS demuxer which handles discontinuities properly
       const command = [
         '-allowed_extensions', 'ALL',
         '-i', playlistPath,
@@ -183,56 +218,43 @@ class FFmpegConverter {
       ].join(' ');
 
       if (onProgress) {
-        FFmpegKitConfig.enableStatisticsCallback((statistics) => {
-          if (this.onProgressCallback) {
-            const time = statistics.getTime();
-            this.onProgressCallback({
-              time,
-              phase: 'converting'
-            });
-          }
-        });
+        try {
+          FFmpegKitConfig.enableStatisticsCallback((statistics) => {
+            if (this.onProgressCallback) {
+              try {
+                const time = statistics.getTime();
+                this.onProgressCallback({ time, phase: 'converting' });
+              } catch (statsError) {}
+            }
+          });
+        } catch (callbackError) {
+          console.log('[FFmpegConverter] Statistics callback not available');
+        }
       }
 
       const session = await FFmpegKit.execute(command);
       this.currentSessionId = session.getSessionId();
-
       const returnCode = await session.getReturnCode();
 
-      // Clean up playlist file
       try {
         await LegacyFileSystem.deleteAsync(playlistPath, { idempotent: true });
-      } catch (cleanupError) {
-        // Ignore cleanup errors
-      }
+      } catch (cleanupError) {}
 
       if (ReturnCode.isSuccess(returnCode)) {
         const outputFileInfo = await LegacyFileSystem.getInfoAsync(outputPathClean);
         const fileSize = outputFileInfo.exists ? (outputFileInfo.size || 0) : 0;
-
         this.isConverting = false;
         this.currentSessionId = null;
-
-        return {
-          success: true,
-          filePath: outputPath,
-          fileSize
-        };
+        return { success: true, filePath: outputPath, fileSize };
       } else if (ReturnCode.isCancel(returnCode)) {
         this.isConverting = false;
         this.currentSessionId = null;
-
-        return {
-          success: false,
-          cancelled: true,
-          cancelledDueToBackground: this.wasCancelledDueToBackground
-        };
+        return { success: false, cancelled: true, cancelledDueToBackground: this.wasCancelledDueToBackground };
       } else {
         const logs = await session.getAllLogsAsString();
         console.error(`[FFmpegConverter] Conversion failed:`, logs);
         this.isConverting = false;
         this.currentSessionId = null;
-
         throw new Error('FFmpeg conversion failed: ' + (logs || 'Unknown error'));
       }
     } catch (error) {
@@ -245,7 +267,7 @@ class FFmpegConverter {
   async getSegmentFiles(segmentsDir: string): Promise<string[]> {
     try {
       const contents = await LegacyFileSystem.readDirectoryAsync(segmentsDir);
-      const segmentFiles = contents
+      return contents
         .filter(file => file.endsWith('.ts') || file.endsWith('.m4s'))
         .filter(file => file.startsWith('segment_'))
         .sort((a, b) => {
@@ -253,7 +275,6 @@ class FFmpegConverter {
           const numB = parseInt(b.match(/segment_(\d+)/)?.[1] || '0');
           return numA - numB;
         });
-      return segmentFiles;
     } catch (error) {
       return [];
     }
@@ -272,9 +293,7 @@ class FFmpegConverter {
     if (this.currentSessionId) {
       try {
         await FFmpegKit.cancel(this.currentSessionId);
-      } catch (error) {
-        // Ignore cancellation errors
-      }
+      } catch (error) {}
     }
     this.isConverting = false;
     this.currentSessionId = null;

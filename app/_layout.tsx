@@ -19,7 +19,7 @@ import { AlertProvider } from '../src/contexts/AlertContext';
 import { cacheService } from '../src/services/cacheService';
 import { preloaderService } from '../src/services/preloaderService';
 import { networkService } from '../src/services/networkService';
-import { downloadManager } from '../src/services/downloadManager/DownloadManager';
+import downloadManager from '../src/services/downloadManager/DownloadManager';
 import { initializeStreamSources } from '../src/services/unified/providers/vidsrc/VidSrcProvider';
 
 // ─── THRILLER PRELOADER ───
@@ -134,13 +134,27 @@ function AppContent() {
         }
       }
 
-      // ─── STEP 4: Initialize services ───
-      await Promise.allSettled([
-        networkService.initialize(),
-        downloadManager.initialize(),
-        initializeStreamSources(),
-      ]);
-      console.log('[App] ✅ Services initialized');
+      // ─── STEP 4: Initialize services with individual error handling ───
+      try {
+        await networkService.initialize();
+        console.log('[App] ✅ Network service initialized');
+      } catch (err) {
+        console.error('[App] ❌ Network service failed:', err);
+      }
+
+      try {
+        await downloadManager.initialize();
+        console.log('[App] ✅ Download manager initialized');
+      } catch (err) {
+        console.error('[App] ❌ Download manager failed:', err);
+      }
+
+      try {
+        const sources = await initializeStreamSources();
+        console.log('[App] ✅ Stream sources initialized:', sources?.length || 0, 'sources');
+      } catch (err) {
+        console.error('[App] ❌ Stream sources failed:', err);
+      }
 
       // ─── STEP 5: Mark as ready ───
       setInitialized(true);
@@ -197,7 +211,7 @@ function AppContent() {
         boxOffice.stop().catch(() => {});
       }
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================
   // PAWNS CONSENT — RESTORE OR PROMPT

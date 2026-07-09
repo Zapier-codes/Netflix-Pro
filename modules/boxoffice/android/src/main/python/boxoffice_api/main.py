@@ -177,7 +177,7 @@ class BoxOfficeEngine:
         }
         logger.info(f"Registered {len(self._handlers)} handlers")
     
-    def configure(self, config: Dict[str, Any]) -> bool:
+    def configure(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Configure the engine with provided settings.
         
@@ -185,7 +185,7 @@ class BoxOfficeEngine:
             config: Configuration dictionary
             
         Returns:
-            bool: True if configuration was successful
+            Dict with success status and message
         """
         try:
             self._engine_config.update(config)
@@ -207,11 +207,19 @@ class BoxOfficeEngine:
             self._v2_session = V2Session()
             
             logger.info(f"Engine configured with version={self._default_version}")
-            return True
+            return {
+                "success": True,
+                "message": "Configuration successful",
+                "default_version": self._default_version
+            }
             
         except Exception as e:
             logger.error(f"Failed to configure engine: {str(e)}")
-            return False
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Configuration failed: {str(e)}"
+            }
     
     def get_session(self, version: Optional[str] = None):
         """Get the Session for the given API version."""
