@@ -14,6 +14,9 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ExpoReactHostFactory
 
+// IMPORT: BoxOffice Nitro Package
+import expo.modules.boxoffice.nitro.BoxOfficeNitroPackage
+
 class MainApplication : Application(), ReactApplication {
 
   override val reactHost: ReactHost by lazy {
@@ -23,6 +26,9 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
+          
+          // ADD BOXOFFICE NITRO PACKAGE
+          add(BoxOfficeNitroPackage())
         }
     )
   }
