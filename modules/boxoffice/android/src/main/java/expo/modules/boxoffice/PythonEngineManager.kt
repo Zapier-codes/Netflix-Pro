@@ -3,8 +3,7 @@ package expo.modules.boxoffice
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
-import android.content.Context
-import com.facebook.react.common.ApplicationHolder
+import com.margelo.nitro.NitroModules
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -12,10 +11,10 @@ class PythonEngineManager(
     private val packageName: String,
     private val engineClassName: String
 ) {
-    // Don't initialize Python here - use lazy delegation
     private val python: Python by lazy {
         if (!Python.isStarted()) {
-            val context = ApplicationHolder.getApplication()
+            val context = NitroModules.applicationContext
+                ?: error("NitroModules.applicationContext is null - cannot start Python interpreter")
             Python.start(AndroidPlatform(context))
         }
         Python.getInstance()
@@ -25,15 +24,7 @@ class PythonEngineManager(
     private val engineClass: PyObject by lazy { engineModule.get(engineClassName)!! }
     private var engineInstance: PyObject? = null
 
-    // Tracks the pyCallback PyObjects handed to Python's register_event_callback,
-    // keyed by eventType, so they can be handed back to unregister_event_callback.
-    // Needed because register_event_callback(event_type, callback) on the Python
-    // side (main.py) requires the *same* callback object to remove it from its
-    // internal list - unregister_event_callback(event_type, callback) takes two
-    // required arguments, not one.
     private val registeredCallbacks = ConcurrentHashMap<String, CopyOnWriteArrayList<PyObject>>()
-
-    // No init block needed anymore - everything is lazy
 
     fun configure(config: Map<String, Any?>): Map<String, Any> {
         ensureEngineInstance()
@@ -65,20 +56,13 @@ class PythonEngineManager(
         return pyObjectToMap(result)
     }
 
-    /**
-     * Register an event callback.
-     * Uses a Python wrapper module that bridges to Kotlin via Chaquopy's
-     * automatic Java class exposure.
-     */
     fun registerEventCallback(eventType: String, onEvent: (String, Map<String, Any>) -> Unit) {
         ensureEngineInstance()
 
-        // Create proxy and set it in Python wrapper
         val proxy = EventCallbackProxy(onEvent)
         val wrapperModule = python.getModule("$packageName.callback_wrapper")
         wrapperModule.callAttr("KotlinCallbackWrapper.set_proxy", proxy)
 
-        // Get Python callback function
         val pyCallback = wrapperModule.callAttr("make_callback")
 
         engineInstance!!.callAttr("register_event_callback", eventType, pyCallback)
@@ -118,11 +102,6 @@ class PythonEngineManager(
         }
     }
 
-    /**
-     * Look up the Python type name of a PyObject (e.g. "dict", "list", "NoneType").
-     * Chaquopy's PyObject has no isDict/isNone/isBool/etc. convenience properties,
-     * so type checks go through the real attribute API instead.
-     */
     private fun pyTypeName(pyObject: PyObject): String {
         return pyObject.get("__class__")!!.get("__name__")!!.toString()
     }
@@ -244,9 +223,6 @@ class PythonEngineManager(
         }
     }
 
-    /**
-     * Proxy class exposed to Python. Must be public and static for Chaquopy.
-     */
     class EventCallbackProxy(private val callback: (String, Map<String, Any>) -> Unit) {
         fun onEvent(eventType: String, data: PyObject) {
             callback(eventType, pyObjectToMapStatic(data))

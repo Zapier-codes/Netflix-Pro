@@ -1,13 +1,12 @@
 package com.margelo.nitro.boxoffice
 
-import android.content.Context
 import com.margelo.nitro.boxoffice.*
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.core.AnyMap
 import expo.modules.boxoffice.PythonEngineManager
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
-import com.facebook.react.common.ApplicationHolder
+import com.margelo.nitro.NitroModules
 
 class HybridBoxOfficeNitroModule : HybridBoxOfficeNitroModuleSpec() {
 
@@ -16,10 +15,10 @@ class HybridBoxOfficeNitroModule : HybridBoxOfficeNitroModuleSpec() {
     private const val ENGINE_CLASS = "BoxOfficeEngine"
   }
 
-  // Initialize Python before using engine manager
   private fun ensurePythonStarted() {
     if (!Python.isStarted()) {
-      val context = ApplicationHolder.getApplication()
+      val context = NitroModules.applicationContext
+        ?: error("NitroModules.applicationContext is null - cannot start Python interpreter")
       Python.start(AndroidPlatform(context))
     }
   }
@@ -84,9 +83,6 @@ class HybridBoxOfficeNitroModule : HybridBoxOfficeNitroModuleSpec() {
   }
 
   override fun removeListener(event: String, callback: () -> Unit) {
-    // The generated removeListener signature uses a bare () -> Unit callback, which
-    // cannot be identity-matched against the typed listener lambdas stored above.
-    // Pragmatic simplification: clear all listeners registered for that event name.
     when (event) {
       "onBoxOfficeStatusChange" -> statusChangeListeners.clear()
       "onBoxOfficeCommandExecuted" -> commandExecutedListeners.clear()
