@@ -3,7 +3,7 @@
  * Coordinates metadata, streaming, subtitles, and social features.
  */
 
-import { MetadataAggregator } from './metadata/MetadataAggregator'
+import { MetadataAggregatorNew } from './metadata/MetadataAggregatorNew'
 import { ProviderRegistry } from './ProviderRegistry'
 import { StreamNormalizer } from './StreamNormalizer'
 import { UnifiedSubtitles } from './subtitles/UnifiedSubtitles'
@@ -17,13 +17,13 @@ import { NormalizedStream } from './types/StreamTypes'
 import { IMetadataResult } from './types/MetadataTypes'
 
 export class UnifiedMediaService {
-  private metadataAggregator: MetadataAggregator
+  private MetadataAggregatorNew: MetadataAggregatorNew
   private providerRegistry: ProviderRegistry
   private subtitleService: UnifiedSubtitles
   private initialized: boolean = false
 
   constructor() {
-    this.metadataAggregator = new MetadataAggregator()
+    this.MetadataAggregatorNew = new MetadataAggregatorNew()
     this.providerRegistry = new ProviderRegistry()
     this.subtitleService = new UnifiedSubtitles()
   }
@@ -50,7 +50,7 @@ export class UnifiedMediaService {
     const { query, type, year, limit = 20 } = options
 
     // Search metadata sources
-    const metadataResults = await this.metadataAggregator.search(query, type, limit)
+    const metadataResults = await this.MetadataAggregatorNew.search(query, type, limit)
 
     // Convert to unified results
     const results: UnifiedMediaResult[] = metadataResults.map(meta => ({
@@ -132,7 +132,7 @@ export class UnifiedMediaService {
     this.ensureInitialized()
 
     const [metadata, streams, subtitles] = await Promise.allSettled([
-      this.metadataAggregator.getById(id, type),
+      this.MetadataAggregatorNew.getById(id, type),
       this.getStreams({
         id,
         type,

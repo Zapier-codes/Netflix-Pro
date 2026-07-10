@@ -275,7 +275,6 @@ function AppContent() {
   // ============================================
   useEffect(() => {
     // Start boxoffice engine in parallel with content preload
-    // It's non-blocking — the app works fine even if it fails
     initializeBoxOffice();
 
     preloadAllContent();
@@ -326,7 +325,6 @@ function AppContent() {
   console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'boxoffice:', boxOfficeReady);
 
   // ─── SHOW LOADING SCREEN ───
-  // Show loading while initializing without cache
   if (!isInitialized && !hasCachedData && isLoading) {
     return <LoadingScreen />;
   }
@@ -360,6 +358,14 @@ function AppContent() {
         <Stack.Screen name="movie/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="sports" options={{ headerShown: false }} />
         <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
+        <Stack.Screen 
+          name="search" 
+          options={{ 
+            headerShown: false,
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }} 
+        />
       </Stack>
       {PAWNS_API_KEY ? (
         <EarningsConsentGate

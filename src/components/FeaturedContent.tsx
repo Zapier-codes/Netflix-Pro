@@ -30,13 +30,11 @@ interface FeaturedContentProps {
     media_type?: 'movie' | 'tv';
   };
   onPlay: () => void;
-  onInfoPress?: () => void;
 }
 
 const FeaturedContent: React.FC<FeaturedContentProps> = ({
   item,
   onPlay,
-  onInfoPress,
 }) => {
   const { colors, isDark } = useTheme();
 
@@ -182,27 +180,6 @@ const FeaturedContent: React.FC<FeaturedContentProps> = ({
             <Text style={[styles.playButtonText, { color: colors.gold }]}>PLAY</Text>
             <View style={[styles.playButtonNotch, { backgroundColor: colors.gold }]} />
           </TouchableOpacity>
-
-          {/* ─── Info Button (optional) ─── */}
-          {onInfoPress && (
-            <TouchableOpacity
-              style={[
-                styles.infoButton,
-                {
-                  backgroundColor: playButtonGlass,
-                  borderColor: playButtonBorder,
-                }
-              ]}
-              onPress={onInfoPress}
-              activeOpacity={0.7}
-            >
-              <Ionicons 
-                name="information-circle-outline" 
-                size={20} 
-                color={isDark ? 'rgba(255,255,255,0.7)' : 'rgba(26,42,58,0.7)'} 
-              />
-            </TouchableOpacity>
-          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -331,15 +308,6 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 1,
     opacity: 0.6,
-  },
-  infoButton: {
-    padding: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 36,
-    height: 36,
   },
 });
 

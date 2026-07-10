@@ -75,7 +75,7 @@ export type { SocialErrorCode } from './types/SocialTypes'
 // ============================================================================
 
 export { UnifiedMediaService } from './UnifiedMediaService'
-export { MetadataAggregator } from './MetadataAggregator'
+export { MetadataAggregatorNew } from './MetadataAggregatorNew'
 export { ProviderFactory } from './ProviderFactory'
 export { ProviderRegistry } from './ProviderRegistry'
 export { StreamNormalizer } from './StreamNormalizer'
@@ -84,7 +84,7 @@ export { StreamNormalizer } from './StreamNormalizer'
 // METADATA PROVIDERS
 // ============================================================================
 
-export { MetadataAggregator as MetadataAggregatorImpl } from './metadata/MetadataAggregator'
+export { MetadataAggregatorNew as MetadataAggregatorNewImpl } from './metadata/MetadataAggregatorNew'
 export { default as TMDBMetadata } from './metadata/TMDBMetadata'
 export { default as KuryanaMetadata } from './metadata/KuryanaMetadata'
 export { TMDBMetadataAdapter } from './metadata/adapters/TMDBMetadataAdapter'

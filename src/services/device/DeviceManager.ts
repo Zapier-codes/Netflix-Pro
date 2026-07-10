@@ -274,7 +274,7 @@ export class DeviceManager {
 
   getDisplayName(): string {
     if (!this.profile) return '🌟Guest';
-    return ${this.profile.emoji};
+    return `${this.profile.emoji} ${this.profile.name}`;
   }
 
   getUserId(): string {

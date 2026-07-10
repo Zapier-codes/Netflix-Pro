@@ -1,6 +1,6 @@
 // src/hooks/supabase/useSearchAggregation.ts
 import { useState, useCallback } from 'react';
-import { searchAggregationService } from '../../services/supabase/supabaseClient';
+import { searchAggregationService } from '../../services/supabase/searchAggregationService';
 
 export const useSearchAggregation = () => {
   const [isRecording, setIsRecording] = useState(false);

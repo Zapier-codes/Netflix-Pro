@@ -220,26 +220,10 @@ export const AnimatedHeader: React.FC<AnimatedHeaderProps> = ({
   }));
 
   // ─── Handlers ───
-  const handleSearchSubmit = useCallback(() => {
-    if (searchQuery.trim()) {
-      Keyboard.dismiss();
-      navigation.navigate('Search', { query: searchQuery.trim() });
-      setSearchQuery('');
-    }
-  }, [searchQuery, navigation]);
-
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery('');
-    searchInputRef.current?.focus();
-  }, []);
-
   const handleSearchBarTap = useCallback(() => {
-    if (showSearchInput) {
-      searchInputRef.current?.focus();
-    } else if (onSearchPress) {
-      onSearchPress();
-    }
-  }, [showSearchInput, onSearchPress]);
+    Keyboard.dismiss();
+    onSearchPress?.();
+  }, [onSearchPress]);
 
   const handleBellPress = useCallback(() => {
     Keyboard.dismiss();
@@ -340,29 +324,12 @@ export const AnimatedHeader: React.FC<AnimatedHeaderProps> = ({
                   isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'
                 }
                 value={searchQuery}
-                onChangeText={setSearchQuery}
-                onSubmitEditing={handleSearchSubmit}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
                 returnKeyType="search"
                 autoCapitalize="none"
                 autoCorrect={false}
-                editable={showSearchInput}
+                editable={false}
+                pointerEvents="none"
               />
-              
-              {searchQuery.length > 0 && (
-                <TouchableOpacity
-                  onPress={handleClearSearch}
-                  style={styles.clearButton}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons
-                    name="close-circle"
-                    size={16}
-                    color={isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)'}
-                  />
-                </TouchableOpacity>
-              )}
               
               <TouchableOpacity
                 onPress={handleFilterPress}

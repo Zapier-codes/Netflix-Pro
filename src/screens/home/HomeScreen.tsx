@@ -595,6 +595,11 @@ const HomeScreen = () => {
     setShowContinuePanel(false);
   }, []);
 
+  // ─── Search Handler ───
+  const handleSearchPress = useCallback(() => {
+    router.push('/search');
+  }, [router]);
+
   // ─── Render Row ───
   const renderRow = useCallback(
     (row: RowData) => {
@@ -766,7 +771,7 @@ const HomeScreen = () => {
             <AnimatedHeader
               onFilterPress={() => router.push('/search-filters')}
               onBellPress={() => router.push('/notifications')}
-              onSearchPress={() => router.push('/search')}
+              onSearchPress={handleSearchPress}
               notificationCount={3}
             />
           </Animated.View>
