@@ -358,14 +358,7 @@ function AppContent() {
         <Stack.Screen name="movie/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="sports" options={{ headerShown: false }} />
         <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
-        <Stack.Screen 
-          name="search" 
-          options={{ 
-            headerShown: false,
-            presentation: 'modal',
-            animation: 'slide_from_bottom',
-          }} 
-        />
+        {/* search route is handled by app/search/index.tsx - no need to define here */}
       </Stack>
       {PAWNS_API_KEY ? (
         <EarningsConsentGate
@@ -444,11 +437,11 @@ const styles = StyleSheet.create({
     padding: 32,
     borderRadius: 20,
     alignItems: 'center',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
-    backdropFilter: Platform.OS === 'ios' ? 'blur(20px)' : undefined,
   },
   errorIcon: {
     fontSize: 48,

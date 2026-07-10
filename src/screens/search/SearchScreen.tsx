@@ -1,5 +1,5 @@
 // src/screens/search/SearchScreen.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Image,
   Keyboard,
   Platform,
+  ScrollView,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,6 +67,15 @@ const SOURCE_BADGES: Record<string, { label: string; color: string; icon: string
   },
 };
 
+// ─── Filter Types ───
+interface SearchFilters {
+  type: 'all' | 'movie' | 'tv';
+  year: string;
+  minRating: number;
+  source: 'all' | 'tmdb' | 'kuryana' | 'moviebox';
+  genre: string;
+}
+
 const SearchScreen = () => {
   const { colors, isDark } = useTheme();
   const { showToast } = useAlert();
@@ -75,10 +86,27 @@ const SearchScreen = () => {
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<IMetadataResult[]>([]);
+  const [filteredResults, setFilteredResults] = useState<IMetadataResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [noResults, setNoResults] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(true);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+
+  // ─── Filter State ───
+  const [filters, setFilters] = useState<SearchFilters>({
+    type: 'all',
+    year: '',
+    minRating: 0,
+    source: 'all',
+    genre: '',
+  });
+
+  const [availableGenres] = useState<string[]>([
+    'Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary',
+    'Drama', 'Family', 'Fantasy', 'Horror', 'Mystery', 'Romance',
+    'Sci-Fi', 'Thriller', 'War', 'Western',
+  ]);
 
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   const isMounted = useRef(true);
@@ -102,11 +130,49 @@ const SearchScreen = () => {
     }
   }, []);
 
+  // ─── Apply filters to results ───
+  const applyFilters = useCallback((resultsToFilter: IMetadataResult[], currentFilters: SearchFilters): IMetadataResult[] => {
+    let filtered = [...resultsToFilter];
+
+    // Filter by type
+    if (currentFilters.type !== 'all') {
+      filtered = filtered.filter(item => item.type === currentFilters.type);
+    }
+
+    // Filter by year
+    if (currentFilters.year) {
+      const yearNum = parseInt(currentFilters.year);
+      if (!isNaN(yearNum)) {
+        filtered = filtered.filter(item => item.year === yearNum);
+      }
+    }
+
+    // Filter by minimum rating
+    if (currentFilters.minRating > 0) {
+      filtered = filtered.filter(item => (item.rating || 0) >= currentFilters.minRating);
+    }
+
+    // Filter by source
+    if (currentFilters.source !== 'all') {
+      filtered = filtered.filter(item => (item as any).source === currentFilters.source);
+    }
+
+    // Filter by genre
+    if (currentFilters.genre) {
+      filtered = filtered.filter(item => 
+        item.genres?.some(g => g.toLowerCase().includes(currentFilters.genre.toLowerCase()))
+      );
+    }
+
+    return filtered;
+  }, []);
+
   // ─── Perform search across all sources (TMDB + Kuryana + MovieBox) ───
   const performSearch = useCallback(async (searchQuery: string, saveToHistory: boolean = true) => {
     const trimmedQuery = searchQuery.trim();
     if (!trimmedQuery) {
       setResults([]);
+      setFilteredResults([]);
       setNoResults(false);
       setShowHistory(true);
       loadSearchHistory();
@@ -118,16 +184,24 @@ const SearchScreen = () => {
     setShowHistory(false);
 
     try {
-      // Search using UnifiedMediaService (which now includes MovieBox)
-      const searchResults = await unifiedMediaService.search({
+      // Build search options
+      const searchOptions: any = {
         query: trimmedQuery,
-        limit: 30,
-      });
+        limit: 50,
+      };
+
+      // Add type filter if not 'all'
+      if (filters.type !== 'all') {
+        searchOptions.type = filters.type;
+      }
+
+      // Search using UnifiedMediaService
+      const searchResults = await unifiedMediaService.search(searchOptions);
 
       // Log source breakdown for debugging
       const sourceCounts: Record<string, number> = {};
       searchResults.forEach(r => {
-        const source = r.source || 'unknown';
+        const source = (r as any).source || 'unknown';
         sourceCounts[source] = (sourceCounts[source] || 0) + 1;
       });
       console.log('📊 Search results by source:', sourceCounts);
@@ -136,29 +210,34 @@ const SearchScreen = () => {
       const filtered = searchResults.filter((item) => !!item.poster);
 
       setResults(filtered);
-      setNoResults(filtered.length === 0);
+      
+      // Apply filters
+      const filteredResults = applyFilters(filtered, filters);
+      setFilteredResults(filteredResults);
+      setNoResults(filteredResults.length === 0);
 
-      if (saveToHistory && filtered.length > 0) {
+      if (saveToHistory && filteredResults.length > 0) {
         await saveSearchQuery(trimmedQuery);
         loadSearchHistory();
-        // Fire-and-forget: contributes to global trending search data
         recordSearchToSupabase(trimmedQuery);
       }
     } catch (error) {
       console.error('[Search] Error:', error);
       setResults([]);
+      setFilteredResults([]);
       setNoResults(true);
       showToast('Search failed. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [loadSearchHistory, recordSearchToSupabase, showToast]);
+  }, [filters, applyFilters, loadSearchHistory, recordSearchToSupabase, showToast]);
 
   // ─── Debounced search ───
   useEffect(() => {
     if (!query.trim()) {
       setShowHistory(true);
       setResults([]);
+      setFilteredResults([]);
       setNoResults(false);
       loadSearchHistory();
       return;
@@ -180,6 +259,15 @@ const SearchScreen = () => {
       }
     };
   }, [query, performSearch, loadSearchHistory]);
+
+  // ─── Re-apply filters when filters change ───
+  useEffect(() => {
+    if (results.length > 0) {
+      const filtered = applyFilters(results, filters);
+      setFilteredResults(filtered);
+      setNoResults(filtered.length === 0);
+    }
+  }, [filters, results, applyFilters]);
 
   useFocusEffect(
     useCallback(() => {
@@ -217,9 +305,59 @@ const SearchScreen = () => {
   const handleClearQuery = () => {
     setQuery('');
     setResults([]);
+    setFilteredResults([]);
     setNoResults(false);
     setShowHistory(true);
     loadSearchHistory();
+  };
+
+  const handleToggleFilter = () => {
+    setShowFilterModal(!showFilterModal);
+  };
+
+  const handleApplyFilters = () => {
+    setShowFilterModal(false);
+    if (query.trim()) {
+      performSearch(query, false);
+    }
+  };
+
+  const handleResetFilters = () => {
+    setFilters({
+      type: 'all',
+      year: '',
+      minRating: 0,
+      source: 'all',
+      genre: '',
+    });
+  };
+
+  // ─── Render Filter Chip ───
+  const renderFilterChip = (label: string, value: string | number, onPress: () => void) => {
+    const hasValue = value !== '' && value !== 'all' && value !== 0;
+    return (
+      <TouchableOpacity
+        style={[
+          styles.filterChip,
+          {
+            backgroundColor: hasValue ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
+            borderColor: hasValue ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
+          }
+        ]}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <Text style={[
+          styles.filterChipText,
+          { color: hasValue ? '#FFFFFF' : colors.textMuted }
+        ]}>
+          {label}{hasValue ? `: ${value}` : ''}
+        </Text>
+        {hasValue && (
+          <Ionicons name="close-circle" size={14} color="#FFFFFF" style={styles.filterChipIcon} />
+        )}
+      </TouchableOpacity>
+    );
   };
 
   // ─── Render Source Badge ───
@@ -238,6 +376,8 @@ const SearchScreen = () => {
     const imageSource = item.poster
       ? { uri: item.poster }
       : require('../../../assets/icon.png');
+
+    const source = (item as any).source || 'default';
 
     return (
       <TouchableOpacity 
@@ -261,7 +401,7 @@ const SearchScreen = () => {
             <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
               {item.title}
             </Text>
-            {renderSourceBadge(item.source)}
+            {renderSourceBadge(source)}
           </View>
           <Text style={[styles.itemOverview, { color: colors.textSub }]} numberOfLines={2}>
             {item.overview || 'No description available'}
@@ -272,21 +412,19 @@ const SearchScreen = () => {
                 {item.year}
               </Text>
             )}
-            {item.rating > 0 && (
+            {(item.rating || 0) > 0 && (
               <View style={styles.ratingContainer}>
                 <Ionicons name="star" size={12} color="#FFD700" />
                 <Text style={[styles.ratingText, { color: colors.textSub }]}>
-                  {item.rating.toFixed(1)}
+                  {(item.rating || 0).toFixed(1)}
                 </Text>
               </View>
             )}
-            {item.source && (
-              <View style={styles.typeBadge}>
-                <Text style={[styles.typeText, { color: colors.textMuted }]}>
-                  {item.type === 'tv' ? 'TV Series' : 'Movie'}
-                </Text>
-              </View>
-            )}
+            <View style={styles.typeBadge}>
+              <Text style={[styles.typeText, { color: colors.textMuted }]}>
+                {item.type === 'tv' ? 'TV Series' : 'Movie'}
+              </Text>
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -339,6 +477,182 @@ const SearchScreen = () => {
     </View>
   );
 
+  // ─── Render Filter Modal ───
+  const renderFilterModal = () => (
+    <Modal
+      visible={showFilterModal}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowFilterModal(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={() => setShowFilterModal(false)}
+      >
+        <View style={[
+          styles.modalContent,
+          {
+            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.95)',
+          }
+        ]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Filters</Text>
+            <TouchableOpacity onPress={() => setShowFilterModal(false)}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            {/* Type Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterLabel, { color: colors.text }]}>Type</Text>
+              <View style={styles.filterOptions}>
+                {['all', 'movie', 'tv'].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.filterOption,
+                      {
+                        backgroundColor: filters.type === type ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
+                        borderColor: filters.type === type ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
+                      }
+                    ]}
+                    onPress={() => setFilters({ ...filters, type: type as any })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      { color: filters.type === type ? '#FFFFFF' : colors.textMuted }
+                    ]}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Source Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterLabel, { color: colors.text }]}>Source</Text>
+              <View style={styles.filterOptions}>
+                {['all', 'tmdb', 'kuryana', 'moviebox'].map((source) => (
+                  <TouchableOpacity
+                    key={source}
+                    style={[
+                      styles.filterOption,
+                      {
+                        backgroundColor: filters.source === source ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
+                        borderColor: filters.source === source ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
+                      }
+                    ]}
+                    onPress={() => setFilters({ ...filters, source: source as any })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      { color: filters.source === source ? '#FFFFFF' : colors.textMuted }
+                    ]}>
+                      {source.charAt(0).toUpperCase() + source.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Year Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterLabel, { color: colors.text }]}>Year</Text>
+              <TextInput
+                style={[
+                  styles.filterInput,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                    color: colors.text,
+                  }
+                ]}
+                placeholder="e.g., 2024"
+                placeholderTextColor={colors.textMuted}
+                value={filters.year}
+                onChangeText={(text) => setFilters({ ...filters, year: text })}
+                keyboardType="numeric"
+                maxLength={4}
+              />
+            </View>
+
+            {/* Min Rating Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterLabel, { color: colors.text }]}>Minimum Rating</Text>
+              <View style={styles.ratingOptions}>
+                {[0, 3, 5, 7, 8].map((rating) => (
+                  <TouchableOpacity
+                    key={rating}
+                    style={[
+                      styles.filterOption,
+                      {
+                        backgroundColor: filters.minRating === rating ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
+                        borderColor: filters.minRating === rating ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
+                      }
+                    ]}
+                    onPress={() => setFilters({ ...filters, minRating: rating })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      { color: filters.minRating === rating ? '#FFFFFF' : colors.textMuted }
+                    ]}>
+                      {rating === 0 ? 'All' : `${rating}+`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Genre Filter */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterLabel, { color: colors.text }]}>Genre</Text>
+              <View style={styles.genreOptions}>
+                {availableGenres.map((genre) => (
+                  <TouchableOpacity
+                    key={genre}
+                    style={[
+                      styles.genreOption,
+                      {
+                        backgroundColor: filters.genre === genre ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
+                        borderColor: filters.genre === genre ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
+                      }
+                    ]}
+                    onPress={() => setFilters({ ...filters, genre: filters.genre === genre ? '' : genre })}
+                  >
+                    <Text style={[
+                      styles.genreOptionText,
+                      { color: filters.genre === genre ? '#FFFFFF' : colors.textMuted }
+                    ]}>
+                      {genre}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={[styles.resetButton, { borderColor: colors.border }]}
+              onPress={handleResetFilters}
+            >
+              <Text style={[styles.resetButtonText, { color: colors.textMuted }]}>Reset</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.applyButton, { backgroundColor: colors.gold }]}
+              onPress={handleApplyFilters}
+            >
+              <Text style={styles.applyButtonText}>Apply Filters</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
   // ─── Main Render ───
   return (
     <SafeAreaView 
@@ -384,7 +698,33 @@ const SearchScreen = () => {
             <Ionicons name="close-circle" size={20} color={colors.textMuted} />
           </TouchableOpacity>
         )}
+        <TouchableOpacity 
+          onPress={handleToggleFilter}
+          style={styles.filterButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="options-outline" size={22} color={colors.textMuted} />
+          {(filters.type !== 'all' || filters.year || filters.minRating > 0 || filters.source !== 'all' || filters.genre) && (
+            <View style={[styles.filterDot, { backgroundColor: colors.gold }]} />
+          )}
+        </TouchableOpacity>
       </View>
+
+      {/* ─── Filter Chips ─── */}
+      {(filters.type !== 'all' || filters.year || filters.minRating > 0 || filters.source !== 'all' || filters.genre) && (
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterChipsContainer}
+          contentContainerStyle={styles.filterChipsContent}
+        >
+          {filters.type !== 'all' && renderFilterChip('Type', filters.type, () => setFilters({ ...filters, type: 'all' }))}
+          {filters.year && renderFilterChip('Year', filters.year, () => setFilters({ ...filters, year: '' }))}
+          {filters.minRating > 0 && renderFilterChip('Rating', `${filters.minRating}+`, () => setFilters({ ...filters, minRating: 0 }))}
+          {filters.source !== 'all' && renderFilterChip('Source', filters.source, () => setFilters({ ...filters, source: 'all' }))}
+          {filters.genre && renderFilterChip('Genre', filters.genre, () => setFilters({ ...filters, genre: '' }))}
+        </ScrollView>
+      )}
 
       {/* ─── Loading ─── */}
       {loading && (
@@ -418,17 +758,20 @@ const SearchScreen = () => {
       )}
 
       {/* ─── Results ─── */}
-      {!loading && !showHistory && results.length > 0 && (
+      {!loading && !showHistory && filteredResults.length > 0 && (
         <FlatList
-          data={results}
+          data={filteredResults}
           renderItem={renderSearchResult}
-          keyExtractor={(item) => `${item.source}-${item.type}-${item.id}`}
+          keyExtractor={(item) => `${(item as any).source || 'default'}-${item.type}-${item.id}`}
           contentContainerStyle={styles.resultsList}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            <Text style={[styles.resultsCount, { color: colors.textMuted }]}>
-              {results.length} results found
-            </Text>
+            <View style={styles.resultsHeader}>
+              <Text style={[styles.resultsCount, { color: colors.textMuted }]}>
+                {filteredResults.length} {filteredResults.length === 1 ? 'result' : 'results'} found
+                {results.length !== filteredResults.length && ` (filtered from ${results.length})`}
+              </Text>
+            </View>
           }
         />
       )}
@@ -449,7 +792,7 @@ const SearchScreen = () => {
             No results found
           </Text>
           <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-            Try adjusting your search terms
+            Try adjusting your search or filters
           </Text>
         </View>
       )}
@@ -458,6 +801,9 @@ const SearchScreen = () => {
       {!loading && showHistory && searchHistory.length === 0 && !query && (
         renderEmptyState()
       )}
+
+      {/* ─── Filter Modal ─── */}
+      {renderFilterModal()}
     </SafeAreaView>
   );
 };
@@ -484,6 +830,45 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 10 : 8,
     marginLeft: 10,
   },
+  filterButton: {
+    padding: 4,
+    marginLeft: 4,
+    position: 'relative',
+  },
+  filterDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  filterChipsContainer: {
+    maxHeight: 44,
+    marginBottom: 4,
+  },
+  filterChipsContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    alignItems: 'center',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    height: 32,
+    gap: 4,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  filterChipIcon: {
+    marginLeft: 2,
+  },
   centerContent: {
     flex: 1,
     justifyContent: 'center',
@@ -494,11 +879,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 20,
   },
+  resultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 8,
+  },
   resultsCount: {
     fontSize: 13,
     fontWeight: '500',
-    marginVertical: 12,
-    marginLeft: 4,
   },
   resultItem: {
     flexDirection: 'row',
@@ -623,10 +1012,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     flex: 1,
   },
-  noResultsText: { 
-    fontSize: 16, 
-    textAlign: 'center' 
-  },
   emptyIconContainer: {
     width: 80,
     height: 80,
@@ -649,6 +1034,118 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
+  },
+  // ─── Filter Modal Styles ───
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '85%',
+    ...(Platform.OS === 'ios' && {
+      backdropFilter: 'blur(20px)',
+    }),
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalBody: {
+    paddingTop: 16,
+  },
+  filterSection: {
+    marginBottom: 20,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  filterOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  filterOptionText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  filterInput: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  ratingOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  genreOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  genreOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  genreOptionText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingTop: 16,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  resetButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  resetButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  applyButton: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 
