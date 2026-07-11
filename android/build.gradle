@@ -23,3 +23,16 @@ allprojects {
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+// Force a single consistent NDK/SDK version across all subprojects.
+// Without this, Expo library modules (e.g. expo-updates) fall back to
+// their own bundled default ndkVersion instead of the one resolved by
+// the expo-root-project plugin above, causing a [CXX1104] mismatch.
+subprojects { subproject ->
+    afterEvaluate {
+        if (subproject.hasProperty("android")) {
+            subproject.android.ndkVersion = rootProject.ext.ndkVersion
+            subproject.android.compileSdkVersion rootProject.ext.compileSdkVersion
+            subproject.android.buildToolsVersion rootProject.ext.buildToolsVersion
+        }
+    }
+}
