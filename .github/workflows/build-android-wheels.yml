@@ -24,19 +24,10 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/wheels
       JITER_WHEELS_DIR: ${{ github.workspace }}/wheels/jiter
       PYDANTIC_CORE_WHEELS_DIR: ${{ github.workspace }}/wheels/pydantic-core
-      # Each package gets its own cache key. Bump the trailing -vN for a
-      # package only when that package's own build config changes (version,
-      # flags, etc.) — bumping one no longer invalidates the other's cache.
       JITER_CACHE_KEY: android-wheels-jiter-Linux-0.14.0-cp313-v1
       PYDANTIC_CORE_CACHE_KEY: android-wheels-pydantic-core-Linux-2.33.2-jiter-0.14.0-cp313-v1
 
     steps:
-      # ──────────────────────────────────────────────────────────────────────
-      # 1. Restore previously built wheels from cache — one entry per package.
-      # On a hit, that package's directory is populated and its build is
-      # skipped. On a miss, its directory is empty and its build runs.
-      # Each cache is auto-saved at job end independently, only on miss + success.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Restore jiter wheels cache
         uses: actions/cache@v4
         id: jiter-cache
@@ -51,10 +42,6 @@ jobs:
           path: ${{ env.PYDANTIC_CORE_WHEELS_DIR }}
           key: ${{ env.PYDANTIC_CORE_CACHE_KEY }}
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 2. Verify each package's required wheels exist. Each check is
-      # independent, so only the package that's actually missing gets rebuilt.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Check cached jiter wheels completeness
         id: check-jiter
         run: |
@@ -62,7 +49,6 @@ jobs:
             "jiter-0.14.0-cp313-cp313-android_arm64_v8a.whl"
             "jiter-0.14.0-cp313-cp313-android_x86_64.whl"
           )
-
           all_present=true
           for whl in "${required[@]}"; do
             if [ ! -f "${{ env.JITER_WHEELS_DIR }}/$whl" ]; then
@@ -72,14 +58,8 @@ jobs:
               echo "  ✅ Found: $whl"
             fi
           done
-
-          if [ "$all_present" = true ]; then
-            echo "jiter_present=true" >> "$GITHUB_OUTPUT"
-            echo "✅ jiter wheels cached — skipping build"
-          else
-            echo "jiter_present=false" >> "$GITHUB_OUTPUT"
-            echo "⚠️  jiter wheels incomplete — will build"
-          fi
+          echo "jiter_present=$all_present" >> "$GITHUB_OUTPUT"
+          [ "$all_present" = true ] && echo "✅ jiter wheels cached — skipping build" || echo "⚠️  jiter wheels incomplete — will build"
 
       - name: Check cached pydantic-core wheels completeness
         id: check-pydantic-core
@@ -88,7 +68,6 @@ jobs:
             "pydantic_core-2.33.2-cp313-cp313-android_arm64_v8a.whl"
             "pydantic_core-2.33.2-cp313-cp313-android_x86_64.whl"
           )
-
           all_present=true
           for whl in "${required[@]}"; do
             if [ ! -f "${{ env.PYDANTIC_CORE_WHEELS_DIR }}/$whl" ]; then
@@ -98,29 +77,15 @@ jobs:
               echo "  ✅ Found: $whl"
             fi
           done
+          echo "pydantic_core_present=$all_present" >> "$GITHUB_OUTPUT"
+          [ "$all_present" = true ] && echo "✅ pydantic-core wheels cached — skipping build" || echo "⚠️  pydantic-core wheels incomplete — will build"
 
-          if [ "$all_present" = true ]; then
-            echo "pydantic_core_present=true" >> "$GITHUB_OUTPUT"
-            echo "✅ pydantic-core wheels cached — skipping build"
-          else
-            echo "pydantic_core_present=false" >> "$GITHUB_OUTPUT"
-            echo "⚠️  pydantic-core wheels incomplete — will build"
-          fi
-
-      # ──────────────────────────────────────────────────────────────────────
-      # 3. Restore cibuildwheel internal cache (~/.cache/cibuildwheel).
-      # This holds downloaded Python standalone builds, NDK tooling, etc.
-      # Always restore it — speeds up builds even when wheels are missing.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Restore cibuildwheel cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/cibuildwheel
           key: cibuildwheel-tooling-Linux-${{ env.JITER_CACHE_KEY }}-${{ env.PYDANTIC_CORE_CACHE_KEY }}
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 4. Checkout sources — only when that package's wheels need building.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Checkout jiter source
         if: steps.check-jiter.outputs.jiter_present != 'true'
         uses: actions/checkout@v4
@@ -137,9 +102,6 @@ jobs:
           ref: v2.33.2
           path: pydantic-core
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 5. Set up build tooling — only when at least one package needs building.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Set up Python 3.13
         if: steps.check-jiter.outputs.jiter_present != 'true' || steps.check-pydantic-core.outputs.pydantic_core_present != 'true'
         uses: actions/setup-python@v5
@@ -150,9 +112,6 @@ jobs:
         if: steps.check-jiter.outputs.jiter_present != 'true' || steps.check-pydantic-core.outputs.pydantic_core_present != 'true'
         run: pip install cibuildwheel
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 6. Build jiter — only when jiter wheels need building.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Build jiter for Android
         if: steps.check-jiter.outputs.jiter_present != 'true'
         working-directory: jiter/crates/jiter-python
@@ -171,12 +130,6 @@ jobs:
           echo "✅ Jiter wheels:"
           ls -la "${{ env.JITER_WHEELS_DIR }}/"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 7. Build pydantic-core — only when pydantic-core wheels need building.
-      # Uses absolute path to the jiter wheels dir so jiter is found inside
-      # cibuildwheel's isolated build environment, whether it came from cache
-      # or was just built above.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Build pydantic-core for Android
         if: steps.check-pydantic-core.outputs.pydantic_core_present != 'true'
         working-directory: pydantic-core
@@ -190,31 +143,12 @@ jobs:
           mkdir -p "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
           cibuildwheel --output-dir "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 8. List final wheels — always runs for visibility.
-      # ──────────────────────────────────────────────────────────────────────
       - name: List all wheels
         run: |
           echo "📦 Final wheels:"
           ls -la "${{ env.JITER_WHEELS_DIR }}/" || echo "jiter directory empty or missing"
           ls -la "${{ env.PYDANTIC_CORE_WHEELS_DIR }}/" || echo "pydantic-core directory empty or missing"
 
-      # ──────────────────────────────────────────────────────────────────────
-      # 9. Upload artifact — always runs so the main workflow can download.
-      # ──────────────────────────────────────────────────────────────────────
-      - name: Upload wheels artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-wheels
-          path: |
-            ${{ env.JITER_WHEELS_DIR }}/*.whl
-            ${{ env.PYDANTIC_CORE_WHEELS_DIR }}/*.whl
-          retention-days: 1
-
-      # ──────────────────────────────────────────────────────────────────────
-      # 10. Create/update GitHub Release — always runs so the main workflow
-      # can download wheels via gh release download.
-      # ──────────────────────────────────────────────────────────────────────
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
