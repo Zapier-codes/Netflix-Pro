@@ -209,6 +209,7 @@ jobs:
           path: |
             ${{ env.JITER_WHEELS_DIR }}/*.whl
             ${{ env.PYDANTIC_CORE_WHEELS_DIR }}/*.whl
+          retention-days: 1
 
       # ──────────────────────────────────────────────────────────────────────
       # 10. Create/update GitHub Release — always runs so the main workflow

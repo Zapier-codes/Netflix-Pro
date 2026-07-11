@@ -1,0 +1,81 @@
+name: Cleanup Old Artifacts
+
+# Enforces a hard 4-hour artifact retention window.
+# GitHub's native `retention-days` only supports whole-day granularity
+# (minimum 1 day), so this workflow runs hourly and force-deletes any
+# artifact older than 4 hours to keep storage quota usage low.
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # every hour, on the hour
+  workflow_dispatch:       # allow manual trigger for testing
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  delete-old-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete artifacts older than 4 hours
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          MAX_AGE_HOURS=4
+          CUTOFF_EPOCH=$(date -u -d "-${MAX_AGE_HOURS} hours" +%s)
+
+          echo "🕒 Cutoff: deleting artifacts created before $(date -u -d "-${MAX_AGE_HOURS} hours" --iso-8601=seconds)"
+
+          page=1
+          deleted_count=0
+          kept_count=0
+
+          while : ; do
+            response=$(gh api "repos/${REPO}/actions/artifacts?per_page=100&page=${page}")
+            count=$(echo "$response" | jq '.artifacts | length')
+
+            if [ "$count" -eq 0 ]; then
+              break
+            fi
+
+            echo "$response" | jq -c '.artifacts[]' | while read -r artifact; do
+              id=$(echo "$artifact" | jq -r '.id')
+              name=$(echo "$artifact" | jq -r '.name')
+              created_at=$(echo "$artifact" | jq -r '.created_at')
+              expired=$(echo "$artifact" | jq -r '.expired')
+              created_epoch=$(date -u -d "$created_at" +%s)
+
+              if [ "$expired" = "true" ]; then
+                continue
+              fi
+
+              if [ "$created_epoch" -lt "$CUTOFF_EPOCH" ]; then
+                echo "  🗑️  Deleting '$name' (id=$id, created=$created_at)"
+                gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}" || echo "     ⚠️  failed to delete $id"
+              else
+                echo "  ✅ Keeping '$name' (id=$id, created=$created_at)"
+              fi
+            done
+
+            total_count=$(echo "$response" | jq '.total_count')
+            fetched=$(( (page) * 100 ))
+            if [ "$fetched" -ge "$total_count" ]; then
+              break
+            fi
+            page=$((page + 1))
+          done
+
+          echo "✅ Cleanup pass complete"
+
+      - name: Report current storage usage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/${REPO}/actions/artifacts?per_page=100" \
+            | jq -r '.artifacts[] | "\(.name)\t\(.size_in_bytes) bytes\t\(.created_at)"' \
+            || echo "No artifacts remaining"

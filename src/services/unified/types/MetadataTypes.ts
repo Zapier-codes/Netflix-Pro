@@ -1,6 +1,10 @@
 /**
  * Unified Metadata Types
  * Defines all type interfaces for metadata aggregation across providers
+ * 
+ * v2.0 - Extended with industry-standard fields for complete content classification
+ * Supports: language/country filtering, parental ratings, watch providers,
+ * franchise grouping, popularity metrics, and rich content metadata.
  */
 
 // ============================================================================
@@ -31,6 +35,55 @@ export interface MediaRating {
   rating: number;
   votes: number;
   distribution?: Record<string, number>;
+}
+
+/**
+ * Where to watch this content - streaming availability
+ */
+export interface WatchProvider {
+  providerId: number;
+  providerName: string;
+  logoPath?: string;
+  displayPriority: number;
+  region?: string;
+  type?: 'flatrate' | 'free' | 'ads' | 'rent' | 'buy';
+  price?: {
+    amount: number;
+    currency: string;
+  };
+  link?: string;
+}
+
+/**
+ * Franchise/collection grouping (e.g., "Marvel Cinematic Universe")
+ */
+export interface BelongsToCollection {
+  id: number;
+  name: string;
+  posterPath?: string;
+  backdropPath?: string;
+  part?: number; // Which part in the collection
+  totalParts?: number;
+}
+
+/**
+ * Content classification with all industry-standard fields
+ */
+export interface ContentClassification {
+  originalLanguage: string;
+  originCountry: string[];
+  originalTitle?: string;
+  certification?: string;
+  contentRating?: string; // Alternative to certification
+  tagline?: string;
+  status?: 'Released' | 'Post Production' | 'In Production' | 'Planned' | 'Canceled' | 'Ended' | 'Returning Series' | 'Pilot';
+  popularity: number;
+  voteCount: number;
+  voteAverage?: number;
+  keywords?: string[];
+  spokenLanguages?: string[];
+  translations?: string[];
+  adult?: boolean;
 }
 
 // ============================================================================
@@ -69,6 +122,21 @@ export interface UnifiedMovie {
   studios?: string[];
   keywords?: string[];
   collections?: string[];
+  
+  // NEW: Industry-standard fields
+  originalLanguage?: string;
+  originCountry?: string[];
+  originalTitle?: string;
+  popularity?: number;
+  voteCount?: number;
+  belongsToCollection?: BelongsToCollection;
+  watchProviders?: WatchProvider[];
+  productionCompanies?: ProductionCompany[];
+  productionCountries?: ProductionCountry[];
+  spokenLanguages?: SpokenLanguage[];
+  imdbId?: string;
+  revenueCurrency?: string;
+  budgetCurrency?: string;
   
   // Provider-specific
   provider?: string;
@@ -122,6 +190,26 @@ export interface UnifiedShow {
   studios?: string[];
   keywords?: string[];
   
+  // NEW: Industry-standard fields
+  originalLanguage?: string;
+  originCountry?: string[];
+  originalTitle?: string;
+  popularity?: number;
+  voteCount?: number;
+  belongsToCollection?: BelongsToCollection;
+  watchProviders?: WatchProvider[];
+  productionCompanies?: ProductionCompany[];
+  productionCountries?: ProductionCountry[];
+  spokenLanguages?: SpokenLanguage[];
+  networks?: Network[];
+  episodeRunTime?: number[];
+  inProduction?: boolean;
+  lastAirDate?: string;
+  nextEpisodeToAir?: UnifiedEpisode;
+  numberOfEpisodes?: number;
+  numberOfSeasons?: number;
+  type?: 'Documentary' | 'News' | 'Reality' | 'Scripted' | 'Talk Show' | 'Video';
+  
   // Provider-specific
   provider?: string;
   providerData?: Record<string, unknown>;
@@ -144,6 +232,13 @@ export interface UnifiedSeason {
   updatedAt?: string;
   network?: string;
   images?: MediaImageSet;
+  episodes?: UnifiedEpisode[];
+  
+  // NEW: Industry-standard fields
+  airDate?: string;
+  posterPath?: string;
+  seasonNumber?: number;
+  name?: string;
   episodes?: UnifiedEpisode[];
 }
 
@@ -171,6 +266,20 @@ export interface UnifiedEpisode {
   crew?: CrewMember[];
   guestStars?: CastMember[];
   
+  // NEW: Industry-standard fields
+  airDate?: string;
+  episodeNumber?: number;
+  name?: string;
+  seasonNumber?: number;
+  stillPath?: string;
+  voteAverage?: number;
+  voteCount?: number;
+  productionCode?: string;
+  director?: string[];
+  writer?: string[];
+  isSeasonFinale?: boolean;
+  isSeriesFinale?: boolean;
+  
   // Provider-specific
   provider?: string;
   providerData?: Record<string, unknown>;
@@ -187,6 +296,13 @@ export interface CastMember {
   episodeCount?: number;
   self?: boolean;
   voice?: boolean;
+  
+  // NEW: Industry-standard fields
+  order?: number;
+  profilePath?: string;
+  characterName?: string;
+  department?: string;
+  job?: string;
 }
 
 export interface CrewMember {
@@ -194,6 +310,10 @@ export interface CrewMember {
   jobs?: string[];
   person: UnifiedPerson;
   department?: string;
+  
+  // NEW: Industry-standard fields
+  profilePath?: string;
+  order?: number;
 }
 
 export interface UnifiedPerson {
@@ -211,6 +331,16 @@ export interface UnifiedPerson {
   // Extended
   movieCredits?: PersonCredits<UnifiedMovie>;
   showCredits?: PersonCredits<UnifiedShow>;
+  
+  // NEW: Industry-standard fields
+  alsoKnownAs?: string[];
+  adult?: boolean;
+  placeOfBirth?: string;
+  profilePath?: string;
+  popularity?: number;
+  imdbId?: string;
+  deathday?: string;
+  biography?: string; // Already exists but keeping for clarity
 }
 
 export interface PersonCredits<T> {
@@ -219,7 +349,43 @@ export interface PersonCredits<T> {
 }
 
 // ============================================================================
-// SEARCH TYPES
+// PRODUCTION TYPES
+// ============================================================================
+
+export interface ProductionCompany {
+  id: number;
+  name: string;
+  logoPath?: string;
+  originCountry?: string;
+  parentCompany?: string;
+  description?: string;
+  headquarters?: string;
+}
+
+export interface ProductionCountry {
+  iso3166_1: string;
+  name: string;
+  countryCode?: string;
+}
+
+export interface SpokenLanguage {
+  englishName: string;
+  iso639_1: string;
+  name: string;
+  code?: string;
+}
+
+export interface Network {
+  id: number;
+  name: string;
+  logoPath?: string;
+  originCountry?: string;
+  headquarters?: string;
+  parentCompany?: string;
+}
+
+// ============================================================================
+// SEARCH TYPES (Enhanced)
 // ============================================================================
 
 export interface SearchResult {
@@ -232,6 +398,10 @@ export interface SearchResult {
   list?: UnifiedList;
 }
 
+/**
+ * Enhanced SearchRequest with full filtering capabilities
+ * Supports all industry-standard filters
+ */
 export interface SearchRequest {
   query: string;
   type?: ('movie' | 'show' | 'episode' | 'person' | 'list')[];
@@ -249,6 +419,26 @@ export interface SearchRequest {
   page?: number;
   limit?: number;
   extended?: 'images' | 'full' | 'full,images' | 'metadata';
+  
+  // NEW: Industry-standard filters
+  originalLanguage?: string;
+  originCountry?: string[];
+  region?: string;
+  minRating?: number;
+  maxRating?: number;
+  minVotes?: number;
+  startYear?: number;
+  endYear?: number;
+  keywords?: string[];
+  watchProviders?: number[];
+  withCast?: string[];
+  withCrew?: string[];
+  withCompanies?: string[];
+  withoutGenres?: string[];
+  sortBy?: 'popularity.desc' | 'popularity.asc' | 'release_date.desc' | 'release_date.asc' | 'vote_average.desc' | 'vote_average.asc' | 'vote_count.desc' | 'vote_count.asc';
+  includeAdult?: boolean;
+  language?: string; // For localized results
+  watchRegion?: string;
 }
 
 // ============================================================================
@@ -304,27 +494,49 @@ export interface UnifiedUser {
 }
 
 // ============================================================================
-// TRENDING / POPULAR TYPES
+// TRENDING / POPULAR TYPES (Enhanced)
 // ============================================================================
 
 export interface TrendingItem<T> {
   watchers: number;
   media: T;
+  
+  // NEW: Additional metrics
+  score?: number;
+  rank?: number;
+  trendScore?: number;
+  period?: 'day' | 'week' | 'month' | 'year';
 }
 
 export interface AnticipatedItem<T> {
   listCount: number;
   media: T;
+  
+  // NEW: Additional metrics
+  anticipationScore?: number;
+  rank?: number;
 }
 
 export interface BoxOfficeItem {
   revenue: number;
   movie: UnifiedMovie;
+  
+  // NEW: Additional metrics
+  weekendRevenue?: number;
+  domesticRevenue?: number;
+  internationalRevenue?: number;
+  openingRevenue?: number;
+  rank?: number;
+  weekNumber?: number;
 }
 
 export interface UpdatedItem<T> {
   updatedAt: string;
   media: T;
+  
+  // NEW: Additional metrics
+  updateType?: 'full' | 'partial' | 'metadata';
+  changes?: string[];
 }
 
 // ============================================================================
@@ -336,6 +548,14 @@ export interface CalendarEntry {
   episode?: UnifiedEpisode;
   show?: UnifiedShow;
   movie?: UnifiedMovie;
+  
+  // NEW: Additional metrics
+  isPremiere?: boolean;
+  isFinale?: boolean;
+  isSpecial?: boolean;
+  countdownDays?: number;
+  formattedDate?: string;
+  timezone?: string;
 }
 
 // ============================================================================
@@ -360,34 +580,109 @@ export interface UnifiedComment {
   season?: UnifiedSeason;
   episode?: UnifiedEpisode;
   list?: UnifiedList;
+  
+  // NEW: Industry-standard fields
+  isPinned?: boolean;
+  isVerified?: boolean;
+  isHighlighted?: boolean;
+  replyCount?: number;
+  likeCount?: number;
+  dislikeCount?: number;
+  userScore?: number;
 }
 
 // ============================================================================
-// FLAT RESULT TYPE (consumed by UnifiedMediaService)
+// FLAT RESULT TYPE (Enhanced with Industry-Standard Fields)
 // ============================================================================
 
+/**
+ * IMetadataResult - Flat result type consumed by UnifiedMediaService
+ * 
+ * v2.0 - Extended with all industry-standard fields for complete content classification
+ * 
+ * NEW FIELDS:
+ * - originalLanguage: What language was it made in? (e.g., "en", "hi", "ko")
+ * - originCountry: What country was it made in? (e.g., ["US"], ["IN"], ["KR"])
+ * - originalTitle: The original title before translation
+ * - popularity: Current popularity score (0-100)
+ * - voteCount: Number of votes/ratings
+ * - certification: Parental rating (e.g., "PG-13", "R", "TV-MA")
+ * - tagline: The movie/show's tagline
+ * - status: Release status (e.g., "Released", "Post Production", "Cancelled")
+ * - belongsToCollection: Franchise grouping (e.g., "Marvel Cinematic Universe")
+ * - watchProviders: Where to watch this content
+ * - keywords: Searchable keywords/tags
+ * - budget: Production budget (for movies)
+ * - revenue: Box office revenue (for movies)
+ * - networks: TV networks/streaming platforms (for shows)
+ * - spokenLanguages: Languages spoken in the content
+ * - productionCompanies: Studios/companies that produced it
+ * - productionCountries: Countries where it was produced
+ */
 export interface IMetadataResult {
+  // ─── Core Identity ──────────────────────────────────────────────────────────
   id: string;
   title: string;
   type: 'movie' | 'tv';
+  source?: string; // Which metadata provider this came from
+  
+  // ─── Release Information ──────────────────────────────────────────────────
   year?: number;
-  /** Full release/air date string (e.g. "2026-06-15"), when the provider exposes one.
-   *  Not all providers can populate this (e.g. Kuryana only has `year`), so always
-   *  treat this as optional and fall back to `year` when it's missing. */
+  /** Full release/air date string (e.g. "2026-06-15"), when the provider exposes one. */
   releaseDate?: string;
+  
+  // ─── Visual Assets ─────────────────────────────────────────────────────────
   poster?: string;
   backdrop?: string;
+  
+  // ─── Content Description ──────────────────────────────────────────────────
   overview?: string;
-  rating?: number;
+  tagline?: string; // NEW: Movie/show tagline
+  status?: 'Released' | 'Post Production' | 'In Production' | 'Planned' | 'Canceled' | 'Ended' | 'Returning Series' | 'Pilot'; // NEW
   genres?: string[];
+  keywords?: string[]; // NEW: Searchable keywords/tags
+  
+  // ─── Ratings & Metrics ────────────────────────────────────────────────────
+  rating?: number;
+  popularity?: number; // NEW: Current popularity score
+  voteCount?: number; // NEW: Number of votes/ratings
   runtime?: number;
+  
+  // ─── Classification ───────────────────────────────────────────────────────
+  originalLanguage?: string; // NEW: What language was it made in?
+  originCountry?: string[]; // NEW: What country was it made in?
+  originalTitle?: string; // NEW: The original title before translation
+  certification?: string; // NEW: Parental rating (e.g., "PG-13", "R", "TV-MA")
+  
+  // ─── Franchise & Collections ─────────────────────────────────────────────
+  belongsToCollection?: BelongsToCollection; // NEW: Franchise grouping (e.g., "Marvel Cinematic Universe")
+  
+  // ─── Where to Watch ──────────────────────────────────────────────────────
+  watchProviders?: WatchProvider[]; // NEW: Where to watch this content
+  
+  // ─── Cast & Crew ──────────────────────────────────────────────────────────
   cast?: CastMember[];
-  /** Which metadata provider this result came from (e.g. 'tmdb', 'kuryana', 'moviebox'). */
-  source?: string;
+  
+  // ─── Production Information ──────────────────────────────────────────────
+  budget?: number; // NEW: Production budget (for movies)
+  revenue?: number; // NEW: Box office revenue (for movies)
+  networks?: Network[]; // NEW: TV networks/streaming platforms (for shows)
+  spokenLanguages?: SpokenLanguage[]; // NEW: Languages spoken in the content
+  productionCompanies?: ProductionCompany[]; // NEW: Studios/companies that produced it
+  productionCountries?: ProductionCountry[]; // NEW: Countries where it was produced
+  
+  // ─── TV-Specific ──────────────────────────────────────────────────────────
+  numberOfSeasons?: number; // NEW: Total seasons (for TV shows)
+  numberOfEpisodes?: number; // NEW: Total episodes (for TV shows)
+  lastAirDate?: string; // NEW: Last air date (for TV shows)
+  inProduction?: boolean; // NEW: Is it still in production?
+  
+  // ─── Provider Data ──────────────────────────────────────────────────────
+  providerData?: Record<string, unknown>; // Raw provider data (for debugging)
 }
 
 // ============================================================================
-// PROVIDER INTERFACE
+// PROVIDER INTERFACE (Enhanced)
 // ============================================================================
 
 export interface MetadataProvider {
@@ -396,9 +691,12 @@ export interface MetadataProvider {
   priority: number;
   enabled: boolean;
   
-  // Search
+  // Search (Enhanced)
   search?(query: SearchRequest): Promise<SearchResult[]>;
   searchById?(idType: string, id: string): Promise<SearchResult[]>;
+  
+  // Discover (NEW) - Category browsing without keyword
+  discover?(filters: DiscoverFilters): Promise<SearchResult[]>;
   
   // Movies
   getTrendingMovies?(): Promise<TrendingItem<UnifiedMovie>[]>;
@@ -497,6 +795,55 @@ export interface MetadataProvider {
 }
 
 // ============================================================================
+// DISCOVER FILTERS (NEW)
+// ============================================================================
+
+/**
+ * DiscoverFilters - For category browsing without a keyword
+ * This is how Netflix/MovieBox do category rows
+ */
+export interface DiscoverFilters {
+  // Core filters
+  languages?: string[]; // Original language(s)
+  countries?: string[]; // Origin country(s)
+  region?: string; // Region for regional content
+  genres?: string[];
+  certifications?: string[];
+  
+  // Date/Time filters
+  year?: number;
+  startYear?: number;
+  endYear?: number;
+  releaseDateGTE?: string;
+  releaseDateLTE?: string;
+  firstAirDateGTE?: string;
+  firstAirDateLTE?: string;
+  
+  // Rating filters
+  minRating?: number;
+  maxRating?: number;
+  minVotes?: number;
+  
+  // Content type
+  type?: 'movie' | 'tv' | 'all';
+  status?: string[];
+  
+  // Advanced
+  keywords?: string[];
+  watchProviders?: number[];
+  withCast?: string[];
+  withCrew?: string[];
+  withCompanies?: string[];
+  withoutGenres?: string[];
+  sortBy?: 'popularity.desc' | 'popularity.asc' | 'release_date.desc' | 'release_date.asc' | 'vote_average.desc' | 'vote_average.asc' | 'vote_count.desc' | 'vote_count.asc';
+  includeAdult?: boolean;
+  
+  // Pagination
+  page?: number;
+  limit?: number;
+}
+
+// ============================================================================
 // STATS TYPES
 // ============================================================================
 
@@ -555,7 +902,7 @@ export interface AggregatedMetadata {
 }
 
 export interface MetadataRequest {
-  type: 'movie' | 'show' | 'episode' | 'person' | 'list' | 'search' | 'trending' | 'popular' | 'anticipated' | 'calendar';
+  type: 'movie' | 'show' | 'episode' | 'person' | 'list' | 'search' | 'trending' | 'popular' | 'anticipated' | 'calendar' | 'discover';
   id?: string | number;
   ids?: MediaIds;
   query?: string;
@@ -570,6 +917,9 @@ export interface MetadataRequest {
   limit?: number;
   extended?: 'images' | 'full' | 'full,images' | 'metadata';
   providers?: string[];
+  
+  // NEW: Discover filters
+  discoverFilters?: DiscoverFilters;
 }
 
 export interface MetadataCacheEntry<T> {
@@ -608,4 +958,9 @@ export interface UnifiedMetadataConfig {
   deduplicateResults: boolean;
   preferFullExtended: boolean;
   defaultLanguage: string;
+  
+  // NEW: Region/language defaults
+  defaultRegion?: string;
+  defaultCertificationCountry?: string;
+  includeAdultContent?: boolean;
 }

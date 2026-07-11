@@ -297,4 +297,4 @@ jobs:
         with:
           name: debug-apk-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 14
+          retention-days: 1

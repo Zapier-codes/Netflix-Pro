@@ -13,6 +13,8 @@ import {
   Dimensions,
   Animated,
   Easing,
+  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,18 +31,21 @@ import { useAlert } from '../../contexts/AlertContext';
 // ─── Unified multi-source search engine (TMDB + Kuryana + MovieBox) ───
 import { unifiedMediaService } from '../../services/unified/UnifiedMediaService';
 import { IMetadataResult } from '../../services/unified/types/MetadataTypes';
+import { DiscoverFilters } from '../../services/unified/types/MetadataTypes';
+
+// ─── MavinEngine for search suggestions ───
+import MavinEngine from '../../../modules/mavin-engine';
 
 // Utils
 import { saveSearchQuery, getSearchHistory, removeSearchQuery, clearSearchHistory } from '../../utils/storage';
+import { getContinueWatching, saveContinueWatching, removeFromContinueWatching, ContinueWatchingItem } from '../../utils/continueWatching';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // TMDB CDN prefix used by the rest of the app
 const TMDB_POSTER_PREFIX = 'https://image.tmdb.org/t/p/w500';
 
-// ─── Grid Layout (4-up) — shared by "Popular Searches" AND every active
-// ─── result set (typed search / category tap / genre-only browse). Only
-// ─── the heading above the grid changes; the card layout never does.
+// ─── Grid Layout (4-up) ───
 const GRID_GAP = 8;
 const GRID_CARD_WIDTH = (SCREEN_WIDTH - 16 * 2 - GRID_GAP * 3) / 4;
 const GRID_CARD_HEIGHT = GRID_CARD_WIDTH * 1.5;
@@ -52,11 +57,7 @@ const toRawPosterPath = (fullPosterUrl?: string): string => {
     : fullPosterUrl;
 };
 
-// ─── Sort helper: newest → oldest. Used everywhere an active result set is
-// ─── shown. A specific year filter naturally collapses everything to one
-// ─── year, so this becomes a no-op in that case — which is the desired
-// ─── behavior ("latest always prioritized except user specifically
-// ─── selects a year").
+// ─── Sort helper: newest → oldest ───
 const sortNewestFirst = (items: IMetadataResult[]): IMetadataResult[] => {
   return [...items].sort((a, b) => (b.year || 0) - (a.year || 0));
 };
@@ -68,81 +69,97 @@ interface SearchFilters {
   minRating: number;
   source: 'all' | 'tmdb' | 'kuryana' | 'moviebox';
   genre: string;
+  language: string;
+  certification: string;
+  yearRange: string;
 }
 
-// ─── What is currently driving the grid ───
-// 'discover' -> nothing active, show trending "Popular Searches"
-// 'typed'    -> user is typing in the search bar
-// 'category' -> user tapped a category card (Hollywood, Bollywood, etc.)
-// 'genre'    -> user tapped a genre pill with no category/typed search active,
-//               so the genre itself becomes the primary browse query
 type ActiveMode = 'discover' | 'typed' | 'category' | 'genre';
 
-// ─── Category Cards (2x3 grid) ───
-// Tapping one runs it through the same unified search() pipeline as typing a
-// query — it's an approximation (text-match against these keywords), not a
-// true language/origin filter, since none of the providers expose that field.
-const CATEGORY_CARDS: { label: string; query: string; icon: string }[] = [
-  { label: 'Hollywood', query: 'hollywood', icon: 'film-outline' },
-  { label: 'Bollywood', query: 'bollywood', icon: 'film-outline' },
-  { label: 'Nollywood', query: 'nollywood', icon: 'film-outline' },
-  { label: 'Anime', query: 'anime', icon: 'sparkles-outline' },
-  { label: 'K-Drama', query: 'korean drama', icon: 'tv-outline' },
-  { label: 'Chinese', query: 'chinese drama', icon: 'globe-outline' },
+// ─── Category Cards with real classification signals ───
+const CATEGORY_CARDS: { 
+  label: string; 
+  query: string; 
+  icon: string; 
+  filters: Partial<DiscoverFilters>;
+}[] = [
+  { 
+    label: 'Hollywood', 
+    query: 'hollywood', 
+    icon: 'film-outline',
+    filters: { languages: ['en'], countries: ['US'], type: 'movie' }
+  },
+  { 
+    label: 'Bollywood', 
+    query: 'bollywood', 
+    icon: 'film-outline',
+    filters: { languages: ['hi', 'bn', 'te', 'ta', 'ml'], countries: ['IN'], type: 'movie' }
+  },
+  { 
+    label: 'Nollywood', 
+    query: 'nollywood', 
+    icon: 'film-outline',
+    filters: { languages: ['en', 'yo', 'ig', 'ha'], countries: ['NG'], type: 'movie' }
+  },
+  { 
+    label: 'Anime', 
+    query: 'anime', 
+    icon: 'sparkles-outline',
+    filters: { languages: ['ja'], countries: ['JP'], genres: ['Animation', 'Anime'] }
+  },
+  { 
+    label: 'K-Drama', 
+    query: 'korean drama', 
+    icon: 'tv-outline',
+    filters: { languages: ['ko'], countries: ['KR'], genres: ['Drama'], type: 'tv' }
+  },
+  { 
+    label: 'Chinese Drama', 
+    query: 'chinese drama', 
+    icon: 'globe-outline',
+    filters: { languages: ['zh', 'cn'], countries: ['CN', 'TW', 'HK'], genres: ['Drama'], type: 'tv' }
+  },
 ];
 
-// ─── Year options shown in the Year filter row ───
+// ─── Year options ───
 const currentYear = new Date().getFullYear();
 const YEAR_OPTIONS: string[] = Array.from({ length: 12 }, (_, i) => String(currentYear - i));
+const YEAR_RANGE_OPTIONS: string[] = ['2020-2024', '2010-2019', '2000-2009', '1990-1999', 'Pre-1990'];
 
-// ─── Category -> real classification signals (language / origin country /
-// ─── keywords), NOT literal title text. The underlying search API only
-// ─── does full-text matching, so sending it "hollywood" as a query returns
-// ─── anything with the word "Hollywood" in the title (e.g. "Hollywood
-// ─── Ending") — that's wrong, categories aren't titles. We still send the
-// ─── keyword to get a candidate pool (no dedicated discover/browse-by-
-// ─── region endpoint is confirmed on unifiedMediaService), but then filter
-// ─── that pool down to items whose actual metadata matches the category.
-// ─── Field names are best-effort (TMDB-style) via defensive `as any` reads
-// ─── since MetadataTypes isn't visible here — tighten these once you
-// ─── confirm the exact field names in services/unified/types/MetadataTypes.
-const CATEGORY_MATCHERS: Record<string, { languages?: string[]; countries?: string[]; keywords?: string[] }> = {
-  hollywood: { languages: ['en'], countries: ['US'] },
-  bollywood: { languages: ['hi'], countries: ['IN'] },
-  nollywood: { languages: ['en', 'yo', 'ig', 'ha'], countries: ['NG'] },
-  anime: { languages: ['ja'], keywords: ['anime'] },
-  'korean drama': { languages: ['ko'], countries: ['KR'] },
-  'chinese drama': { languages: ['zh', 'cn'], countries: ['CN'] },
-};
+// ─── Language options ───
+const LANGUAGE_OPTIONS: { label: string; code: string }[] = [
+  { label: 'All', code: '' },
+  { label: 'English', code: 'en' },
+  { label: 'Hindi', code: 'hi' },
+  { label: 'Korean', code: 'ko' },
+  { label: 'Japanese', code: 'ja' },
+  { label: 'Chinese', code: 'zh' },
+  { label: 'Spanish', code: 'es' },
+  { label: 'French', code: 'fr' },
+  { label: 'German', code: 'de' },
+  { label: 'Italian', code: 'it' },
+  { label: 'Portuguese', code: 'pt' },
+  { label: 'Russian', code: 'ru' },
+  { label: 'Arabic', code: 'ar' },
+  { label: 'Turkish', code: 'tr' },
+  { label: 'Thai', code: 'th' },
+  { label: 'Vietnamese', code: 'vi' },
+];
 
-const applyCategoryMatch = (items: IMetadataResult[], categoryQuery: string): IMetadataResult[] => {
-  const matcher = CATEGORY_MATCHERS[categoryQuery.toLowerCase()];
-  if (!matcher) return items;
-
-  const matched = items.filter((item) => {
-    const anyItem = item as any;
-    const lang = String(anyItem.originalLanguage || anyItem.original_language || '').toLowerCase();
-    const countryRaw = anyItem.originCountry || anyItem.origin_country || anyItem.country || [];
-    const countryList: string[] = (Array.isArray(countryRaw) ? countryRaw : [countryRaw])
-      .filter(Boolean)
-      .map((c: string) => String(c).toUpperCase());
-    const keywordList: string[] = (anyItem.keywords || anyItem.tags || [])
-      .filter(Boolean)
-      .map((k: string) => String(k).toLowerCase());
-
-    const langMatch = !!matcher.languages && matcher.languages.includes(lang);
-    const countryMatch = !!matcher.countries && matcher.countries.some((c) => countryList.includes(c));
-    const keywordMatch = !!matcher.keywords && matcher.keywords.some((k) => keywordList.includes(k));
-
-    return langMatch || countryMatch || keywordMatch;
-  });
-
-  // If none of the providers populated language/country/keyword data for
-  // this batch, fall back to the raw keyword results rather than showing an
-  // empty grid — partial signal is better than nothing, but real matches
-  // always win when they exist.
-  return matched.length > 0 ? matched : items;
-};
+// ─── Certification options ───
+const CERTIFICATION_OPTIONS: { label: string; code: string }[] = [
+  { label: 'All', code: '' },
+  { label: 'G', code: 'G' },
+  { label: 'PG', code: 'PG' },
+  { label: 'PG-13', code: 'PG-13' },
+  { label: 'R', code: 'R' },
+  { label: 'NC-17', code: 'NC-17' },
+  { label: 'TV-Y', code: 'TV-Y' },
+  { label: 'TV-Y7', code: 'TV-Y7' },
+  { label: 'TV-PG', code: 'TV-PG' },
+  { label: 'TV-14', code: 'TV-14' },
+  { label: 'TV-MA', code: 'TV-MA' },
+];
 
 const SearchScreen = () => {
   const { colors, isDark } = useTheme();
@@ -152,82 +169,86 @@ const SearchScreen = () => {
   const { trendingItems, loading: preloadLoading } = useSearchPreloader();
   const { recordSearch: recordSearchToSupabase } = useSearchAggregation();
 
-  // ─── Search bar text — ONLY reflects what the user typed. Category taps
-  // ─── and genre-only browsing never write into this. ───
+  // ─── Search bar text ───
   const [query, setQuery] = useState('');
 
-  // ─── What's currently driving the grid, and what heading to show above it ───
+  // ─── Active mode ───
   const [activeMode, setActiveMode] = useState<ActiveMode>('discover');
   const [resultsTitle, setResultsTitle] = useState('Popular Searches');
 
+  // ─── Results ───
   const [results, setResults] = useState<IMetadataResult[]>([]);
   const [filteredResults, setFilteredResults] = useState<IMetadataResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [noResults, setNoResults] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
-  // ─── Filter State — persists across mode switches (typed <-> category <->
-  // ─── genre) until the user explicitly changes it. ───
+  // ─── Continue Watching ───
+  const [continueWatching, setContinueWatching] = useState<ContinueWatchingItem[]>([]);
+
+  // ─── Search Suggestions ───
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+
+  // ─── Filter State ───
   const [filters, setFilters] = useState<SearchFilters>({
     type: 'all',
     year: '',
     minRating: 0,
     source: 'all',
     genre: '',
+    language: '',
+    certification: '',
+    yearRange: '',
   });
 
   const [availableGenres] = useState<string[]>([
     'Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary',
     'Drama', 'Family', 'Fantasy', 'Horror', 'Mystery', 'Romance',
     'Sci-Fi', 'Thriller', 'War', 'Western',
+    // Asian drama genres
+    'Wuxia', 'Xianxia', 'Historical', 'Period', 'Martial Arts',
+    'Sageuk', 'Melodrama', 'Slice of Life', 'School', 'Youth',
   ]);
 
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+  const suggestionsTimeout = useRef<NodeJS.Timeout | null>(null);
   const isMounted = useRef(true);
   const engineInitialized = useRef(false);
 
-  // ─── Keeps latest filters readable inside performSearch without having to
-  // ─── recreate that callback (and re-trigger effects) on every filter tweak.
+  // ─── Refs for current state ───
   const filtersRef = useRef(filters);
   useEffect(() => { filtersRef.current = filters; }, [filters]);
 
-  // ─── Tracks whatever text query is actually driving the current result
-  // ─── set (typed text, category keyword, or genre keyword) so we can
-  // ─── re-fetch with the same query when `type` changes (it's a real API
-  // ─── param, not something we can just re-filter client-side).
   const activeSearchQueryRef = useRef('');
   const activeModeRef = useRef<ActiveMode>('discover');
   const activeTitleRef = useRef('Popular Searches');
+  const activeFiltersRef = useRef<Partial<DiscoverFilters>>({});
 
-  // ─── Set to true right before programmatically clearing `query` from a
-  // ─── non-typing action (category tap, genre-only tap, clear button) so
-  // ─── the debounced-search effect below ignores that particular change.
   const skipQueryEffectRef = useRef(false);
 
-  // ─── Recent searches auto-scrolling ticker ───
-  const tickerScrollX = useRef(new Animated.Value(0)).current;
-  const [tickerSetWidth, setTickerSetWidth] = useState(0);
-
-  // ─── Skeleton pulse — drives every skeleton card's opacity while a grid
-  // ─── section is loading. One shared driver instead of one timer per card.
+  // ─── Skeleton pulse ───
   const skeletonPulse = useRef(new Animated.Value(0.45)).current;
 
-  useEffect(() => {
-    if (tickerSetWidth <= 0) return;
-    tickerScrollX.setValue(0);
-    const loop = Animated.loop(
-      Animated.timing(tickerScrollX, {
-        toValue: -tickerSetWidth,
-        duration: tickerSetWidth * 25,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [tickerSetWidth, tickerScrollX]);
+  // ─── Load continue watching ───
+  const loadContinueWatching = useCallback(async () => {
+    const items = await getContinueWatching();
+    if (isMounted.current) {
+      setContinueWatching(items);
+    }
+  }, []);
+
+  // ─── Load search history ───
+  const loadSearchHistory = useCallback(async () => {
+    const history = await getSearchHistory();
+    if (isMounted.current) {
+      setSearchHistory(history);
+    }
+  }, []);
 
   const isGridLoading = loading || (activeMode === 'discover' && preloadLoading && trendingItems.length === 0);
+  
   useEffect(() => {
     if (!isGridLoading) return;
     skeletonPulse.setValue(0.45);
@@ -241,7 +262,7 @@ const SearchScreen = () => {
     return () => loop.stop();
   }, [isGridLoading, skeletonPulse]);
 
-  // ─── Ensure the unified media engine is ready ───
+  // ─── Initialize engines ───
   useEffect(() => {
     if (!engineInitialized.current) {
       unifiedMediaService.initialize().catch((err) =>
@@ -251,16 +272,7 @@ const SearchScreen = () => {
     }
   }, []);
 
-  // Load search history
-  const loadSearchHistory = useCallback(async () => {
-    const history = await getSearchHistory();
-    if (isMounted.current) {
-      setSearchHistory(history);
-    }
-  }, []);
-
-  // ─── Apply filters to results (client-side, against whatever is
-  // ─── currently loaded for the active mode) ───
+  // ─── Apply filters ───
   const applyFilters = useCallback((resultsToFilter: IMetadataResult[], currentFilters: SearchFilters): IMetadataResult[] => {
     let filtered = [...resultsToFilter];
 
@@ -289,36 +301,57 @@ const SearchScreen = () => {
       );
     }
 
+    if (currentFilters.language) {
+      filtered = filtered.filter(item =>
+        item.originalLanguage?.toLowerCase() === currentFilters.language.toLowerCase()
+      );
+    }
+
+    if (currentFilters.certification) {
+      filtered = filtered.filter(item =>
+        item.certification?.toUpperCase() === currentFilters.certification.toUpperCase()
+      );
+    }
+
+    if (currentFilters.yearRange) {
+      const [start, end] = currentFilters.yearRange.split('-').map(Number);
+      if (start && end) {
+        filtered = filtered.filter(item => (item.year || 0) >= start && (item.year || 0) <= end);
+      } else if (currentFilters.yearRange === 'Pre-1990') {
+        filtered = filtered.filter(item => (item.year || 0) < 1990);
+      }
+    }
+
     return filtered;
   }, []);
 
-  // ─── Reset the grid back to the default "Popular Searches" / discover view ───
+  // ─── Reset to discover ───
   const resetToDiscover = useCallback(() => {
     activeSearchQueryRef.current = '';
     activeModeRef.current = 'discover';
     activeTitleRef.current = 'Popular Searches';
+    activeFiltersRef.current = {};
     setActiveMode('discover');
     setResultsTitle('Popular Searches');
     setResults([]);
     setFilteredResults([]);
     setNoResults(false);
+    setShowSuggestions(false);
+    setSuggestions([]);
     loadSearchHistory();
-  }, [loadSearchHistory]);
+    loadContinueWatching();
+  }, [loadSearchHistory, loadContinueWatching]);
 
-  // ─── Perform a search across all sources and show it in the grid.
-  // ─── `mode` + `title` control the heading shown above the grid:
-  //   - 'typed'    -> "Searched Results"
-  //   - 'category' -> the category label, e.g. "Hollywood"
-  //   - 'genre'    -> the genre label, e.g. "Action" (only used when no
-  //                    category/typed search is currently active)
+  // ─── Perform search with full filters ───
   const performSearch = useCallback(async (
     searchQuery: string,
     mode: Exclude<ActiveMode, 'discover'>,
     title: string,
+    categoryFilters?: Partial<DiscoverFilters>,
     saveToHistory: boolean = true
   ) => {
     const trimmedQuery = searchQuery.trim();
-    if (!trimmedQuery) {
+    if (!trimmedQuery && !categoryFilters) {
       resetToDiscover();
       return;
     }
@@ -326,37 +359,75 @@ const SearchScreen = () => {
     activeSearchQueryRef.current = trimmedQuery;
     activeModeRef.current = mode;
     activeTitleRef.current = title;
+    if (categoryFilters) {
+      activeFiltersRef.current = categoryFilters;
+    }
 
     setLoading(true);
     setNoResults(false);
     setActiveMode(mode);
     setResultsTitle(title);
+    setShowSuggestions(false);
 
     try {
       const currentFilters = filtersRef.current;
+      
+      // Build search options with all filters
       const searchOptions: any = {
         query: trimmedQuery,
         limit: 50,
+        ...categoryFilters,
       };
 
+      // Add type filter
       if (currentFilters.type !== 'all') {
         searchOptions.type = currentFilters.type;
       }
 
-      const searchResults = await unifiedMediaService.search(searchOptions);
+      // Add language filter
+      if (currentFilters.language) {
+        searchOptions.language = currentFilters.language;
+      }
+
+      // Add certification filter
+      if (currentFilters.certification) {
+        searchOptions.certification = currentFilters.certification;
+      }
+
+      // Add year range
+      if (currentFilters.year) {
+        searchOptions.year = parseInt(currentFilters.year);
+      }
+
+      // Add rating filter
+      if (currentFilters.minRating > 0) {
+        searchOptions.minRating = currentFilters.minRating;
+      }
+
+      // Add genre filter
+      if (currentFilters.genre) {
+        searchOptions.genres = [currentFilters.genre];
+      }
+
+      // Use discover mode if no query and we have category filters
+      let searchResults: IMetadataResult[];
+      if (!trimmedQuery && categoryFilters) {
+        // Use discover mode
+        const discoverFilters: DiscoverFilters = {
+          ...categoryFilters,
+          type: currentFilters.type !== 'all' ? currentFilters.type : categoryFilters.type || 'all',
+          limit: 50,
+        };
+        // @ts-ignore - discover is available
+        searchResults = await unifiedMediaService.discover(discoverFilters);
+      } else {
+        // Regular search
+        searchResults = await unifiedMediaService.search(searchOptions);
+      }
+
       if (!isMounted.current) return;
 
-      const sourceCounts: Record<string, number> = {};
-      searchResults.forEach(r => {
-        const source = (r as any).source || 'unknown';
-        sourceCounts[source] = (sourceCounts[source] || 0) + 1;
-      });
-      console.log('📊 Search results by source:', sourceCounts);
-
-      let withPosters = searchResults.filter((item) => !!item.poster);
-      if (mode === 'category') {
-        withPosters = applyCategoryMatch(withPosters, trimmedQuery);
-      }
+      const withPosters = searchResults.filter((item) => !!item.poster);
       setResults(withPosters);
 
       const applied = applyFilters(withPosters, currentFilters);
@@ -364,8 +435,7 @@ const SearchScreen = () => {
       setFilteredResults(sorted);
       setNoResults(sorted.length === 0);
 
-      // Only genuine typed searches get saved to search history — category
-      // and genre-only browsing have their own dedicated UI already.
+      // Save to history only for typed searches
       if (saveToHistory && mode === 'typed' && sorted.length > 0) {
         await saveSearchQuery(trimmedQuery);
         loadSearchHistory();
@@ -382,9 +452,52 @@ const SearchScreen = () => {
     }
   }, [applyFilters, loadSearchHistory, recordSearchToSupabase, showToast, resetToDiscover]);
 
-  // ─── Debounced real-time search whenever the search bar text changes.
-  // ─── Typing always takes over as the active mode ("typed"), overriding
-  // ─── whatever category/genre browse was active before. ───
+  // ─── Debounced search suggestions using MavinEngine ───
+  useEffect(() => {
+    if (skipQueryEffectRef.current) {
+      skipQueryEffectRef.current = false;
+      return;
+    }
+
+    // Clear suggestions if query is empty
+    if (!query.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    // Show suggestions after 300ms of typing
+    if (suggestionsTimeout.current) {
+      clearTimeout(suggestionsTimeout.current);
+    }
+
+    setIsLoadingSuggestions(true);
+    suggestionsTimeout.current = setTimeout(async () => {
+      try {
+        // Use MavinEngine for search suggestions
+        const result = await MavinEngine.getSearchSuggestions(query, 0);
+        if (result && result.suggestions) {
+          setSuggestions(result.suggestions.slice(0, 10));
+          setShowSuggestions(true);
+        }
+      } catch (error) {
+        console.error('[Search] Suggestions error:', error);
+        // Fallback: use query as suggestion
+        setSuggestions([query]);
+        setShowSuggestions(true);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    }, 300);
+
+    return () => {
+      if (suggestionsTimeout.current) {
+        clearTimeout(suggestionsTimeout.current);
+      }
+    };
+  }, [query]);
+
+  // ─── Debounced search execution ───
   useEffect(() => {
     if (skipQueryEffectRef.current) {
       skipQueryEffectRef.current = false;
@@ -401,7 +514,7 @@ const SearchScreen = () => {
     }
 
     debounceTimeout.current = setTimeout(() => {
-      performSearch(query, 'typed', 'Searched Results', false);
+      performSearch(query, 'typed', 'Searched Results', undefined, false);
     }, 500);
 
     return () => {
@@ -409,43 +522,42 @@ const SearchScreen = () => {
         clearTimeout(debounceTimeout.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, performSearch, resetToDiscover]);
 
-  // ─── Re-apply (and re-sort) filters client-side against whatever is
-  // ─── already loaded, any time a filter other than `type` changes. This is
-  // ─── what makes "tap Action to filter the list already showing" work
-  // ─── without a new network request. ───
+  // ─── Re-apply filters when filters change ───
   useEffect(() => {
     if (results.length > 0) {
       const filtered = sortNewestFirst(applyFilters(results, filters));
       setFilteredResults(filtered);
       setNoResults(filtered.length === 0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, results]);
+  }, [filters, results, applyFilters]);
 
-  // ─── `type` is a real API param, not just a client-side filter, so
-  // ─── changing it re-runs the currently active search (whatever query is
-  // ─── driving it — typed, category, or genre) with the new type. ───
+  // ─── Type filter re-runs search ───
   const isFirstTypeRender = useRef(true);
   useEffect(() => {
     if (isFirstTypeRender.current) {
       isFirstTypeRender.current = false;
       return;
     }
-    if (activeSearchQueryRef.current) {
-      performSearch(activeSearchQueryRef.current, activeModeRef.current as Exclude<ActiveMode, 'discover'>, activeTitleRef.current, false);
+    if (activeSearchQueryRef.current || Object.keys(activeFiltersRef.current).length > 0) {
+      performSearch(
+        activeSearchQueryRef.current, 
+        activeModeRef.current as Exclude<ActiveMode, 'discover'>, 
+        activeTitleRef.current,
+        activeFiltersRef.current,
+        false
+      );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.type]);
+  }, [filters.type, performSearch]);
 
   useFocusEffect(
     useCallback(() => {
       isMounted.current = true;
       loadSearchHistory();
+      loadContinueWatching();
       return () => { isMounted.current = false; };
-    }, [loadSearchHistory])
+    }, [loadSearchHistory, loadContinueWatching])
   );
 
   // ─── Handlers ───
@@ -456,11 +568,19 @@ const SearchScreen = () => {
     );
   }, []);
 
+  const handleSuggestionPress = useCallback((suggestion: string) => {
+    skipQueryEffectRef.current = true;
+    setQuery(suggestion);
+    setShowSuggestions(false);
+    performSearch(suggestion, 'typed', 'Searched Results', undefined, true);
+    Keyboard.dismiss();
+  }, [performSearch]);
+
   const handleHistoryItemPress = useCallback((historyQuery: string) => {
-    // This IS a text search, so the query bar should show it.
     skipQueryEffectRef.current = true;
     setQuery(historyQuery);
-    performSearch(historyQuery, 'typed', 'Searched Results', true);
+    setShowSuggestions(false);
+    performSearch(historyQuery, 'typed', 'Searched Results', undefined, true);
     Keyboard.dismiss();
   }, [performSearch]);
 
@@ -478,30 +598,35 @@ const SearchScreen = () => {
   const handleClearQuery = () => {
     skipQueryEffectRef.current = true;
     setQuery('');
+    setShowSuggestions(false);
     resetToDiscover();
   };
 
-  // ─── Category card tap: never touches the search bar text. Existing
-  // ─── filters (genre/year/type) carry over untouched unless the user
-  // ─── changes them afterward. ───
-  const handleCategoryPress = useCallback((cat: { label: string; query: string }) => {
+  const handleCategoryPress = useCallback((cat: typeof CATEGORY_CARDS[0]) => {
     Keyboard.dismiss();
+    setShowSuggestions(false);
+    
     if (query.length > 0) {
-      // Clear any leftover typed text without letting the debounce effect
-      // treat this as "user cleared their search" and reset to discover —
-      // we're about to show category results instead.
       skipQueryEffectRef.current = true;
       setQuery('');
     }
-    performSearch(cat.query, 'category', cat.label, false);
+    
+    performSearch(cat.query, 'category', cat.label, cat.filters, false);
   }, [query, performSearch]);
 
-  // ─── Genre pill tap. Behavior depends on what's currently driving the grid:
-  //   - If a category or typed search is already active: genre just narrows
-  //     the results already showing (client-side filter only).
-  //   - If nothing is active (discover) or genre is already the primary
-  //     browse mode: the genre itself becomes the search — "show all Action
-  //     movies, latest first" — until the user picks a category or types.
+  // ─── Continue Watching handler ───
+  const handleContinueWatchingPress = useCallback((item: ContinueWatchingItem) => {
+    router.push(
+      `/movie/${item.id}?mediaType=${item.type}&title=${encodeURIComponent(item.title)}&poster_path=${encodeURIComponent(item.poster || '')}&resume=${item.progress}`
+    );
+  }, []);
+
+  const handleRemoveContinueWatching = async (id: string) => {
+    await removeFromContinueWatching(id);
+    loadContinueWatching();
+  };
+
+  // ─── Genre toggle ───
   const handleGenreToggle = useCallback((genre: string) => {
     const turningOff = filters.genre === genre;
 
@@ -511,7 +636,6 @@ const SearchScreen = () => {
     }
 
     if (turningOff) {
-      // Turning off the only thing driving the grid -> back to discover.
       setFilters(prev => ({ ...prev, genre: '' }));
       resetToDiscover();
       return;
@@ -522,14 +646,141 @@ const SearchScreen = () => {
       skipQueryEffectRef.current = true;
       setQuery('');
     }
-    performSearch(genre.toLowerCase(), 'genre', genre, false);
+    performSearch(genre.toLowerCase(), 'genre', genre, { genres: [genre] }, false);
   }, [filters.genre, activeMode, query, performSearch, resetToDiscover]);
 
-  // ─── Render every filter as one line: "Label:" inline on the left, then a
-  // ─── horizontally-scrollable row of small pills next to it. There's no
-  // ─── separate "All" pill — tapping the active pill again clears it back
-  // ─── to the default. Active state is shown with a colored border only
-  // ─── (background stays neutral), not a filled pill.
+  // ─── Filter toggle helpers ───
+  const toggleLanguage = useCallback((code: string) => {
+    setFilters(prev => ({ ...prev, language: prev.language === code ? '' : code }));
+  }, []);
+
+  const toggleCertification = useCallback((code: string) => {
+    setFilters(prev => ({ ...prev, certification: prev.certification === code ? '' : code }));
+  }, []);
+
+  const toggleYearRange = useCallback((range: string) => {
+    setFilters(prev => ({ ...prev, yearRange: prev.yearRange === range ? '' : range }));
+  }, []);
+
+  // ─── Render suggestions dropdown ───
+  const renderSuggestions = () => {
+    if (!showSuggestions || suggestions.length === 0) return null;
+
+    return (
+      <View style={[
+        styles.suggestionsContainer,
+        {
+          backgroundColor: isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)',
+          borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+        }
+      ]}>
+        <ScrollView 
+          style={styles.suggestionsScroll}
+          keyboardShouldPersistTaps="always"
+        >
+          {suggestions.map((suggestion, index) => (
+            <TouchableOpacity
+              key={`suggestion-${index}`}
+              style={[
+                styles.suggestionItem,
+                index < suggestions.length - 1 && {
+                  borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                  borderBottomWidth: 1,
+                }
+              ]}
+              onPress={() => handleSuggestionPress(suggestion)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+              <Text style={[styles.suggestionText, { color: colors.text }]}>
+                {suggestion}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          
+          {/* Recent searches in suggestions */}
+          {searchHistory.length > 0 && (
+            <>
+              <View style={styles.suggestionDivider}>
+                <Text style={[styles.suggestionDividerText, { color: colors.textMuted }]}>
+                  Recent Searches
+                </Text>
+              </View>
+              {searchHistory.slice(0, 5).map((historyItem, index) => (
+                <TouchableOpacity
+                  key={`history-${index}`}
+                  style={[
+                    styles.suggestionItem,
+                    {
+                      borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                      borderBottomWidth: 1,
+                    }
+                  ]}
+                  onPress={() => handleHistoryItemPress(historyItem)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+                  <Text style={[styles.suggestionText, { color: colors.text }]}>
+                    {historyItem}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // ─── Render Continue Watching row ───
+  const renderContinueWatching = () => {
+    if (continueWatching.length === 0) return null;
+
+    return (
+      <View style={styles.continueWatchingContainer}>
+        <Text style={[styles.continueWatchingTitle, { color: colors.text }]}>
+          Continue Watching
+        </Text>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.continueWatchingScroll}
+        >
+          {continueWatching.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.continueWatchingCard}
+              onPress={() => handleContinueWatchingPress(item)}
+              onLongPress={() => handleRemoveContinueWatching(item.id)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.continueWatchingPosterContainer}>
+                <Image
+                  source={item.poster ? { uri: item.poster } : require('../../../assets/icon.png')}
+                  style={styles.continueWatchingPoster}
+                  resizeMode="cover"
+                />
+                <View style={styles.continueWatchingProgressContainer}>
+                  <View style={[
+                    styles.continueWatchingProgressBar,
+                    { width: `${Math.min(item.progress * 100, 100)}%` }
+                  ]} />
+                </View>
+                <View style={styles.continueWatchingOverlay}>
+                  <Ionicons name="play-circle" size={32} color="white" />
+                </View>
+              </View>
+              <Text style={[styles.continueWatchingTitleText, { color: colors.text }]} numberOfLines={1}>
+                {item.title}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // ─── Render filters ───
   const renderFilters = () => {
     const pillBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
     const pillBorder = (active: boolean) => active ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)');
@@ -587,16 +838,40 @@ const SearchScreen = () => {
       onPress: () => setFilters({ ...filters, year: filters.year === year ? '' : year }),
     }));
 
+    const languageItems = LANGUAGE_OPTIONS.map((lang) => ({
+      key: lang.code || 'all',
+      label: lang.label,
+      active: filters.language === lang.code,
+      onPress: () => toggleLanguage(lang.code),
+    }));
+
+    const certificationItems = CERTIFICATION_OPTIONS.map((cert) => ({
+      key: cert.code || 'all',
+      label: cert.label,
+      active: filters.certification === cert.code,
+      onPress: () => toggleCertification(cert.code),
+    }));
+
+    const yearRangeItems = YEAR_RANGE_OPTIONS.map((range) => ({
+      key: range,
+      label: range,
+      active: filters.yearRange === range,
+      onPress: () => toggleYearRange(range),
+    }));
+
     return (
       <View style={styles.filtersContainer}>
         {renderRow('Type', typeItems)}
         {renderRow('Genre', genreItems)}
+        {renderRow('Language', languageItems)}
+        {renderRow('Certification', certificationItems)}
         {renderRow('Year', yearItems)}
+        {renderRow('Year Range', yearRangeItems)}
       </View>
     );
   };
 
-  // ─── Render 2x3 category cards grid ───
+  // ─── Render category cards ───
   const renderCategoryCards = () => (
     <View style={styles.categoryGrid}>
       {CATEGORY_CARDS.map((cat) => (
@@ -621,9 +896,7 @@ const SearchScreen = () => {
     </View>
   );
 
-  // ─── Single card renderer shared by the "Popular Searches" trending grid
-  // ─── AND every active result set (typed / category / genre). Only the
-  // ─── heading above changes — the cards themselves never do. ───
+  // ─── Card renderers ───
   const renderGridCard = (item: IMetadataResult) => (
     <TouchableOpacity
       key={`${(item as any).source || 'default'}-${item.type}-${item.id}`}
@@ -648,10 +921,6 @@ const SearchScreen = () => {
     </View>
   );
 
-  // ─── Skeleton placeholder card — same footprint as a real card, so
-  // ─── swapping skeleton <-> real content never reflows the layout. Only
-  // ─── the card contents change; the search bar, filters, and category
-  // ─── cards are never touched or hidden while this is showing. ───
   const skeletonBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
   const renderSkeletonCard = (key: string) => (
     <Animated.View key={key} style={[styles.trendingCard, { opacity: skeletonPulse }]}>
@@ -666,71 +935,7 @@ const SearchScreen = () => {
     </View>
   );
 
-  // ─── Render Recent Searches as a continuously auto-scrolling marquee of
-  // ─── small, border-only circular avatars (most recent first — assumes
-  // ─── getSearchHistory() already returns newest-first; swap to
-  // ─── .slice().reverse() below if it's actually stored oldest-first).
-  // ─── The item list is duplicated so the loop resets seamlessly. Each
-  // ─── query only has text to go on, so the avatar is always an initial
-  // ─── in a colored ring, no fill. Long-press an avatar to remove it;
-  // ─── the fixed circle on the left clears everything and doesn't scroll.
-  const renderRecentSearchesStrip = () => {
-    if (searchHistory.length === 0) return null;
-
-    const renderAvatar = (histQuery: string, key: string) => {
-      const initial = histQuery.trim().charAt(0).toUpperCase() || '?';
-      return (
-        <TouchableOpacity
-          key={key}
-          style={styles.recentSearchItem}
-          onPress={() => handleHistoryItemPress(histQuery)}
-          onLongPress={() => handleRemoveHistoryItem(histQuery)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.recentSearchAvatar, { borderColor: colors.gold }]}>
-            <Text style={[styles.recentSearchAvatarText, { color: colors.gold }]}>{initial}</Text>
-          </View>
-          <Text style={[styles.recentSearchLabel, { color: colors.textMuted }]} numberOfLines={1}>
-            {histQuery}
-          </Text>
-        </TouchableOpacity>
-      );
-    };
-
-    return (
-      <View style={styles.recentSearchesRow}>
-        <TouchableOpacity
-          style={styles.recentClearButton}
-          onPress={handleClearAllHistory}
-          activeOpacity={0.7}
-        >
-          <View style={[
-            styles.recentSearchAvatar,
-            { borderColor: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)' }
-          ]}>
-            <Ionicons name="close" size={13} color={colors.textMuted} />
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.recentTickerViewport}>
-          <Animated.View
-            style={[styles.recentTickerTrack, { transform: [{ translateX: tickerScrollX }] }]}
-            onLayout={(e) => {
-              const fullWidth = e.nativeEvent.layout.width;
-              if (fullWidth > 0 && tickerSetWidth === 0) {
-                setTickerSetWidth(fullWidth / 2);
-              }
-            }}
-          >
-            {searchHistory.map((q, i) => renderAvatar(q, `a-${q}-${i}`))}
-            {searchHistory.map((q, i) => renderAvatar(q, `b-${q}-${i}`))}
-          </Animated.View>
-        </View>
-      </View>
-    );
-  };
-
-  // ─── Render Empty State (nothing searched yet, no history, no trending) ───
+  // ─── Empty state ───
   const renderEmptyState = () => (
     <View style={styles.centerContent}>
       <View style={[
@@ -751,7 +956,7 @@ const SearchScreen = () => {
     </View>
   );
 
-  // ─── Render "No results" state for an active search/category/genre ───
+  // ─── No results state ───
   const renderNoResultsState = () => (
     <View style={styles.centerContent}>
       <View style={[
@@ -769,6 +974,25 @@ const SearchScreen = () => {
       <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
         Try adjusting your search or filters
       </Text>
+      <TouchableOpacity 
+        style={[styles.clearFiltersButton, { borderColor: colors.gold }]}
+        onPress={() => {
+          setFilters({
+            type: 'all',
+            year: '',
+            minRating: 0,
+            source: 'all',
+            genre: '',
+            language: '',
+            certification: '',
+            yearRange: '',
+          });
+        }}
+      >
+        <Text style={[styles.clearFiltersText, { color: colors.gold }]}>
+          Clear all filters
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -780,7 +1004,7 @@ const SearchScreen = () => {
       style={[styles.container, { backgroundColor: 'transparent' }]}
       edges={['top']}
     >
-      {/* ─── Background ─── */}
+      {/* Background */}
       {!isDark && (
         <LinearGradient
           colors={['#E8F0F8', '#D4E4F7', '#C8D8EF']}
@@ -794,7 +1018,7 @@ const SearchScreen = () => {
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#000000' }]} />
       )}
 
-      {/* ─── Search Bar — only ever reflects typed text, never category/genre ─── */}
+      {/* Search Bar */}
       <View style={[
         styles.searchContainer,
         {
@@ -813,7 +1037,15 @@ const SearchScreen = () => {
           autoFocus
           autoCapitalize="none"
           autoCorrect={false}
+          onFocus={() => {
+            if (query.trim()) {
+              setShowSuggestions(true);
+            }
+          }}
         />
+        {isLoadingSuggestions && (
+          <ActivityIndicator size="small" color={colors.gold} style={styles.suggestionLoader} />
+        )}
         {query.length > 0 && (
           <TouchableOpacity onPress={handleClearQuery} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="close-circle" size={17} color={colors.textMuted} />
@@ -821,19 +1053,20 @@ const SearchScreen = () => {
         )}
       </View>
 
-      {/* ─── Recent Searches: only shown in the default discover state ─── */}
-      {isDiscover && renderRecentSearchesStrip()}
+      {/* Search Suggestions Dropdown */}
+      {renderSuggestions()}
 
-      {/* ─── Filters: always visible, one row per filter ─── */}
+      {/* Continue Watching Row */}
+      {isDiscover && renderContinueWatching()}
+
+      {/* Filters */}
       {renderFilters()}
 
-      {/* ─── Grid: category cards, search bar, and filters stay put and
-           visible at all times. Only the grid section's contents swap
-           between skeleton placeholders and real cards — no full-screen
-           spinner, no remount, no layout jump. ─── */}
+      {/* Main Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.discoverContent}
+        keyboardShouldPersistTaps="handled"
       >
         {renderCategoryCards()}
 
@@ -886,6 +1119,8 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'ios' && {
       backdropFilter: 'blur(20px)',
     }),
+    position: 'relative',
+    zIndex: 10,
   },
   searchInput: {
     flex: 1,
@@ -893,8 +1128,108 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 6 : 4,
     marginLeft: 8,
   },
-  // ─── Always-visible filter rows: label + one horizontally-scrollable
-  // ─── pill line per filter (Type / Genre / Year).
+  suggestionLoader: {
+    marginRight: 8,
+  },
+
+  // ─── Suggestions Dropdown ───
+  suggestionsContainer: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    maxHeight: 300,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 20,
+  },
+  suggestionsScroll: {
+    maxHeight: 300,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  suggestionText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  suggestionDivider: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  suggestionDividerText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  // ─── Continue Watching ───
+  continueWatchingContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  continueWatchingTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  continueWatchingScroll: {
+    gap: 10,
+    paddingRight: 16,
+  },
+  continueWatchingCard: {
+    width: 120,
+  },
+  continueWatchingPosterContainer: {
+    position: 'relative',
+    width: 120,
+    height: 170,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  continueWatchingPoster: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+  },
+  continueWatchingProgressContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  continueWatchingProgressBar: {
+    height: '100%',
+    backgroundColor: '#E8A838',
+  },
+  continueWatchingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  continueWatchingTitleText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+
+  // ─── Filters ───
   filtersContainer: {
     paddingTop: 4,
     paddingBottom: 8,
@@ -931,7 +1266,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  // ─── Category Pills Grid (3 per row x 2 rows) ───
+
+  // ─── Categories ───
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -953,11 +1289,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+
+  // ─── Content ───
   centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    minHeight: 200,
   },
   discoverContent: {
     paddingBottom: 40,
@@ -981,8 +1320,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  // ─── Shared card grid: used for BOTH the trending "Popular Searches" grid
-  // ─── and every active typed/category/genre result set. ───
+
+  // ─── Grid ───
   trendingGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1004,48 +1343,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 6,
   },
-  // ─── Recent Searches: fixed Clear circle + auto-scrolling marquee track ───
-  recentSearchesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-    paddingLeft: 16,
+  skeletonTitleBar: {
+    height: 11,
+    borderRadius: 4,
+    marginTop: 6,
+    width: '70%',
   },
-  recentClearButton: {
-    marginRight: 10,
-  },
-  recentTickerViewport: {
-    flex: 1,
-    height: 58,
-    overflow: 'hidden',
-  },
-  recentTickerTrack: {
-    flexDirection: 'row',
-  },
-  recentSearchItem: {
-    width: 46,
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  recentSearchAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-    backgroundColor: 'transparent',
-  },
-  recentSearchAvatarText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  recentSearchLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
+
+  // ─── Empty State ───
   emptyIconContainer: {
     width: 80,
     height: 80,
@@ -1065,11 +1370,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  skeletonTitleBar: {
-    height: 11,
-    borderRadius: 4,
-    marginTop: 6,
-    width: '70%',
+  clearFiltersButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1.5,
+  },
+  clearFiltersText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
