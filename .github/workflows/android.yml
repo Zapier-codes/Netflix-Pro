@@ -11,63 +11,58 @@ on:
         default: false
 
 jobs:
-  # ─── CLEANUP FIRST: Delete old artifacts before any build ───
+  # ─── CLEANUP FIRST: Delete old artifacts and all old releases ───
   cleanup:
-    name: Cleanup Old Artifacts
+    name: Cleanup
     runs-on: ubuntu-latest
     permissions:
       actions: write
-      contents: read
+      contents: write
     steps:
-      - name: Delete artifacts older than 1 hour
+      - name: Delete old artifacts (>1 hour)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          MAX_AGE_HOURS=1
-          CUTOFF_EPOCH=$(date -u -d "-${MAX_AGE_HOURS} hours" +%s)
-          echo "🕒 Cutoff: deleting artifacts created before $(date -u -d "-${MAX_AGE_HOURS} hours" --iso-8601=seconds)"
-
+          CUTOFF_EPOCH=$(date -u -d "-1 hour" +%s)
           page=1
           while : ; do
             response=$(gh api "repos/${REPO}/actions/artifacts?per_page=100&page=${page}")
             count=$(echo "$response" | jq '.artifacts | length')
             [ "$count" -eq 0 ] && break
-
             echo "$response" | jq -c '.artifacts[]' | while read -r artifact; do
               id=$(echo "$artifact" | jq -r '.id')
-              name=$(echo "$artifact" | jq -r '.name')
               created_at=$(echo "$artifact" | jq -r '.created_at')
-              expired=$(echo "$artifact" | jq -r '.expired')
               created_epoch=$(date -u -d "$created_at" +%s)
-
-              [ "$expired" = "true" ] && continue
-
-              if [ "$created_epoch" -lt "$CUTOFF_EPOCH" ]; then
-                echo "  🗑️  Deleting '$name' (id=$id, created=$created_at)"
-                gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}" || echo "     ⚠️  failed to delete $id"
-              else
-                echo "  ✅ Keeping '$name' (id=$id, created=$created_at)"
-              fi
+              [ "$created_epoch" -lt "$CUTOFF_EPOCH" ] && gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}" || true
             done
-
             total_count=$(echo "$response" | jq '.total_count')
-            fetched=$((page * 100))
-            [ "$fetched" -ge "$total_count" ] && break
+            [ $((page * 100)) -ge "$total_count" ] && break
             page=$((page + 1))
           done
-          echo "✅ Cleanup complete"
 
-  # ─── BUILD WHEELS ───
+      - name: Delete all releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/${REPO}/releases?per_page=100" | jq -c '.[]' | while read -r release; do
+            tag=$(echo "$release" | jq -r '.tag_name')
+            id=$(echo "$release" | jq -r '.id')
+            echo "🗑️  Deleting release '$tag'"
+            gh api -X DELETE "repos/${REPO}/releases/${id}" || true
+            gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag}" || true
+          done
+          echo "✅ All releases deleted"
+
+  # ─── BUILD WHEELS (internal only, no release output) ───
   build-wheels:
     uses: ./.github/workflows/build-android-wheels.yml
     needs: cleanup
     secrets: inherit
     permissions:
       contents: write
-    with:
-      release_tag: android-wheels-latest
 
   # ─── BUILD APK ───
   build-apk:
@@ -95,7 +90,6 @@ jobs:
       - name: Clear all caches for fresh build
         if: github.event.inputs.fresh_build == 'true'
         run: |
-          echo "🧹 FRESH BUILD: Clearing all caches..."
           rm -rf ~/.gradle/caches ~/.gradle/wrapper node_modules .expo \
             ~/.npm/_cacache .cache .turbo
           sudo rm -rf ~/.cargo ~/.rustup
@@ -129,7 +123,6 @@ jobs:
         id: assets-check
         run: |
           echo "ASSET_HASH=$(sha256sum ./assets/splash-icon.png ./assets/icon.png ./assets/adaptive-icon.png 2>/dev/null | sha256sum | cut -d' ' -f1)" >> $GITHUB_ENV
-          echo "Asset hash: $ASSET_HASH"
 
       - name: Set up Python 3.13 for Chaquopy
         uses: actions/setup-python@v5
@@ -158,20 +151,9 @@ jobs:
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --legacy-peer-deps
 
-      - name: Verify asset files
-        run: |
-          echo "📁 Asset files in repository:"
-          ls -la ./assets/
-          echo ""
-          echo "📊 File hashes:"
-          sha256sum ./assets/*.png 2>/dev/null || echo "No PNG files found"
-          echo ""
-          echo "🔑 Asset hash used for cache key: ${{ env.ASSET_HASH }}"
-
       - name: Decode .env file
         run: |
           echo "${{ secrets.ENV_FILE }}" | base64 -d > .env
-          echo "✅ .env file created"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -207,35 +189,24 @@ jobs:
         run: |
           WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
           mkdir -p "$WHEELS_DIR"
-          
           gh release download "android-wheels-latest" \
             --repo "${{ github.repository }}" \
             --pattern "*.whl" \
             --dir "$WHEELS_DIR" \
             --clobber
-          
-          echo "✅ Wheels downloaded:"
-          ls -la "$WHEELS_DIR"
 
       - name: Verify wheel compatibility
         run: |
           WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
-          echo "🔍 Verifying wheels..."
           for whl in "$WHEELS_DIR"/*.whl; do
             [ -f "$whl" ] || continue
             name=$(basename "$whl")
-            echo "  📋 $name"
-            [[ "$name" == *cp313* ]] && echo "     ✅ Python 3.13" || { echo "     ❌ Wrong Python version"; exit 1; }
-            [[ "$name" == *android_arm64_v8a* ]] && echo "     ✅ arm64-v8a"
-            [[ "$name" == *android_x86_64* ]] && echo "     ✅ x86_64"
+            [[ "$name" == *cp313* ]] || { echo "❌ Wrong Python version: $name"; exit 1; }
           done
-          
           ls "$WHEELS_DIR"/pydantic_core*.whl 1>/dev/null 2>&1 || { echo "❌ Missing pydantic-core wheel!"; exit 1; }
           ls "$WHEELS_DIR"/jiter*.whl 1>/dev/null 2>&1 || { echo "❌ Missing jiter wheel!"; exit 1; }
-          echo "✅ All required wheels present and compatible"
 
       - name: Cache Chaquopy Python packages
-        id: chaquopy-cache
         uses: actions/cache@v4
         with:
           path: |
@@ -247,12 +218,8 @@ jobs:
         run: |
           keytool -genkeypair -v \
             -keystore android/app/debug.keystore \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Cache ffmpeg-kit AAR
@@ -268,7 +235,6 @@ jobs:
           mkdir -p android/libs
           curl -L "https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar" \
             -o android/libs/ffmpeg-kit-full-gpl.aar
-          echo "AAR downloaded: $(du -sh android/libs/ffmpeg-kit-full-gpl.aar)"
 
       - name: Set Chaquopy env vars
         run: |
@@ -280,26 +246,19 @@ jobs:
           mkdir -p android/libs
           cp modules/pawns/android/libs/internet-sharing-1.8.1.aar android/libs/
           cp modules/pawns/android/libs/pawns-ndk-1.8.1.aar android/libs/
-          echo "✅ pawns-sdk AARs mirrored into android/libs"
-          ls -la android/libs
 
       - name: Verify boxoffice module
         run: |
-          echo "Checking boxoffice module structure..."
-          test -f modules/boxoffice/android/build.gradle || { echo "❌ missing build.gradle"; exit 1; }
-          test -f modules/boxoffice/android/src/main/python/requirements.txt || { echo "❌ missing requirements.txt"; exit 1; }
-          test -f modules/boxoffice/expo-module.config.json || { echo "❌ missing expo-module.config.json"; exit 1; }
-          test -n "$(ls -A modules/boxoffice/android/src/main/python/wheels/*.whl 2>/dev/null)" || { echo "❌ no prebuilt Android wheels found"; exit 1; }
-          echo "✅ boxoffice module structure valid"
+          test -f modules/boxoffice/android/build.gradle || exit 1
+          test -f modules/boxoffice/android/src/main/python/requirements.txt || exit 1
+          test -f modules/boxoffice/expo-module.config.json || exit 1
+          test -n "$(ls -A modules/boxoffice/android/src/main/python/wheels/*.whl 2>/dev/null)" || exit 1
 
       - name: Build Debug APK
         run: |
           cd android
           chmod +x gradlew
-          if [ "${{ github.event.inputs.fresh_build }}" = "true" ]; then
-            echo "🧹 Fresh build - running clean first..."
-            ./gradlew clean
-          fi
+          [ "${{ github.event.inputs.fresh_build }}" = "true" ] && ./gradlew clean
           ./gradlew assembleDebug \
             --no-daemon --build-cache --stacktrace \
             -PreactNativeArchitectures=arm64-v8a,x86_64
@@ -309,11 +268,16 @@ jobs:
           CHAQUOPY_PYTHON_VERSION: ${{ env.CHAQUOPY_PYTHON_VERSION }}
           CHAQUOPY_NO_LICENSE: ${{ env.CHAQUOPY_NO_LICENSE }}
 
-      # TEMPORARY: continue-on-error until GitHub storage quota recalculates (6-12 hours)
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
+      # ─── Upload APK to single release, no artifacts ───
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: debug-apk-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 1
+          tag_name: android-apk-latest
+          name: Android Debug APK
+          files: android/app/build/outputs/apk/debug/*.apk
+          body: |
+            Latest debug APK build.
+            **Branch:** ${{ github.ref_name }} | **Commit:** ${{ github.sha }}
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

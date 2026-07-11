@@ -4,13 +4,11 @@ on:
   workflow_call:
     inputs:
       release_tag:
-        description: 'GitHub release tag to publish wheels to'
         required: true
         type: string
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'GitHub release tag to publish wheels to'
         required: true
         default: 'android-wheels-latest'
         type: string
@@ -51,15 +49,9 @@ jobs:
           )
           all_present=true
           for whl in "${required[@]}"; do
-            if [ ! -f "${{ env.JITER_WHEELS_DIR }}/$whl" ]; then
-              echo "  ❌ Missing: $whl"
-              all_present=false
-            else
-              echo "  ✅ Found: $whl"
-            fi
+            [ -f "${{ env.JITER_WHEELS_DIR }}/$whl" ] || all_present=false
           done
           echo "jiter_present=$all_present" >> "$GITHUB_OUTPUT"
-          [ "$all_present" = true ] && echo "✅ jiter wheels cached — skipping build" || echo "⚠️  jiter wheels incomplete — will build"
 
       - name: Check cached pydantic-core wheels completeness
         id: check-pydantic-core
@@ -70,15 +62,9 @@ jobs:
           )
           all_present=true
           for whl in "${required[@]}"; do
-            if [ ! -f "${{ env.PYDANTIC_CORE_WHEELS_DIR }}/$whl" ]; then
-              echo "  ❌ Missing: $whl"
-              all_present=false
-            else
-              echo "  ✅ Found: $whl"
-            fi
+            [ -f "${{ env.PYDANTIC_CORE_WHEELS_DIR }}/$whl" ] || all_present=false
           done
           echo "pydantic_core_present=$all_present" >> "$GITHUB_OUTPUT"
-          [ "$all_present" = true ] && echo "✅ pydantic-core wheels cached — skipping build" || echo "⚠️  pydantic-core wheels incomplete — will build"
 
       - name: Restore cibuildwheel cache
         uses: actions/cache@v4
@@ -124,12 +110,6 @@ jobs:
           mkdir -p "${{ env.JITER_WHEELS_DIR }}"
           cibuildwheel --output-dir "${{ env.JITER_WHEELS_DIR }}"
 
-      - name: Verify jiter wheels built
-        if: steps.check-jiter.outputs.jiter_present != 'true'
-        run: |
-          echo "✅ Jiter wheels:"
-          ls -la "${{ env.JITER_WHEELS_DIR }}/"
-
       - name: Build pydantic-core for Android
         if: steps.check-pydantic-core.outputs.pydantic_core_present != 'true'
         working-directory: pydantic-core
@@ -143,13 +123,7 @@ jobs:
           mkdir -p "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
           cibuildwheel --output-dir "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
 
-      - name: List all wheels
-        run: |
-          echo "📦 Final wheels:"
-          ls -la "${{ env.JITER_WHEELS_DIR }}/" || echo "jiter directory empty or missing"
-          ls -la "${{ env.PYDANTIC_CORE_WHEELS_DIR }}/" || echo "pydantic-core directory empty or missing"
-
-      - name: Create or update GitHub Release
+      - name: Create or update wheels release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag || github.event.inputs.release_tag }}
@@ -160,6 +134,5 @@ jobs:
           body: |
             Prebuilt Android wheels for pydantic-core and jiter.
             **Python:** 3.13 | **ABIs:** arm64-v8a, x86_64
-          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
