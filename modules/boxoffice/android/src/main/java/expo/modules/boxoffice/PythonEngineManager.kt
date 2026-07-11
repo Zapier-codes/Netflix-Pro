@@ -19,7 +19,7 @@ class PythonEngineManager(
         }
         Python.getInstance()
     }
-    
+
     private val engineModule: PyObject by lazy { python.getModule(packageName) }
     private val engineClass: PyObject by lazy { engineModule.get(engineClassName)!! }
     private var engineInstance: PyObject? = null
@@ -102,8 +102,26 @@ class PythonEngineManager(
         }
     }
 
-    private fun pyTypeName(pyObject: PyObject): String {
-        return pyObject.get("__class__")!!.get("__name__")!!.toString()
+    /**
+     * Null-tolerant type name lookup. Chaquopy's asMap()/asList() views expose
+     * Java platform types (PyObject!), so a Python None value can arrive here
+     * as an actual Kotlin null even though the static type looks non-null.
+     * 
+     * CRITICAL FIX: Removed all !! operators. Each get() call is checked for null
+     * before chaining to the next call. This prevents NPE when Chaquopy returns
+     * null for __class__ or __name__ on corrupted/None objects.
+     */
+    private fun pyTypeName(pyObject: PyObject?): String {
+        if (pyObject == null) return "NoneType"
+        return try {
+            val clazz = pyObject.get("__class__")
+            if (clazz == null) return "NoneType"
+            val name = clazz.get("__name__")
+            if (name == null) return "NoneType"
+            name.toString()
+        } catch (e: Exception) {
+            "NoneType"
+        }
     }
 
     private fun mapToPyDict(map: Map<String, Any?>): PyObject {
@@ -148,79 +166,215 @@ class PythonEngineManager(
      * view of the dict as Map<PyObject, PyObject> - this sidesteps the
      * dict_keys/dict_values view objects entirely, which do NOT support
      * __getitem__ and therefore blow up if passed through .asList().
+     *
+     * Values (and even keys, in principle) can come through as real Kotlin
+     * null even though asMap()'s declared type is non-nullable - that's a
+     * Java/Chaquopy platform-type artifact, not something Kotlin's type
+     * system can catch. Every entry is converted defensively so one bad
+     * field (e.g. a null poster/rating from the API) can't blow up the
+     * entire response.
+     * 
+     * CRITICAL FIX: Wrapped the entire asMap() iteration in try-catch.
+     * If asMap() itself throws (e.g., NPE from Chaquopy internals when
+     * the dict contains unexpected null values), we return an empty map
+     * rather than crashing. Also added explicit null checks on both key
+     * and value before processing.
      */
-    private fun pyObjectToMap(pyObject: PyObject): Map<String, Any> {
+    private fun pyObjectToMap(pyObject: PyObject?): Map<String, Any> {
         val result = mutableMapOf<String, Any>()
-        if (pyTypeName(pyObject) == "dict") {
-            for ((key, value) in pyObject.asMap()) {
-                result[key.toString()] = pyObjectToValue(value)
+        if (pyObject == null) return result
+
+        // Verify this is actually a dict before calling asMap()
+        val typeName = try { pyTypeName(pyObject) } catch (e: Exception) { return result }
+        if (typeName != "dict") return result
+
+        return try {
+            val mapView = pyObject.asMap()
+            if (mapView == null) return result
+
+            for (entry in mapView.entries) {
+                val key = entry.key
+                val value = entry.value
+
+                // Skip null keys entirely
+                if (key == null) continue
+
+                val keyStr = try {
+                    key.toString()
+                } catch (e: Exception) {
+                    continue
+                }
+
+                // value can be null (platform type) - pyObjectToValue handles it
+                result[keyStr] = try {
+                    pyObjectToValue(value)
+                } catch (e: Exception) {
+                    ""
+                }
             }
+            result
+        } catch (e: Exception) {
+            // asMap() or iteration threw - return what we have so far
+            result
         }
-        return result
     }
 
-    private fun pyObjectToValue(pyObject: PyObject): Any {
-        return when (pyTypeName(pyObject)) {
+    /**
+     * CRITICAL FIX: Added null safety for pyObjectToValue.
+     * The pyObject parameter is a platform type (PyObject!) and can be
+     * a real Kotlin null when Chaquopy's asMap() contains None values.
+     * Also wrapped pyTypeName in try-catch since it can throw if the
+     * object's __class__ attribute is inaccessible.
+     */
+    private fun pyObjectToValue(pyObject: PyObject?): Any {
+        if (pyObject == null) return ""
+
+        val typeName = try { pyTypeName(pyObject) } catch (e: Exception) { return "" }
+
+        return when (typeName) {
             "NoneType" -> ""
-            "bool" -> pyObject.toBoolean()
-            "int" -> pyObject.toInt()
-            "float" -> pyObject.toDouble()
-            "str" -> pyObject.toString()
+            "bool" -> try { pyObject.toBoolean() } catch (e: Exception) { false }
+            "int" -> try { pyObject.toInt() } catch (e: Exception) { 0 }
+            "float" -> try { pyObject.toDouble() } catch (e: Exception) { 0.0 }
+            "str" -> try { pyObject.toString() } catch (e: Exception) { "" }
             "dict" -> pyObjectToMap(pyObject)
             "list", "tuple" -> pyObjectToList(pyObject)
-            else -> pyObject.toString()
+            else -> try { pyObject.toString() } catch (e: Exception) { "" }
         }
     }
 
-    private fun pyObjectToList(pyObject: PyObject): List<Any> {
+    /**
+     * CRITICAL FIX: Wrapped asList() call in try-catch and added null
+     * safety for the list view and its elements. asList() can throw NPE
+     * if the underlying Python object is not actually a list/tuple, or
+     * if Chaquopy's internal representation is inconsistent.
+     */
+    private fun pyObjectToList(pyObject: PyObject?): List<Any> {
         val result = mutableListOf<Any>()
-        val items = pyObject.asList()
-        for (item in items) {
-            result.add(pyObjectToValue(item))
+        if (pyObject == null) return result
+
+        val typeName = try { pyTypeName(pyObject) } catch (e: Exception) { return result }
+        if (typeName != "list" && typeName != "tuple") return result
+
+        return try {
+            val listView = pyObject.asList()
+            if (listView == null) return result
+
+            for (item in listView) {
+                result.add(
+                    try {
+                        pyObjectToValue(item)
+                    } catch (e: Exception) {
+                        ""
+                    }
+                )
+            }
+            result
+        } catch (e: Exception) {
+            // asList() or iteration threw - return what we have so far
+            result
         }
-        return result
     }
 
     // ==================== STATIC CONVERSION (for inner class) ====================
 
     companion object {
-        private fun pyTypeNameStatic(pyObject: PyObject): String {
-            return pyObject.get("__class__")!!.get("__name__")!!.toString()
-        }
-
-        @JvmStatic
-        fun pyObjectToMapStatic(pyObject: PyObject): Map<String, Any> {
-            val result = mutableMapOf<String, Any>()
-            if (pyTypeNameStatic(pyObject) == "dict") {
-                for ((key, value) in pyObject.asMap()) {
-                    result[key.toString()] = pyObjectToValueStatic(value)
-                }
+        /**
+         * CRITICAL FIX: Same null-safety fixes applied to static methods.
+         * Removed all !! operators and wrapped get() calls in null checks.
+         */
+        private fun pyTypeNameStatic(pyObject: PyObject?): String {
+            if (pyObject == null) return "NoneType"
+            return try {
+                val clazz = pyObject.get("__class__")
+                if (clazz == null) return "NoneType"
+                val name = clazz.get("__name__")
+                if (name == null) return "NoneType"
+                name.toString()
+            } catch (e: Exception) {
+                "NoneType"
             }
-            return result
         }
 
         @JvmStatic
-        private fun pyObjectToValueStatic(pyObject: PyObject): Any {
-            return when (pyTypeNameStatic(pyObject)) {
+        fun pyObjectToMapStatic(pyObject: PyObject?): Map<String, Any> {
+            val result = mutableMapOf<String, Any>()
+            if (pyObject == null) return result
+
+            val typeName = try { pyTypeNameStatic(pyObject) } catch (e: Exception) { return result }
+            if (typeName != "dict") return result
+
+            return try {
+                val mapView = pyObject.asMap()
+                if (mapView == null) return result
+
+                for (entry in mapView.entries) {
+                    val key = entry.key
+                    val value = entry.value
+
+                    if (key == null) continue
+
+                    val keyStr = try {
+                        key.toString()
+                    } catch (e: Exception) {
+                        continue
+                    }
+
+                    result[keyStr] = try {
+                        pyObjectToValueStatic(value)
+                    } catch (e: Exception) {
+                        ""
+                    }
+                }
+                result
+            } catch (e: Exception) {
+                result
+            }
+        }
+
+        @JvmStatic
+        private fun pyObjectToValueStatic(pyObject: PyObject?): Any {
+            if (pyObject == null) return ""
+
+            val typeName = try { pyTypeNameStatic(pyObject) } catch (e: Exception) { return "" }
+
+            return when (typeName) {
                 "NoneType" -> ""
-                "bool" -> pyObject.toBoolean()
-                "int" -> pyObject.toInt()
-                "float" -> pyObject.toDouble()
-                "str" -> pyObject.toString()
+                "bool" -> try { pyObject.toBoolean() } catch (e: Exception) { false }
+                "int" -> try { pyObject.toInt() } catch (e: Exception) { 0 }
+                "float" -> try { pyObject.toDouble() } catch (e: Exception) { 0.0 }
+                "str" -> try { pyObject.toString() } catch (e: Exception) { "" }
                 "dict" -> pyObjectToMapStatic(pyObject)
                 "list", "tuple" -> pyObjectToListStatic(pyObject)
-                else -> pyObject.toString()
+                else -> try { pyObject.toString() } catch (e: Exception) { "" }
             }
         }
 
         @JvmStatic
-        private fun pyObjectToListStatic(pyObject: PyObject): List<Any> {
+        private fun pyObjectToListStatic(pyObject: PyObject?): List<Any> {
             val result = mutableListOf<Any>()
-            val items = pyObject.asList()
-            for (item in items) {
-                result.add(pyObjectToValueStatic(item))
+            if (pyObject == null) return result
+
+            val typeName = try { pyTypeNameStatic(pyObject) } catch (e: Exception) { return result }
+            if (typeName != "list" && typeName != "tuple") return result
+
+            return try {
+                val listView = pyObject.asList()
+                if (listView == null) return result
+
+                for (item in listView) {
+                    result.add(
+                        try {
+                            pyObjectToValueStatic(item)
+                        } catch (e: Exception) {
+                            ""
+                        }
+                    )
+                }
+                result
+            } catch (e: Exception) {
+                result
             }
-            return result
         }
     }
 

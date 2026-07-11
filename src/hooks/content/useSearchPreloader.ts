@@ -1,61 +1,68 @@
 // src/hooks/content/useSearchPreloader.ts
 import { useState, useEffect } from 'react';
-import { searchAggregationService } from '../../services/supabase/searchAggregationService';
 import { cacheManager } from '../../services/cache/CacheManager';
-import { fetchTrending } from '../../services/unified/metadata/TMDBMetadata';
+import { unifiedMediaService } from '../../services/unified/UnifiedMediaService';
+import { IMetadataResult } from '../../services/unified/types/MetadataTypes';
 
-const FALLBACK_TRENDING = ['Stranger Things', 'The Last of Us', 'Breaking Bad', 'Game of Thrones'];
-const FALLBACK_CATEGORIES = ['movies', 'tv', 'drama', 'anime', 'comedy', 'action', 'horror', 'sci-fi'];
+const CATEGORIES = ['movies', 'tv', 'drama', 'anime', 'comedy', 'action', 'horror', 'sci-fi'];
+
+const RECENCY_WINDOW_DAYS = 30;
+
+/**
+ * Keep only content released within the last ~30 days.
+ * - Sources with a real `releaseDate` (TMDB, MovieBox) are checked precisely.
+ * - Sources without one (Kuryana only ever has `year`) fall back to a
+ *   year-only comparison — they're never excluded outright, just checked
+ *   at whatever precision is available.
+ */
+const isRecentEnough = (item: IMetadataResult): boolean => {
+  if (item.releaseDate) {
+    const releaseTime = new Date(item.releaseDate).getTime();
+    if (!isNaN(releaseTime)) {
+      const ageInDays = (Date.now() - releaseTime) / (1000 * 60 * 60 * 24);
+      return ageInDays <= RECENCY_WINDOW_DAYS;
+    }
+  }
+
+  if (item.year) {
+    const currentYear = new Date().getFullYear();
+    return item.year === currentYear;
+  }
+
+  // No date info at all — can't verify recency, so leave it out.
+  return false;
+};
 
 export const useSearchPreloader = () => {
-  const [trendingSearches, setTrendingSearches] = useState<string[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [trendingItems, setTrendingItems] = useState<IMetadataResult[]>([]);
+  const [categories] = useState<string[]>(CATEGORIES);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const preload = async () => {
       setLoading(true);
       try {
-        const cachedTrending = await cacheManager.get<string[]>('trending_searches');
-        const cachedCategories = await cacheManager.get<string[]>('search_categories');
-        if (cachedTrending && cachedCategories) {
-          setTrendingSearches(cachedTrending);
-          setCategories(cachedCategories);
+        const cached = await cacheManager.get<IMetadataResult[]>('trending_search_items');
+        if (cached && cached.length > 0) {
+          setTrendingItems(cached);
           setLoading(false);
           return;
         }
 
-        const [trending, cats] = await Promise.all([
-          searchAggregationService.getTrendingSearches(20),
-          searchAggregationService.getSearchCategories(),
-        ]);
+        await unifiedMediaService.initialize();
+        // Fetch a larger pool than we need, since the recency filter below
+        // will drop anything older than a month before we're left with `limit`.
+        const trending = await unifiedMediaService.getTrending(60);
+        const recentWithPosters = trending
+          .filter(item => !!item.poster)
+          .filter(isRecentEnough)
+          .slice(0, 20);
 
-        // Supabase has no search history yet (new install / empty table)
-        // → fall back to the TMDB trending engine so the UI isn't empty.
-        let finalTrending = trending;
-        if (finalTrending.length === 0) {
-          try {
-            const trendingContent = await fetchTrending('day', 'all');
-            finalTrending = (trendingContent || [])
-              .map((item: any) => item.title || item.name)
-              .filter(Boolean)
-              .slice(0, 20);
-          } catch {
-            finalTrending = FALLBACK_TRENDING;
-          }
-        }
-        if (finalTrending.length === 0) finalTrending = FALLBACK_TRENDING;
-
-        const finalCategories = cats.length > 0 ? cats : FALLBACK_CATEGORIES;
-
-        setTrendingSearches(finalTrending);
-        setCategories(finalCategories);
-        await cacheManager.set('trending_searches', finalTrending, 300000);
-        await cacheManager.set('search_categories', finalCategories, 300000);
+        setTrendingItems(recentWithPosters);
+        await cacheManager.set('trending_search_items', recentWithPosters, 300000);
       } catch (error) {
         console.warn('[useSearchPreloader] Error:', error);
-        setTrendingSearches(FALLBACK_TRENDING);
-        setCategories(FALLBACK_CATEGORIES);
+        setTrendingItems([]);
       } finally {
         setLoading(false);
       }
@@ -64,5 +71,5 @@ export const useSearchPreloader = () => {
     preload();
   }, []);
 
-  return { trendingSearches, categories, loading };
+  return { trendingItems, categories, loading };
 };

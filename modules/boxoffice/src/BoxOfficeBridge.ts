@@ -5,7 +5,7 @@
  */
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native'
-import { BoxOfficeNitroModule } from '../nitro/BoxOfficeNitroModule.nitro'
+import { getBoxOfficeNitroModule } from '../nitro/BoxOfficeNitroModule.nitro'
 
 // ==================== ENUMS ====================
 
@@ -332,11 +332,21 @@ class BoxOfficeBridge {
   private useNitro: boolean
 
   private constructor() {
-    this.useNitro = !!BoxOfficeNitroModule
+    let nitroModule: ReturnType<typeof getBoxOfficeNitroModule> | undefined
+    try {
+      nitroModule = getBoxOfficeNitroModule()
+    } catch (e) {
+      console.warn('[BoxOfficeBridge] Nitro module unavailable, falling back:', e)
+    }
+    this.useNitro = !!nitroModule
     if (!this.useNitro) {
       const { BoxOfficeModule } = NativeModules
       this.eventEmitter = new NativeEventEmitter(BoxOfficeModule)
     }
+  }
+
+  private get nitro() {
+    return getBoxOfficeNitroModule()
   }
 
   static getInstance(): BoxOfficeBridge {
@@ -350,8 +360,8 @@ class BoxOfficeBridge {
 
   onStatusChange(callback: (event: StatusChangeEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addStatusChangeListener(callback)
-      return () => BoxOfficeNitroModule.removeListener('onBoxOfficeStatusChange', callback)
+      this.nitro.addStatusChangeListener(callback)
+      return () => this.nitro.removeListener('onBoxOfficeStatusChange', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeStatusChange', callback)
     return () => sub.remove()
@@ -359,8 +369,8 @@ class BoxOfficeBridge {
 
   onCommandExecuted(callback: (event: CommandExecutedEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addCommandExecutedListener(callback)
-      return () => BoxOfficeNitroModule.removeListener('onBoxOfficeCommandExecuted', callback)
+      this.nitro.addCommandExecutedListener(callback)
+      return () => this.nitro.removeListener('onBoxOfficeCommandExecuted', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeCommandExecuted', callback)
     return () => sub.remove()
@@ -368,8 +378,8 @@ class BoxOfficeBridge {
 
   onDownloadProgress(callback: (event: DownloadProgressEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addDownloadProgressListener(callback)
-      return () => BoxOfficeNitroModule.removeListener('onBoxOfficeDownloadProgress', callback)
+      this.nitro.addDownloadProgressListener(callback)
+      return () => this.nitro.removeListener('onBoxOfficeDownloadProgress', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeDownloadProgress', callback)
     return () => sub.remove()
@@ -377,8 +387,8 @@ class BoxOfficeBridge {
 
   onError(callback: (event: ErrorEvent) => void): () => void {
     if (this.useNitro) {
-      BoxOfficeNitroModule.addErrorListener(callback)
-      return () => BoxOfficeNitroModule.removeListener('onBoxOfficeError', callback)
+      this.nitro.addErrorListener(callback)
+      return () => this.nitro.removeListener('onBoxOfficeError', callback)
     }
     const sub = this.eventEmitter!.addListener('onBoxOfficeError', callback)
     return () => sub.remove()
@@ -388,7 +398,7 @@ class BoxOfficeBridge {
 
   async configure(config: EngineConfig = {}): Promise<CommandResult> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.configure({
+      return await this.nitro.configure({
         apiVersion: config.apiVersion ?? ApiVersion.V2,
         downloadDir: config.downloadDir ?? '',
         captionLanguage: config.captionLanguage ?? 'English',
@@ -401,7 +411,7 @@ class BoxOfficeBridge {
 
   async start(): Promise<CommandResult> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.start()
+      return await this.nitro.start()
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.start()
@@ -409,7 +419,7 @@ class BoxOfficeBridge {
 
   async stop(): Promise<CommandResult> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.stop()
+      return await this.nitro.stop()
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.stop()
@@ -417,7 +427,7 @@ class BoxOfficeBridge {
 
   async getStatus(): Promise<EngineStatus> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getStatus()
+      return await this.nitro.getStatus()
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getStatus()
@@ -433,7 +443,7 @@ class BoxOfficeBridge {
     version: ApiVersion = ApiVersion.V2
   ): Promise<SearchResults> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.search(query, page, perPage, subjectType, version)
+      return await this.nitro.search(query, page, perPage, subjectType, version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.search(query, page, perPage, subjectType, version)
@@ -444,7 +454,7 @@ class BoxOfficeBridge {
     version: ApiVersion = ApiVersion.V2
   ): Promise<SearchSuggestions> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.searchSuggestions(query, version)
+      return await this.nitro.searchSuggestions(query, version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.searchSuggestions(query, version)
@@ -458,7 +468,7 @@ class BoxOfficeBridge {
     version: ApiVersion = ApiVersion.V2
   ): Promise<TrendingResults> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getTrending(page, perPage, version)
+      return await this.nitro.getTrending(page, perPage, version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getTrending(page, perPage, version)
@@ -466,7 +476,7 @@ class BoxOfficeBridge {
 
   async getHomepage(version: ApiVersion = ApiVersion.V2): Promise<HomepageContent> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getHomepage(version)
+      return await this.nitro.getHomepage(version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getHomepage(version)
@@ -474,7 +484,7 @@ class BoxOfficeBridge {
 
   async getHotContent(version: ApiVersion = ApiVersion.V2): Promise<HotContent> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getHotContent(version)
+      return await this.nitro.getHotContent(version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getHotContent(version)
@@ -482,7 +492,7 @@ class BoxOfficeBridge {
 
   async getPopularSearches(version: ApiVersion = ApiVersion.V2): Promise<PopularSearches> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getPopularSearches(version)
+      return await this.nitro.getPopularSearches(version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getPopularSearches(version)
@@ -495,7 +505,7 @@ class BoxOfficeBridge {
     version: ApiVersion = ApiVersion.V1
   ): Promise<MovieDetails> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getMovieDetails(urlOrItem, version)
+      return await this.nitro.getMovieDetails(urlOrItem, version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getMovieDetails(urlOrItem, version)
@@ -506,7 +516,7 @@ class BoxOfficeBridge {
     version: ApiVersion = ApiVersion.V1
   ): Promise<TVSeriesDetails> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getTVSeriesDetails(urlOrItem, version)
+      return await this.nitro.getTVSeriesDetails(urlOrItem, version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getTVSeriesDetails(urlOrItem, version)
@@ -514,7 +524,7 @@ class BoxOfficeBridge {
 
   async getItemDetails(urlOrItem: string): Promise<V2ItemDetails> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getItemDetails(urlOrItem)
+      return await this.nitro.getItemDetails(urlOrItem)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getItemDetails(urlOrItem)
@@ -528,7 +538,7 @@ class BoxOfficeBridge {
     version: ApiVersion = ApiVersion.V1
   ): Promise<DownloadableFiles> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getDownloadableFiles(item, subjectType, version)
+      return await this.nitro.getDownloadableFiles(item, subjectType, version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getDownloadableFiles(item, subjectType, version)
@@ -544,7 +554,7 @@ class BoxOfficeBridge {
     year: number = 0
   ): Promise<DownloadMovieResult> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.downloadMovie(title, quality, captionLanguage, downloadDir, year)
+      return await this.nitro.downloadMovie(title, quality, captionLanguage, downloadDir, year)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.downloadMovie(title, quality, captionLanguage, downloadDir, year)
@@ -561,7 +571,7 @@ class BoxOfficeBridge {
     autoMode: boolean = false
   ): Promise<DownloadTVSeriesResult> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.downloadTVSeries(
+      return await this.nitro.downloadTVSeries(
         title, season, episode, limit, quality, captionLanguage, downloadDir, autoMode
       )
     }
@@ -573,7 +583,7 @@ class BoxOfficeBridge {
 
   async getDownloadStatus(downloadId?: string): Promise<DownloadStatusList> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getDownloadStatus(downloadId ?? null)
+      return await this.nitro.getDownloadStatus(downloadId ?? null)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getDownloadStatus(downloadId ?? null)
@@ -581,7 +591,7 @@ class BoxOfficeBridge {
 
   async cancelDownload(downloadId: string): Promise<CommandResult> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.cancelDownload(downloadId)
+      return await this.nitro.cancelDownload(downloadId)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.cancelDownload(downloadId)
@@ -596,7 +606,7 @@ class BoxOfficeBridge {
     version: ApiVersion = ApiVersion.V1
   ): Promise<Recommendations> {
     if (this.useNitro) {
-      return await BoxOfficeNitroModule.getRecommendations(urlOrItem, page, perPage, version)
+      return await this.nitro.getRecommendations(urlOrItem, page, perPage, version)
     }
     const { BoxOfficeModule } = NativeModules
     return await BoxOfficeModule.getRecommendations(urlOrItem, page, perPage, version)
@@ -607,4 +617,3 @@ class BoxOfficeBridge {
 
 export const boxOffice = BoxOfficeBridge.getInstance()
 export default BoxOfficeBridge
-

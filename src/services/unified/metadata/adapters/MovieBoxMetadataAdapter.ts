@@ -23,7 +23,10 @@ export class MovieBoxMetadataAdapter {
     if (this.initialized) return;
     
     try {
-      await boxOffice.initialize();
+      const status = await boxOffice.getStatus();
+      if (!status.running) {
+        await boxOffice.start();
+      }
       this.initialized = true;
       console.log('[MovieBoxMetadataAdapter] Initialized');
     } catch (error) {
@@ -68,6 +71,7 @@ export class MovieBoxMetadataAdapter {
         backdrop: this.getBestBackdrop(item),
         rating: item.rating || 0,
         year: this.extractYear(item.releaseDate),
+        releaseDate: item.releaseDate || undefined,
         source: 'moviebox',
         originalData: item,
       }));
@@ -110,6 +114,7 @@ export class MovieBoxMetadataAdapter {
         backdrop: this.getBestBackdrop(details),
         rating: details.rating || details.voteAverage || 0,
         year: this.extractYear(details.releaseDate || details.firstAirDate),
+        releaseDate: details.releaseDate || details.firstAirDate || undefined,
         source: 'moviebox',
         originalData: {
           details,
@@ -125,13 +130,13 @@ export class MovieBoxMetadataAdapter {
   /**
    * Get trending content from MovieBox
    */
-  async getTrending(type?: 'movie' | 'tv', page: number = 1): Promise<IMetadataResult[]> {
+  async getTrending(limit: number = 20, type?: 'movie' | 'tv', page: number = 1): Promise<IMetadataResult[]> {
     try {
       await this.ensureInitialized();
 
       const results = await boxOffice.getTrending(page, 24, ApiVersion.V2);
       
-      return results.data.map((item: any) => ({
+      return results.data.slice(0, limit).map((item: any) => ({
         id: item.subjectId || '',
         title: item.title || '',
         type: item.subjectType === SubjectType.TV_SERIES ? 'tv' : 'movie',
@@ -140,6 +145,7 @@ export class MovieBoxMetadataAdapter {
         backdrop: this.getBestBackdrop(item),
         rating: item.rating || 0,
         year: this.extractYear(item.releaseDate),
+        releaseDate: item.releaseDate || undefined,
         source: 'moviebox',
       }));
     } catch (error) {
@@ -166,6 +172,7 @@ export class MovieBoxMetadataAdapter {
         backdrop: this.getBestBackdrop(item),
         rating: item.rating || 0,
         year: this.extractYear(item.releaseDate),
+        releaseDate: item.releaseDate || undefined,
         source: 'moviebox',
       });
 

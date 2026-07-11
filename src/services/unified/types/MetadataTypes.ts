@@ -371,6 +371,10 @@ export interface IMetadataResult {
   title: string;
   type: 'movie' | 'tv';
   year?: number;
+  /** Full release/air date string (e.g. "2026-06-15"), when the provider exposes one.
+   *  Not all providers can populate this (e.g. Kuryana only has `year`), so always
+   *  treat this as optional and fall back to `year` when it's missing. */
+  releaseDate?: string;
   poster?: string;
   backdrop?: string;
   overview?: string;
@@ -378,6 +382,8 @@ export interface IMetadataResult {
   genres?: string[];
   runtime?: number;
   cast?: CastMember[];
+  /** Which metadata provider this result came from (e.g. 'tmdb', 'kuryana', 'moviebox'). */
+  source?: string;
 }
 
 // ============================================================================

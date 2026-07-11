@@ -34,6 +34,7 @@ export class TMDBMetadataAdapter {
         year: item.release_date ? parseInt(item.release_date.split('-')[0]) : 
               item.first_air_date ? parseInt(item.first_air_date.split('-')[0]) : 
               undefined,
+        releaseDate: item.release_date || item.first_air_date || undefined,
         poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
         backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
         overview: item.overview || '',
@@ -41,6 +42,7 @@ export class TMDBMetadataAdapter {
         genres: item.genre_ids?.map((id: number) => id.toString()) || [],
         runtime: undefined,
         cast: [],
+        source: 'tmdb',
       }))
     } catch (error) {
       console.error('[TMDBMetadataAdapter] Search failed:', error)
@@ -70,6 +72,7 @@ export class TMDBMetadataAdapter {
         year: item.release_date ? parseInt(item.release_date.split('-')[0]) : 
               item.first_air_date ? parseInt(item.first_air_date.split('-')[0]) : 
               undefined,
+        releaseDate: item.release_date || item.first_air_date || undefined,
         poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
         backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
         overview: item.overview || '',
@@ -83,10 +86,41 @@ export class TMDBMetadataAdapter {
             ids: {},
           },
         })) || [],
+        source: 'tmdb',
       }
     } catch (error) {
       console.error(`[TMDBMetadataAdapter] Get by ID ${id} failed:`, error)
       return null
+    }
+  }
+
+  /**
+   * Get trending movies/TV shows.
+   */
+  async getTrending(limit: number = 20): Promise<IMetadataResult[]> {
+    try {
+      const results = await tmdbApi.fetchTrending('day', 'all')
+
+      return results.slice(0, limit).map((item: any) => ({
+        id: item.id?.toString() || '',
+        title: item.title || item.name || '',
+        type: item.media_type === 'tv' ? 'tv' : 'movie',
+        year: item.release_date ? parseInt(item.release_date.split('-')[0]) :
+              item.first_air_date ? parseInt(item.first_air_date.split('-')[0]) :
+              undefined,
+        releaseDate: item.release_date || item.first_air_date || undefined,
+        poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined,
+        backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : undefined,
+        overview: item.overview || '',
+        rating: item.vote_average || 0,
+        genres: item.genre_ids?.map((id: number) => id.toString()) || [],
+        runtime: undefined,
+        cast: [],
+        source: 'tmdb',
+      }))
+    } catch (error) {
+      console.error('[TMDBMetadataAdapter] GetTrending failed:', error)
+      return []
     }
   }
 }

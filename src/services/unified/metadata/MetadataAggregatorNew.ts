@@ -107,6 +107,39 @@ export class MetadataAggregator {
   }
 
   /**
+   * Get trending content across all providers that support it.
+   */
+  async getTrending(limit: number = 20): Promise<IMetadataResult[]> {
+    await this.initialize();
+
+    const allResults: IMetadataResult[] = [];
+
+    for (const provider of this.providers) {
+      if (typeof (provider as any).getTrending === 'function') {
+        try {
+          const results = await (provider as any).getTrending(limit);
+          if (Array.isArray(results)) {
+            allResults.push(...results);
+          }
+        } catch (error) {
+          console.error('[MetadataAggregator] Provider', provider.constructor.name, 'getTrending failed:', error);
+        }
+      }
+    }
+
+    // Deduplicate by ID and source
+    const seen = new Set<string>();
+    const deduplicated = allResults.filter(result => {
+      const key = (result as any).source + '-' + result.type + '-' + result.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return deduplicated.slice(0, limit);
+  }
+
+  /**
    * Get all registered providers.
    */
   getProviders(): MetadataProvider[] {

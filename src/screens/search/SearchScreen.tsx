@@ -1,18 +1,18 @@
 // src/screens/search/SearchScreen.tsx
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  FlatList,
-  ActivityIndicator,
   TouchableOpacity,
   Image,
   Keyboard,
   Platform,
   ScrollView,
-  Modal,
+  Dimensions,
+  Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,8 +33,17 @@ import { IMetadataResult } from '../../services/unified/types/MetadataTypes';
 // Utils
 import { saveSearchQuery, getSearchHistory, removeSearchQuery, clearSearchHistory } from '../../utils/storage';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 // TMDB CDN prefix used by the rest of the app
 const TMDB_POSTER_PREFIX = 'https://image.tmdb.org/t/p/w500';
+
+// ─── Grid Layout (4-up) — shared by "Popular Searches" AND every active
+// ─── result set (typed search / category tap / genre-only browse). Only
+// ─── the heading above the grid changes; the card layout never does.
+const GRID_GAP = 8;
+const GRID_CARD_WIDTH = (SCREEN_WIDTH - 16 * 2 - GRID_GAP * 3) / 4;
+const GRID_CARD_HEIGHT = GRID_CARD_WIDTH * 1.5;
 
 const toRawPosterPath = (fullPosterUrl?: string): string => {
   if (!fullPosterUrl) return '';
@@ -43,28 +52,13 @@ const toRawPosterPath = (fullPosterUrl?: string): string => {
     : fullPosterUrl;
 };
 
-// ─── Source Badge Configurations ───
-const SOURCE_BADGES: Record<string, { label: string; color: string; icon: string }> = {
-  moviebox: {
-    label: 'MOVIEBOX',
-    color: '#FF6B00',
-    icon: 'film-outline',
-  },
-  tmdb: {
-    label: 'TMDB',
-    color: '#01B4E4',
-    icon: 'film-outline',
-  },
-  kuryana: {
-    label: 'KURYANA',
-    color: '#9C27B0',
-    icon: 'tv-outline',
-  },
-  default: {
-    label: 'SOURCE',
-    color: '#666666',
-    icon: 'globe-outline',
-  },
+// ─── Sort helper: newest → oldest. Used everywhere an active result set is
+// ─── shown. A specific year filter naturally collapses everything to one
+// ─── year, so this becomes a no-op in that case — which is the desired
+// ─── behavior ("latest always prioritized except user specifically
+// ─── selects a year").
+const sortNewestFirst = (items: IMetadataResult[]): IMetadataResult[] => {
+  return [...items].sort((a, b) => (b.year || 0) - (a.year || 0));
 };
 
 // ─── Filter Types ───
@@ -76,24 +70,104 @@ interface SearchFilters {
   genre: string;
 }
 
+// ─── What is currently driving the grid ───
+// 'discover' -> nothing active, show trending "Popular Searches"
+// 'typed'    -> user is typing in the search bar
+// 'category' -> user tapped a category card (Hollywood, Bollywood, etc.)
+// 'genre'    -> user tapped a genre pill with no category/typed search active,
+//               so the genre itself becomes the primary browse query
+type ActiveMode = 'discover' | 'typed' | 'category' | 'genre';
+
+// ─── Category Cards (2x3 grid) ───
+// Tapping one runs it through the same unified search() pipeline as typing a
+// query — it's an approximation (text-match against these keywords), not a
+// true language/origin filter, since none of the providers expose that field.
+const CATEGORY_CARDS: { label: string; query: string; icon: string }[] = [
+  { label: 'Hollywood', query: 'hollywood', icon: 'film-outline' },
+  { label: 'Bollywood', query: 'bollywood', icon: 'film-outline' },
+  { label: 'Nollywood', query: 'nollywood', icon: 'film-outline' },
+  { label: 'Anime', query: 'anime', icon: 'sparkles-outline' },
+  { label: 'K-Drama', query: 'korean drama', icon: 'tv-outline' },
+  { label: 'Chinese', query: 'chinese drama', icon: 'globe-outline' },
+];
+
+// ─── Year options shown in the Year filter row ───
+const currentYear = new Date().getFullYear();
+const YEAR_OPTIONS: string[] = Array.from({ length: 12 }, (_, i) => String(currentYear - i));
+
+// ─── Category -> real classification signals (language / origin country /
+// ─── keywords), NOT literal title text. The underlying search API only
+// ─── does full-text matching, so sending it "hollywood" as a query returns
+// ─── anything with the word "Hollywood" in the title (e.g. "Hollywood
+// ─── Ending") — that's wrong, categories aren't titles. We still send the
+// ─── keyword to get a candidate pool (no dedicated discover/browse-by-
+// ─── region endpoint is confirmed on unifiedMediaService), but then filter
+// ─── that pool down to items whose actual metadata matches the category.
+// ─── Field names are best-effort (TMDB-style) via defensive `as any` reads
+// ─── since MetadataTypes isn't visible here — tighten these once you
+// ─── confirm the exact field names in services/unified/types/MetadataTypes.
+const CATEGORY_MATCHERS: Record<string, { languages?: string[]; countries?: string[]; keywords?: string[] }> = {
+  hollywood: { languages: ['en'], countries: ['US'] },
+  bollywood: { languages: ['hi'], countries: ['IN'] },
+  nollywood: { languages: ['en', 'yo', 'ig', 'ha'], countries: ['NG'] },
+  anime: { languages: ['ja'], keywords: ['anime'] },
+  'korean drama': { languages: ['ko'], countries: ['KR'] },
+  'chinese drama': { languages: ['zh', 'cn'], countries: ['CN'] },
+};
+
+const applyCategoryMatch = (items: IMetadataResult[], categoryQuery: string): IMetadataResult[] => {
+  const matcher = CATEGORY_MATCHERS[categoryQuery.toLowerCase()];
+  if (!matcher) return items;
+
+  const matched = items.filter((item) => {
+    const anyItem = item as any;
+    const lang = String(anyItem.originalLanguage || anyItem.original_language || '').toLowerCase();
+    const countryRaw = anyItem.originCountry || anyItem.origin_country || anyItem.country || [];
+    const countryList: string[] = (Array.isArray(countryRaw) ? countryRaw : [countryRaw])
+      .filter(Boolean)
+      .map((c: string) => String(c).toUpperCase());
+    const keywordList: string[] = (anyItem.keywords || anyItem.tags || [])
+      .filter(Boolean)
+      .map((k: string) => String(k).toLowerCase());
+
+    const langMatch = !!matcher.languages && matcher.languages.includes(lang);
+    const countryMatch = !!matcher.countries && matcher.countries.some((c) => countryList.includes(c));
+    const keywordMatch = !!matcher.keywords && matcher.keywords.some((k) => keywordList.includes(k));
+
+    return langMatch || countryMatch || keywordMatch;
+  });
+
+  // If none of the providers populated language/country/keyword data for
+  // this batch, fall back to the raw keyword results rather than showing an
+  // empty grid — partial signal is better than nothing, but real matches
+  // always win when they exist.
+  return matched.length > 0 ? matched : items;
+};
+
 const SearchScreen = () => {
   const { colors, isDark } = useTheme();
   const { showToast } = useAlert();
   const { networkStatus } = useAppStore();
 
-  const { trendingSearches, categories, loading: preloadLoading } = useSearchPreloader();
+  const { trendingItems, loading: preloadLoading } = useSearchPreloader();
   const { recordSearch: recordSearchToSupabase } = useSearchAggregation();
 
+  // ─── Search bar text — ONLY reflects what the user typed. Category taps
+  // ─── and genre-only browsing never write into this. ───
   const [query, setQuery] = useState('');
+
+  // ─── What's currently driving the grid, and what heading to show above it ───
+  const [activeMode, setActiveMode] = useState<ActiveMode>('discover');
+  const [resultsTitle, setResultsTitle] = useState('Popular Searches');
+
   const [results, setResults] = useState<IMetadataResult[]>([]);
   const [filteredResults, setFilteredResults] = useState<IMetadataResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [noResults, setNoResults] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const [showHistory, setShowHistory] = useState(true);
-  const [showFilterModal, setShowFilterModal] = useState(false);
 
-  // ─── Filter State ───
+  // ─── Filter State — persists across mode switches (typed <-> category <->
+  // ─── genre) until the user explicitly changes it. ───
   const [filters, setFilters] = useState<SearchFilters>({
     type: 'all',
     year: '',
@@ -111,6 +185,61 @@ const SearchScreen = () => {
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   const isMounted = useRef(true);
   const engineInitialized = useRef(false);
+
+  // ─── Keeps latest filters readable inside performSearch without having to
+  // ─── recreate that callback (and re-trigger effects) on every filter tweak.
+  const filtersRef = useRef(filters);
+  useEffect(() => { filtersRef.current = filters; }, [filters]);
+
+  // ─── Tracks whatever text query is actually driving the current result
+  // ─── set (typed text, category keyword, or genre keyword) so we can
+  // ─── re-fetch with the same query when `type` changes (it's a real API
+  // ─── param, not something we can just re-filter client-side).
+  const activeSearchQueryRef = useRef('');
+  const activeModeRef = useRef<ActiveMode>('discover');
+  const activeTitleRef = useRef('Popular Searches');
+
+  // ─── Set to true right before programmatically clearing `query` from a
+  // ─── non-typing action (category tap, genre-only tap, clear button) so
+  // ─── the debounced-search effect below ignores that particular change.
+  const skipQueryEffectRef = useRef(false);
+
+  // ─── Recent searches auto-scrolling ticker ───
+  const tickerScrollX = useRef(new Animated.Value(0)).current;
+  const [tickerSetWidth, setTickerSetWidth] = useState(0);
+
+  // ─── Skeleton pulse — drives every skeleton card's opacity while a grid
+  // ─── section is loading. One shared driver instead of one timer per card.
+  const skeletonPulse = useRef(new Animated.Value(0.45)).current;
+
+  useEffect(() => {
+    if (tickerSetWidth <= 0) return;
+    tickerScrollX.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(tickerScrollX, {
+        toValue: -tickerSetWidth,
+        duration: tickerSetWidth * 25,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [tickerSetWidth, tickerScrollX]);
+
+  const isGridLoading = loading || (activeMode === 'discover' && preloadLoading && trendingItems.length === 0);
+  useEffect(() => {
+    if (!isGridLoading) return;
+    skeletonPulse.setValue(0.45);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonPulse, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(skeletonPulse, { toValue: 0.45, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isGridLoading, skeletonPulse]);
 
   // ─── Ensure the unified media engine is ready ───
   useEffect(() => {
@@ -130,16 +259,15 @@ const SearchScreen = () => {
     }
   }, []);
 
-  // ─── Apply filters to results ───
+  // ─── Apply filters to results (client-side, against whatever is
+  // ─── currently loaded for the active mode) ───
   const applyFilters = useCallback((resultsToFilter: IMetadataResult[], currentFilters: SearchFilters): IMetadataResult[] => {
     let filtered = [...resultsToFilter];
 
-    // Filter by type
     if (currentFilters.type !== 'all') {
       filtered = filtered.filter(item => item.type === currentFilters.type);
     }
 
-    // Filter by year
     if (currentFilters.year) {
       const yearNum = parseInt(currentFilters.year);
       if (!isNaN(yearNum)) {
@@ -147,19 +275,16 @@ const SearchScreen = () => {
       }
     }
 
-    // Filter by minimum rating
     if (currentFilters.minRating > 0) {
       filtered = filtered.filter(item => (item.rating || 0) >= currentFilters.minRating);
     }
 
-    // Filter by source
     if (currentFilters.source !== 'all') {
       filtered = filtered.filter(item => (item as any).source === currentFilters.source);
     }
 
-    // Filter by genre
     if (currentFilters.genre) {
-      filtered = filtered.filter(item => 
+      filtered = filtered.filter(item =>
         item.genres?.some(g => g.toLowerCase().includes(currentFilters.genre.toLowerCase()))
       );
     }
@@ -167,38 +292,60 @@ const SearchScreen = () => {
     return filtered;
   }, []);
 
-  // ─── Perform search across all sources (TMDB + Kuryana + MovieBox) ───
-  const performSearch = useCallback(async (searchQuery: string, saveToHistory: boolean = true) => {
+  // ─── Reset the grid back to the default "Popular Searches" / discover view ───
+  const resetToDiscover = useCallback(() => {
+    activeSearchQueryRef.current = '';
+    activeModeRef.current = 'discover';
+    activeTitleRef.current = 'Popular Searches';
+    setActiveMode('discover');
+    setResultsTitle('Popular Searches');
+    setResults([]);
+    setFilteredResults([]);
+    setNoResults(false);
+    loadSearchHistory();
+  }, [loadSearchHistory]);
+
+  // ─── Perform a search across all sources and show it in the grid.
+  // ─── `mode` + `title` control the heading shown above the grid:
+  //   - 'typed'    -> "Searched Results"
+  //   - 'category' -> the category label, e.g. "Hollywood"
+  //   - 'genre'    -> the genre label, e.g. "Action" (only used when no
+  //                    category/typed search is currently active)
+  const performSearch = useCallback(async (
+    searchQuery: string,
+    mode: Exclude<ActiveMode, 'discover'>,
+    title: string,
+    saveToHistory: boolean = true
+  ) => {
     const trimmedQuery = searchQuery.trim();
     if (!trimmedQuery) {
-      setResults([]);
-      setFilteredResults([]);
-      setNoResults(false);
-      setShowHistory(true);
-      loadSearchHistory();
+      resetToDiscover();
       return;
     }
 
+    activeSearchQueryRef.current = trimmedQuery;
+    activeModeRef.current = mode;
+    activeTitleRef.current = title;
+
     setLoading(true);
     setNoResults(false);
-    setShowHistory(false);
+    setActiveMode(mode);
+    setResultsTitle(title);
 
     try {
-      // Build search options
+      const currentFilters = filtersRef.current;
       const searchOptions: any = {
         query: trimmedQuery,
         limit: 50,
       };
 
-      // Add type filter if not 'all'
-      if (filters.type !== 'all') {
-        searchOptions.type = filters.type;
+      if (currentFilters.type !== 'all') {
+        searchOptions.type = currentFilters.type;
       }
 
-      // Search using UnifiedMediaService
       const searchResults = await unifiedMediaService.search(searchOptions);
+      if (!isMounted.current) return;
 
-      // Log source breakdown for debugging
       const sourceCounts: Record<string, number> = {};
       searchResults.forEach(r => {
         const source = (r as any).source || 'unknown';
@@ -206,17 +353,20 @@ const SearchScreen = () => {
       });
       console.log('📊 Search results by source:', sourceCounts);
 
-      // Filter results that have a poster
-      const filtered = searchResults.filter((item) => !!item.poster);
+      let withPosters = searchResults.filter((item) => !!item.poster);
+      if (mode === 'category') {
+        withPosters = applyCategoryMatch(withPosters, trimmedQuery);
+      }
+      setResults(withPosters);
 
-      setResults(filtered);
-      
-      // Apply filters
-      const filteredResults = applyFilters(filtered, filters);
-      setFilteredResults(filteredResults);
-      setNoResults(filteredResults.length === 0);
+      const applied = applyFilters(withPosters, currentFilters);
+      const sorted = sortNewestFirst(applied);
+      setFilteredResults(sorted);
+      setNoResults(sorted.length === 0);
 
-      if (saveToHistory && filteredResults.length > 0) {
+      // Only genuine typed searches get saved to search history — category
+      // and genre-only browsing have their own dedicated UI already.
+      if (saveToHistory && mode === 'typed' && sorted.length > 0) {
         await saveSearchQuery(trimmedQuery);
         loadSearchHistory();
         recordSearchToSupabase(trimmedQuery);
@@ -228,29 +378,30 @@ const SearchScreen = () => {
       setNoResults(true);
       showToast('Search failed. Please try again.');
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
-  }, [filters, applyFilters, loadSearchHistory, recordSearchToSupabase, showToast]);
+  }, [applyFilters, loadSearchHistory, recordSearchToSupabase, showToast, resetToDiscover]);
 
-  // ─── Debounced search ───
+  // ─── Debounced real-time search whenever the search bar text changes.
+  // ─── Typing always takes over as the active mode ("typed"), overriding
+  // ─── whatever category/genre browse was active before. ───
   useEffect(() => {
-    if (!query.trim()) {
-      setShowHistory(true);
-      setResults([]);
-      setFilteredResults([]);
-      setNoResults(false);
-      loadSearchHistory();
+    if (skipQueryEffectRef.current) {
+      skipQueryEffectRef.current = false;
       return;
     }
 
-    setShowHistory(false);
+    if (!query.trim()) {
+      resetToDiscover();
+      return;
+    }
 
     if (debounceTimeout.current) {
       clearTimeout(debounceTimeout.current);
     }
 
     debounceTimeout.current = setTimeout(() => {
-      performSearch(query, false);
+      performSearch(query, 'typed', 'Searched Results', false);
     }, 500);
 
     return () => {
@@ -258,16 +409,36 @@ const SearchScreen = () => {
         clearTimeout(debounceTimeout.current);
       }
     };
-  }, [query, performSearch, loadSearchHistory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
-  // ─── Re-apply filters when filters change ───
+  // ─── Re-apply (and re-sort) filters client-side against whatever is
+  // ─── already loaded, any time a filter other than `type` changes. This is
+  // ─── what makes "tap Action to filter the list already showing" work
+  // ─── without a new network request. ───
   useEffect(() => {
     if (results.length > 0) {
-      const filtered = applyFilters(results, filters);
+      const filtered = sortNewestFirst(applyFilters(results, filters));
       setFilteredResults(filtered);
       setNoResults(filtered.length === 0);
     }
-  }, [filters, results, applyFilters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, results]);
+
+  // ─── `type` is a real API param, not just a client-side filter, so
+  // ─── changing it re-runs the currently active search (whatever query is
+  // ─── driving it — typed, category, or genre) with the new type. ───
+  const isFirstTypeRender = useRef(true);
+  useEffect(() => {
+    if (isFirstTypeRender.current) {
+      isFirstTypeRender.current = false;
+      return;
+    }
+    if (activeSearchQueryRef.current) {
+      performSearch(activeSearchQueryRef.current, activeModeRef.current as Exclude<ActiveMode, 'discover'>, activeTitleRef.current, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.type]);
 
   useFocusEffect(
     useCallback(() => {
@@ -286,8 +457,10 @@ const SearchScreen = () => {
   }, []);
 
   const handleHistoryItemPress = useCallback((historyQuery: string) => {
+    // This IS a text search, so the query bar should show it.
+    skipQueryEffectRef.current = true;
     setQuery(historyQuery);
-    performSearch(historyQuery, true);
+    performSearch(historyQuery, 'typed', 'Searched Results', true);
     Keyboard.dismiss();
   }, [performSearch]);
 
@@ -303,160 +476,261 @@ const SearchScreen = () => {
   };
 
   const handleClearQuery = () => {
+    skipQueryEffectRef.current = true;
     setQuery('');
-    setResults([]);
-    setFilteredResults([]);
-    setNoResults(false);
-    setShowHistory(true);
-    loadSearchHistory();
+    resetToDiscover();
   };
 
-  const handleToggleFilter = () => {
-    setShowFilterModal(!showFilterModal);
-  };
-
-  const handleApplyFilters = () => {
-    setShowFilterModal(false);
-    if (query.trim()) {
-      performSearch(query, false);
+  // ─── Category card tap: never touches the search bar text. Existing
+  // ─── filters (genre/year/type) carry over untouched unless the user
+  // ─── changes them afterward. ───
+  const handleCategoryPress = useCallback((cat: { label: string; query: string }) => {
+    Keyboard.dismiss();
+    if (query.length > 0) {
+      // Clear any leftover typed text without letting the debounce effect
+      // treat this as "user cleared their search" and reset to discover —
+      // we're about to show category results instead.
+      skipQueryEffectRef.current = true;
+      setQuery('');
     }
-  };
+    performSearch(cat.query, 'category', cat.label, false);
+  }, [query, performSearch]);
 
-  const handleResetFilters = () => {
-    setFilters({
-      type: 'all',
-      year: '',
-      minRating: 0,
-      source: 'all',
-      genre: '',
-    });
-  };
+  // ─── Genre pill tap. Behavior depends on what's currently driving the grid:
+  //   - If a category or typed search is already active: genre just narrows
+  //     the results already showing (client-side filter only).
+  //   - If nothing is active (discover) or genre is already the primary
+  //     browse mode: the genre itself becomes the search — "show all Action
+  //     movies, latest first" — until the user picks a category or types.
+  const handleGenreToggle = useCallback((genre: string) => {
+    const turningOff = filters.genre === genre;
 
-  // ─── Render Filter Chip ───
-  const renderFilterChip = (label: string, value: string | number, onPress: () => void) => {
-    const hasValue = value !== '' && value !== 'all' && value !== 0;
-    return (
-      <TouchableOpacity
-        style={[
-          styles.filterChip,
-          {
-            backgroundColor: hasValue ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-            borderColor: hasValue ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
-          }
-        ]}
-        onPress={onPress}
-        activeOpacity={0.7}
-      >
-        <Text style={[
-          styles.filterChipText,
-          { color: hasValue ? '#FFFFFF' : colors.textMuted }
-        ]}>
-          {label}{hasValue ? `: ${value}` : ''}
-        </Text>
-        {hasValue && (
-          <Ionicons name="close-circle" size={14} color="#FFFFFF" style={styles.filterChipIcon} />
-        )}
-      </TouchableOpacity>
+    if (activeMode === 'category' || activeMode === 'typed') {
+      setFilters(prev => ({ ...prev, genre: turningOff ? '' : genre }));
+      return;
+    }
+
+    if (turningOff) {
+      // Turning off the only thing driving the grid -> back to discover.
+      setFilters(prev => ({ ...prev, genre: '' }));
+      resetToDiscover();
+      return;
+    }
+
+    setFilters(prev => ({ ...prev, genre }));
+    if (query.length > 0) {
+      skipQueryEffectRef.current = true;
+      setQuery('');
+    }
+    performSearch(genre.toLowerCase(), 'genre', genre, false);
+  }, [filters.genre, activeMode, query, performSearch, resetToDiscover]);
+
+  // ─── Render every filter as one line: "Label:" inline on the left, then a
+  // ─── horizontally-scrollable row of small pills next to it. There's no
+  // ─── separate "All" pill — tapping the active pill again clears it back
+  // ─── to the default. Active state is shown with a colored border only
+  // ─── (background stays neutral), not a filled pill.
+  const renderFilters = () => {
+    const pillBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    const pillBorder = (active: boolean) => active ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)');
+    const pillText = (active: boolean) => active ? colors.gold : colors.textMuted;
+
+    const renderRow = (
+      label: string,
+      items: { key: string; label: string; active: boolean; onPress: () => void }[]
+    ) => (
+      <View style={styles.filterRow} key={label}>
+        <Text style={[styles.filterRowLabel, { color: colors.textMuted }]}>{label}:</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterRowScroll}
+          contentContainerStyle={styles.filterRowScrollContent}
+        >
+          {items.map((item) => (
+            <TouchableOpacity
+              key={item.key}
+              style={[
+                styles.filterOptionPill,
+                { backgroundColor: pillBg, borderColor: pillBorder(item.active) }
+              ]}
+              onPress={item.onPress}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterOptionPillText, { color: pillText(item.active) }]}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
     );
-  };
 
-  // ─── Render Source Badge ───
-  const renderSourceBadge = (source?: string) => {
-    const config = SOURCE_BADGES[source || 'default'] || SOURCE_BADGES.default;
+    const typeItems = (['movie', 'tv'] as const).map((type) => ({
+      key: type,
+      label: type.charAt(0).toUpperCase() + type.slice(1),
+      active: filters.type === type,
+      onPress: () => setFilters({ ...filters, type: filters.type === type ? 'all' : type }),
+    }));
+
+    const genreItems = availableGenres.map((genre) => ({
+      key: genre,
+      label: genre,
+      active: filters.genre === genre,
+      onPress: () => handleGenreToggle(genre),
+    }));
+
+    const yearItems = YEAR_OPTIONS.map((year) => ({
+      key: year,
+      label: year,
+      active: filters.year === year,
+      onPress: () => setFilters({ ...filters, year: filters.year === year ? '' : year }),
+    }));
+
     return (
-      <View style={[styles.sourceBadge, { backgroundColor: config.color }]}>
-        <Ionicons name={config.icon as any} size={10} color="#FFFFFF" />
-        <Text style={styles.sourceBadgeText}>{config.label}</Text>
+      <View style={styles.filtersContainer}>
+        {renderRow('Type', typeItems)}
+        {renderRow('Genre', genreItems)}
+        {renderRow('Year', yearItems)}
       </View>
     );
   };
 
-  // ─── Render Search Result ───
-  const renderSearchResult = ({ item }: { item: IMetadataResult }) => {
-    const imageSource = item.poster
-      ? { uri: item.poster }
-      : require('../../../assets/icon.png');
-
-    const source = (item as any).source || 'default';
-
-    return (
-      <TouchableOpacity 
-        style={[
-          styles.resultItem, 
-          { 
-            borderBottomColor: colors.border,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.3)',
-          }
-        ]} 
-        onPress={() => handleItemPress(item)}
-        activeOpacity={0.7}
-      >
-        <Image 
-          source={imageSource} 
-          style={styles.poster} 
-          resizeMode="cover" 
-        />
-        <View style={styles.itemDetails}>
-          <View style={styles.itemHeader}>
-            <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
-              {item.title}
-            </Text>
-            {renderSourceBadge(source)}
-          </View>
-          <Text style={[styles.itemOverview, { color: colors.textSub }]} numberOfLines={2}>
-            {item.overview || 'No description available'}
+  // ─── Render 2x3 category cards grid ───
+  const renderCategoryCards = () => (
+    <View style={styles.categoryGrid}>
+      {CATEGORY_CARDS.map((cat) => (
+        <TouchableOpacity
+          key={cat.label}
+          style={[
+            styles.categoryCard,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.5)',
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            }
+          ]}
+          onPress={() => handleCategoryPress(cat)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name={cat.icon as any} size={14} color={colors.gold} />
+          <Text style={[styles.categoryCardText, { color: colors.text }]} numberOfLines={1}>
+            {cat.label}
           </Text>
-          <View style={styles.itemFooter}>
-            {item.year && (
-              <Text style={[styles.itemYear, { color: colors.textMuted }]}>
-                {item.year}
-              </Text>
-            )}
-            {(item.rating || 0) > 0 && (
-              <View style={styles.ratingContainer}>
-                <Ionicons name="star" size={12} color="#FFD700" />
-                <Text style={[styles.ratingText, { color: colors.textSub }]}>
-                  {(item.rating || 0).toFixed(1)}
-                </Text>
-              </View>
-            )}
-            <View style={styles.typeBadge}>
-              <Text style={[styles.typeText, { color: colors.textMuted }]}>
-                {item.type === 'tv' ? 'TV Series' : 'Movie'}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 
-  // ─── Render History Item ───
-  const renderHistoryItem = ({ item }: { item: string }) => (
-    <TouchableOpacity 
-      style={[
-        styles.historyItem, 
-        { 
-          borderBottomColor: colors.border,
-          backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.2)',
-        }
-      ]} 
-      onPress={() => handleHistoryItemPress(item)}
+  // ─── Single card renderer shared by the "Popular Searches" trending grid
+  // ─── AND every active result set (typed / category / genre). Only the
+  // ─── heading above changes — the cards themselves never do. ───
+  const renderGridCard = (item: IMetadataResult) => (
+    <TouchableOpacity
+      key={`${(item as any).source || 'default'}-${item.type}-${item.id}`}
+      style={styles.trendingCard}
+      onPress={() => handleItemPress(item)}
+      activeOpacity={0.7}
     >
-      <View style={styles.historyItemLeft}>
-        <Ionicons name="time-outline" size={18} color={colors.textMuted} style={styles.historyIcon} />
-        <Text style={[styles.historyItemText, { color: colors.text }]}>{item}</Text>
-      </View>
-      <TouchableOpacity 
-        onPress={() => handleRemoveHistoryItem(item)}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-      </TouchableOpacity>
+      <Image
+        source={item.poster ? { uri: item.poster } : require('../../../assets/icon.png')}
+        style={styles.trendingPoster}
+        resizeMode="cover"
+      />
+      <Text style={[styles.trendingTitle, { color: colors.text }]} numberOfLines={1}>
+        {item.title}
+      </Text>
     </TouchableOpacity>
   );
 
-  // ─── Render Empty State ───
+  const renderCardGrid = (items: IMetadataResult[]) => (
+    <View style={styles.trendingGrid}>
+      {items.map(renderGridCard)}
+    </View>
+  );
+
+  // ─── Skeleton placeholder card — same footprint as a real card, so
+  // ─── swapping skeleton <-> real content never reflows the layout. Only
+  // ─── the card contents change; the search bar, filters, and category
+  // ─── cards are never touched or hidden while this is showing. ───
+  const skeletonBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const renderSkeletonCard = (key: string) => (
+    <Animated.View key={key} style={[styles.trendingCard, { opacity: skeletonPulse }]}>
+      <View style={[styles.trendingPoster, { backgroundColor: skeletonBg }]} />
+      <View style={[styles.skeletonTitleBar, { backgroundColor: skeletonBg }]} />
+    </Animated.View>
+  );
+
+  const renderSkeletonGrid = (count: number = 12) => (
+    <View style={styles.trendingGrid}>
+      {Array.from({ length: count }).map((_, i) => renderSkeletonCard(`skeleton-${i}`))}
+    </View>
+  );
+
+  // ─── Render Recent Searches as a continuously auto-scrolling marquee of
+  // ─── small, border-only circular avatars (most recent first — assumes
+  // ─── getSearchHistory() already returns newest-first; swap to
+  // ─── .slice().reverse() below if it's actually stored oldest-first).
+  // ─── The item list is duplicated so the loop resets seamlessly. Each
+  // ─── query only has text to go on, so the avatar is always an initial
+  // ─── in a colored ring, no fill. Long-press an avatar to remove it;
+  // ─── the fixed circle on the left clears everything and doesn't scroll.
+  const renderRecentSearchesStrip = () => {
+    if (searchHistory.length === 0) return null;
+
+    const renderAvatar = (histQuery: string, key: string) => {
+      const initial = histQuery.trim().charAt(0).toUpperCase() || '?';
+      return (
+        <TouchableOpacity
+          key={key}
+          style={styles.recentSearchItem}
+          onPress={() => handleHistoryItemPress(histQuery)}
+          onLongPress={() => handleRemoveHistoryItem(histQuery)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.recentSearchAvatar, { borderColor: colors.gold }]}>
+            <Text style={[styles.recentSearchAvatarText, { color: colors.gold }]}>{initial}</Text>
+          </View>
+          <Text style={[styles.recentSearchLabel, { color: colors.textMuted }]} numberOfLines={1}>
+            {histQuery}
+          </Text>
+        </TouchableOpacity>
+      );
+    };
+
+    return (
+      <View style={styles.recentSearchesRow}>
+        <TouchableOpacity
+          style={styles.recentClearButton}
+          onPress={handleClearAllHistory}
+          activeOpacity={0.7}
+        >
+          <View style={[
+            styles.recentSearchAvatar,
+            { borderColor: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)' }
+          ]}>
+            <Ionicons name="close" size={13} color={colors.textMuted} />
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.recentTickerViewport}>
+          <Animated.View
+            style={[styles.recentTickerTrack, { transform: [{ translateX: tickerScrollX }] }]}
+            onLayout={(e) => {
+              const fullWidth = e.nativeEvent.layout.width;
+              if (fullWidth > 0 && tickerSetWidth === 0) {
+                setTickerSetWidth(fullWidth / 2);
+              }
+            }}
+          >
+            {searchHistory.map((q, i) => renderAvatar(q, `a-${q}-${i}`))}
+            {searchHistory.map((q, i) => renderAvatar(q, `b-${q}-${i}`))}
+          </Animated.View>
+        </View>
+      </View>
+    );
+  };
+
+  // ─── Render Empty State (nothing searched yet, no history, no trending) ───
   const renderEmptyState = () => (
     <View style={styles.centerContent}>
       <View style={[
@@ -477,189 +751,36 @@ const SearchScreen = () => {
     </View>
   );
 
-  // ─── Render Filter Modal ───
-  const renderFilterModal = () => (
-    <Modal
-      visible={showFilterModal}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => setShowFilterModal(false)}
-    >
-      <TouchableOpacity 
-        style={styles.modalOverlay} 
-        activeOpacity={1} 
-        onPress={() => setShowFilterModal(false)}
-      >
-        <View style={[
-          styles.modalContent,
-          {
-            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.95)',
-          }
-        ]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Filters</Text>
-            <TouchableOpacity onPress={() => setShowFilterModal(false)}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-            {/* Type Filter */}
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterLabel, { color: colors.text }]}>Type</Text>
-              <View style={styles.filterOptions}>
-                {['all', 'movie', 'tv'].map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[
-                      styles.filterOption,
-                      {
-                        backgroundColor: filters.type === type ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-                        borderColor: filters.type === type ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
-                      }
-                    ]}
-                    onPress={() => setFilters({ ...filters, type: type as any })}
-                  >
-                    <Text style={[
-                      styles.filterOptionText,
-                      { color: filters.type === type ? '#FFFFFF' : colors.textMuted }
-                    ]}>
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Source Filter */}
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterLabel, { color: colors.text }]}>Source</Text>
-              <View style={styles.filterOptions}>
-                {['all', 'tmdb', 'kuryana', 'moviebox'].map((source) => (
-                  <TouchableOpacity
-                    key={source}
-                    style={[
-                      styles.filterOption,
-                      {
-                        backgroundColor: filters.source === source ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-                        borderColor: filters.source === source ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
-                      }
-                    ]}
-                    onPress={() => setFilters({ ...filters, source: source as any })}
-                  >
-                    <Text style={[
-                      styles.filterOptionText,
-                      { color: filters.source === source ? '#FFFFFF' : colors.textMuted }
-                    ]}>
-                      {source.charAt(0).toUpperCase() + source.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Year Filter */}
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterLabel, { color: colors.text }]}>Year</Text>
-              <TextInput
-                style={[
-                  styles.filterInput,
-                  {
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                    color: colors.text,
-                  }
-                ]}
-                placeholder="e.g., 2024"
-                placeholderTextColor={colors.textMuted}
-                value={filters.year}
-                onChangeText={(text) => setFilters({ ...filters, year: text })}
-                keyboardType="numeric"
-                maxLength={4}
-              />
-            </View>
-
-            {/* Min Rating Filter */}
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterLabel, { color: colors.text }]}>Minimum Rating</Text>
-              <View style={styles.ratingOptions}>
-                {[0, 3, 5, 7, 8].map((rating) => (
-                  <TouchableOpacity
-                    key={rating}
-                    style={[
-                      styles.filterOption,
-                      {
-                        backgroundColor: filters.minRating === rating ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-                        borderColor: filters.minRating === rating ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
-                      }
-                    ]}
-                    onPress={() => setFilters({ ...filters, minRating: rating })}
-                  >
-                    <Text style={[
-                      styles.filterOptionText,
-                      { color: filters.minRating === rating ? '#FFFFFF' : colors.textMuted }
-                    ]}>
-                      {rating === 0 ? 'All' : `${rating}+`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Genre Filter */}
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterLabel, { color: colors.text }]}>Genre</Text>
-              <View style={styles.genreOptions}>
-                {availableGenres.map((genre) => (
-                  <TouchableOpacity
-                    key={genre}
-                    style={[
-                      styles.genreOption,
-                      {
-                        backgroundColor: filters.genre === genre ? colors.gold : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-                        borderColor: filters.genre === genre ? colors.gold : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'),
-                      }
-                    ]}
-                    onPress={() => setFilters({ ...filters, genre: filters.genre === genre ? '' : genre })}
-                  >
-                    <Text style={[
-                      styles.genreOptionText,
-                      { color: filters.genre === genre ? '#FFFFFF' : colors.textMuted }
-                    ]}>
-                      {genre}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </ScrollView>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={[styles.resetButton, { borderColor: colors.border }]}
-              onPress={handleResetFilters}
-            >
-              <Text style={[styles.resetButtonText, { color: colors.textMuted }]}>Reset</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.applyButton, { backgroundColor: colors.gold }]}
-              onPress={handleApplyFilters}
-            >
-              <Text style={styles.applyButtonText}>Apply Filters</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Modal>
+  // ─── Render "No results" state for an active search/category/genre ───
+  const renderNoResultsState = () => (
+    <View style={styles.centerContent}>
+      <View style={[
+        styles.emptyIconContainer,
+        {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+          borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+        }
+      ]}>
+        <Ionicons name="search-outline" size={48} color={colors.textMuted} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>
+        No results found
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+        Try adjusting your search or filters
+      </Text>
+    </View>
   );
+
+  const isDiscover = activeMode === 'discover';
 
   // ─── Main Render ───
   return (
-    <SafeAreaView 
-      style={[styles.container, { backgroundColor: 'transparent' }]} 
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: 'transparent' }]}
       edges={['top']}
     >
-      {/* ─── Background Gradient ─── */}
+      {/* ─── Background ─── */}
       {!isDark && (
         <LinearGradient
           colors={['#E8F0F8', '#D4E4F7', '#C8D8EF']}
@@ -668,20 +789,20 @@ const SearchScreen = () => {
           end={{ x: 1, y: 1 }}
         />
       )}
-      
+
       {isDark && (
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#000000' }]} />
       )}
 
-      {/* ─── Search Bar ─── */}
+      {/* ─── Search Bar — only ever reflects typed text, never category/genre ─── */}
       <View style={[
-        styles.searchContainer, 
-        { 
+        styles.searchContainer,
+        {
           backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
           borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.3)',
         }
       ]}>
-        <Ionicons name="search" size={22} color={colors.textMuted} />
+        <Ionicons name="search" size={18} color={colors.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search movies, TV shows, and more..."
@@ -695,130 +816,72 @@ const SearchScreen = () => {
         />
         {query.length > 0 && (
           <TouchableOpacity onPress={handleClearQuery} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+            <Ionicons name="close-circle" size={17} color={colors.textMuted} />
           </TouchableOpacity>
         )}
-        <TouchableOpacity 
-          onPress={handleToggleFilter}
-          style={styles.filterButton}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="options-outline" size={22} color={colors.textMuted} />
-          {(filters.type !== 'all' || filters.year || filters.minRating > 0 || filters.source !== 'all' || filters.genre) && (
-            <View style={[styles.filterDot, { backgroundColor: colors.gold }]} />
-          )}
-        </TouchableOpacity>
       </View>
 
-      {/* ─── Filter Chips ─── */}
-      {(filters.type !== 'all' || filters.year || filters.minRating > 0 || filters.source !== 'all' || filters.genre) && (
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterChipsContainer}
-          contentContainerStyle={styles.filterChipsContent}
-        >
-          {filters.type !== 'all' && renderFilterChip('Type', filters.type, () => setFilters({ ...filters, type: 'all' }))}
-          {filters.year && renderFilterChip('Year', filters.year, () => setFilters({ ...filters, year: '' }))}
-          {filters.minRating > 0 && renderFilterChip('Rating', `${filters.minRating}+`, () => setFilters({ ...filters, minRating: 0 }))}
-          {filters.source !== 'all' && renderFilterChip('Source', filters.source, () => setFilters({ ...filters, source: 'all' }))}
-          {filters.genre && renderFilterChip('Genre', filters.genre, () => setFilters({ ...filters, genre: '' }))}
-        </ScrollView>
-      )}
+      {/* ─── Recent Searches: only shown in the default discover state ─── */}
+      {isDiscover && renderRecentSearchesStrip()}
 
-      {/* ─── Loading ─── */}
-      {loading && (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.gold} />
-          <Text style={[styles.loadingText, { color: colors.textMuted }]}>
-            Searching across TMDB, MovieBox, and more...
-          </Text>
-        </View>
-      )}
+      {/* ─── Filters: always visible, one row per filter ─── */}
+      {renderFilters()}
 
-      {/* ─── Search History ─── */}
-      {!loading && showHistory && searchHistory.length > 0 && (
-        <>
-          <View style={styles.historyHeader}>
-            <Text style={[styles.historyHeaderText, { color: colors.text }]}>
-              Recent Searches
-            </Text>
-            <TouchableOpacity onPress={handleClearAllHistory} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={[styles.clearAllText, { color: colors.gold }]}>Clear All</Text>
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={searchHistory}
-            renderItem={renderHistoryItem}
-            keyExtractor={(item, index) => `${item}-${index}`}
-            contentContainerStyle={styles.historyList}
-            showsVerticalScrollIndicator={false}
-          />
-        </>
-      )}
+      {/* ─── Grid: category cards, search bar, and filters stay put and
+           visible at all times. Only the grid section's contents swap
+           between skeleton placeholders and real cards — no full-screen
+           spinner, no remount, no layout jump. ─── */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.discoverContent}
+      >
+        {renderCategoryCards()}
 
-      {/* ─── Results ─── */}
-      {!loading && !showHistory && filteredResults.length > 0 && (
-        <FlatList
-          data={filteredResults}
-          renderItem={renderSearchResult}
-          keyExtractor={(item) => `${(item as any).source || 'default'}-${item.type}-${item.id}`}
-          contentContainerStyle={styles.resultsList}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <View style={styles.resultsHeader}>
-              <Text style={[styles.resultsCount, { color: colors.textMuted }]}>
-                {filteredResults.length} {filteredResults.length === 1 ? 'result' : 'results'} found
-                {results.length !== filteredResults.length && ` (filtered from ${results.length})`}
-              </Text>
+        {isDiscover ? (
+          (trendingItems.length > 0 || preloadLoading) && (
+            <>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Popular Searches</Text>
+              {preloadLoading && trendingItems.length === 0 ? renderSkeletonGrid(8) : renderCardGrid(trendingItems)}
+            </>
+          )
+        ) : (
+          <>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{resultsTitle}</Text>
+              {!loading && filteredResults.length > 0 && (
+                <Text style={[styles.resultsCount, { color: colors.textMuted }]}>
+                  {filteredResults.length} {filteredResults.length === 1 ? 'result' : 'results'}
+                  {results.length !== filteredResults.length && ` (of ${results.length})`}
+                </Text>
+              )}
             </View>
-          }
-        />
-      )}
+            {loading
+              ? renderSkeletonGrid(12)
+              : (filteredResults.length > 0 ? renderCardGrid(filteredResults) : (noResults && renderNoResultsState()))}
+          </>
+        )}
 
-      {/* ─── No Results ─── */}
-      {!loading && !showHistory && noResults && (
-        <View style={styles.centerContent}>
-          <View style={[
-            styles.emptyIconContainer,
-            {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-              borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-            }
-          ]}>
-            <Ionicons name="search-outline" size={48} color={colors.textMuted} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            No results found
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-            Try adjusting your search or filters
-          </Text>
-        </View>
-      )}
-
-      {/* ─── Empty State ─── */}
-      {!loading && showHistory && searchHistory.length === 0 && !query && (
-        renderEmptyState()
-      )}
-
-      {/* ─── Filter Modal ─── */}
-      {renderFilterModal()}
+        {isDiscover && !preloadLoading && searchHistory.length === 0 && trendingItems.length === 0 && (
+          renderEmptyState()
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    margin: 16,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+    borderRadius: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 2,
     borderWidth: 1,
     ...(Platform.OS === 'ios' && {
       backdropFilter: 'blur(20px)',
@@ -826,48 +889,69 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
-    marginLeft: 10,
+    fontSize: 14,
+    paddingVertical: Platform.OS === 'ios' ? 6 : 4,
+    marginLeft: 8,
   },
-  filterButton: {
-    padding: 4,
-    marginLeft: 4,
-    position: 'relative',
+  // ─── Always-visible filter rows: label + one horizontally-scrollable
+  // ─── pill line per filter (Type / Genre / Year).
+  filtersContainer: {
+    paddingTop: 4,
+    paddingBottom: 8,
   },
-  filterDot: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  filterChipsContainer: {
-    maxHeight: 44,
-    marginBottom: 4,
-  },
-  filterChipsContent: {
-    paddingHorizontal: 16,
-    gap: 8,
-    alignItems: 'center',
-  },
-  filterChip: {
+  filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 16,
+    marginBottom: 4,
+    paddingLeft: 16,
+  },
+  filterRowLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    width: 44,
+  },
+  filterRowScroll: {
+    flex: 1,
+  },
+  filterRowScrollContent: {
+    gap: 6,
+    alignItems: 'center',
+    paddingRight: 16,
+  },
+  filterOptionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  filterOptionPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  // ─── Category Pills Grid (3 per row x 2 rows) ───
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 8,
+  },
+  categoryCard: {
+    width: (SCREEN_WIDTH - 16 * 2 - 8 * 2) / 3,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
-    height: 32,
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
-  filterChipText: {
+  categoryCardText: {
     fontSize: 12,
-    fontWeight: '500',
-  },
-  filterChipIcon: {
-    marginLeft: 2,
+    fontWeight: '600',
   },
   centerContent: {
     flex: 1,
@@ -875,142 +959,92 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  resultsList: { 
-    paddingHorizontal: 16,
-    paddingBottom: 20,
+  discoverContent: {
+    paddingBottom: 40,
   },
-  resultsHeader: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 8,
+    paddingHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    paddingHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 12,
   },
   resultsCount: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
   },
-  resultItem: {
+  // ─── Shared card grid: used for BOTH the trending "Popular Searches" grid
+  // ─── and every active typed/category/genre result set. ───
+  trendingGrid: {
     flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    marginBottom: 6,
-    borderBottomWidth: 0.5,
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    gap: GRID_GAP,
   },
-  poster: {
-    width: 80,
-    height: 120,
+  trendingCard: {
+    width: GRID_CARD_WIDTH,
+    marginBottom: 16,
+  },
+  trendingPoster: {
+    width: GRID_CARD_WIDTH,
+    height: GRID_CARD_HEIGHT,
     borderRadius: 8,
     backgroundColor: '#333',
   },
-  itemDetails: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  itemTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    flex: 1,
-    lineHeight: 22,
-  },
-  itemOverview: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  itemFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  trendingTitle: {
+    fontSize: 12,
+    fontWeight: '600',
     marginTop: 6,
   },
-  itemYear: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  ratingContainer: {
+  // ─── Recent Searches: fixed Clear circle + auto-scrolling marquee track ───
+  recentSearchesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  typeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  sourceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    gap: 4,
-    flexShrink: 0,
-  },
-  sourceBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  historyHeaderText: { 
-    fontSize: 16, 
-    fontWeight: 'bold' 
-  },
-  clearAllText: { 
-    fontSize: 14, 
-    fontWeight: '600' 
-  },
-  historyList: { 
-    paddingHorizontal: 16 
-  },
-  historyItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
     marginBottom: 4,
-    borderBottomWidth: 0.5,
+    paddingLeft: 16,
   },
-  historyItemLeft: {
+  recentClearButton: {
+    marginRight: 10,
+  },
+  recentTickerViewport: {
+    flex: 1,
+    height: 58,
+    overflow: 'hidden',
+  },
+  recentTickerTrack: {
     flexDirection: 'row',
+  },
+  recentSearchItem: {
+    width: 46,
     alignItems: 'center',
-    flex: 1,
+    marginRight: 14,
   },
-  historyIcon: {
-    marginRight: 12,
+  recentSearchAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+    backgroundColor: 'transparent',
   },
-  historyItemText: { 
-    fontSize: 15,
-    flex: 1,
+  recentSearchAvatarText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  recentSearchLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   emptyIconContainer: {
     width: 80,
@@ -1031,121 +1065,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-  },
-  // ─── Filter Modal Styles ───
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '85%',
-    ...(Platform.OS === 'ios' && {
-      backdropFilter: 'blur(20px)',
-    }),
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 16,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  modalBody: {
-    paddingTop: 16,
-  },
-  filterSection: {
-    marginBottom: 20,
-  },
-  filterLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  filterOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  filterOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    minWidth: 60,
-    alignItems: 'center',
-  },
-  filterOptionText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  filterInput: {
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 16,
-    borderWidth: 1,
-  },
-  ratingOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  genreOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  genreOption: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  genreOptionText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingTop: 16,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(0,0,0,0.1)',
-  },
-  resetButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  resetButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  applyButton: {
-    flex: 2,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  applyButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  skeletonTitleBar: {
+    height: 11,
+    borderRadius: 4,
+    marginTop: 6,
+    width: '70%',
   },
 });
 

@@ -387,6 +387,20 @@ export interface BoxOfficeNitroModule extends HybridObject<{ android: 'kotlin' }
   removeListener(event: string, callback: () => void): void
 }
 
-export const BoxOfficeNitroModule = NitroModules.createHybridObject<BoxOfficeNitroModule>('BoxOfficeNitroModule')
+// ==================== LAZY SINGLETON ====================
+// IMPORTANT: Do NOT call NitroModules.createHybridObject() at module scope.
+// This file gets imported very early (e.g. during Expo Router's route-tree
+// discovery, before native modules have finished registering), and an eager
+// top-level call here can throw "Cannot read property 'prototype' of
+// undefined" if the native HybridObject registry isn't ready yet.
+//
+// Instead, resolve the hybrid object lazily on first real use, and cache it.
 
+let _boxOfficeNitroModule: BoxOfficeNitroModule | undefined
 
+export function getBoxOfficeNitroModule(): BoxOfficeNitroModule {
+  if (!_boxOfficeNitroModule) {
+    _boxOfficeNitroModule = NitroModules.createHybridObject<BoxOfficeNitroModule>('BoxOfficeNitroModule')
+  }
+  return _boxOfficeNitroModule
+}

@@ -31,6 +31,9 @@ export class KuryanaMetadataAdapter {
         genres: item.genres || [],
         runtime: item.duration ? parseInt(item.duration) : undefined,
         cast: [],
+        // Kuryana never provides a full release date string, only a bare year —
+        // callers doing recency checks must fall back to `year` for this source.
+        source: 'kuryana',
       }))
     } catch (error) {
       console.error('[KuryanaMetadataAdapter] Search failed:', error)
@@ -65,6 +68,7 @@ export class KuryanaMetadataAdapter {
             ids: {},
           },
         })) || [],
+        source: 'kuryana',
       }
     } catch (error) {
       console.error(`[KuryanaMetadataAdapter] Get by ID ${id} failed:`, error)

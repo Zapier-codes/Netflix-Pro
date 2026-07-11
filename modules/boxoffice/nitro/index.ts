@@ -3,7 +3,7 @@
  * Re-exports the JSI module and all shared types.
  */
 
-export { BoxOfficeNitroModule } from './BoxOfficeNitroModule.nitro'
+export { getBoxOfficeNitroModule } from './BoxOfficeNitroModule.nitro'
 export type {
   BoxOfficeNitroModule as IBoxOfficeNitroModule,
 } from './BoxOfficeNitroModule.nitro'

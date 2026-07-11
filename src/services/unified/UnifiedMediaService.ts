@@ -3,7 +3,7 @@
  * Coordinates metadata, streaming, subtitles, and social features.
  */
 
-import { MetadataAggregatorNew } from './metadata/MetadataAggregatorNew'
+import { MetadataAggregator } from './metadata/MetadataAggregatorNew'
 import { ProviderRegistry } from './ProviderRegistry'
 import { StreamNormalizer } from './StreamNormalizer'
 import { UnifiedSubtitles } from './subtitles/UnifiedSubtitles'
@@ -17,13 +17,13 @@ import { NormalizedStream } from './types/StreamTypes'
 import { IMetadataResult } from './types/MetadataTypes'
 
 export class UnifiedMediaService {
-  private MetadataAggregatorNew: MetadataAggregatorNew
+  private metadataAggregator: MetadataAggregator
   private providerRegistry: ProviderRegistry
   private subtitleService: UnifiedSubtitles
   private initialized: boolean = false
 
   constructor() {
-    this.MetadataAggregatorNew = new MetadataAggregatorNew()
+    this.metadataAggregator = new MetadataAggregator()
     this.providerRegistry = new ProviderRegistry()
     this.subtitleService = new UnifiedSubtitles()
   }
@@ -50,7 +50,7 @@ export class UnifiedMediaService {
     const { query, type, year, limit = 20 } = options
 
     // Search metadata sources
-    const metadataResults = await this.MetadataAggregatorNew.search(query, type, limit)
+    const metadataResults = await this.metadataAggregator.search(query, type, limit)
 
     // Convert to unified results
     const results: UnifiedMediaResult[] = metadataResults.map(meta => ({
@@ -58,6 +58,7 @@ export class UnifiedMediaService {
       title: meta.title,
       type: meta.type,
       year: meta.year,
+      releaseDate: meta.releaseDate,
       poster: meta.poster,
       backdrop: meta.backdrop,
       overview: meta.overview,
@@ -65,11 +66,20 @@ export class UnifiedMediaService {
       genres: meta.genres,
       runtime: meta.runtime,
       cast: meta.cast,
+      source: meta.source,
       sources: [],
       metadata: meta,
     }))
 
     return results.slice(0, limit)
+  }
+
+  /**
+   * Get trending content across all metadata sources.
+   */
+  async getTrending(limit: number = 20): Promise<IMetadataResult[]> {
+    this.ensureInitialized()
+    return this.metadataAggregator.getTrending(limit)
   }
 
   /**
@@ -132,7 +142,7 @@ export class UnifiedMediaService {
     this.ensureInitialized()
 
     const [metadata, streams, subtitles] = await Promise.allSettled([
-      this.MetadataAggregatorNew.getById(id, type),
+      this.metadataAggregator.getById(id, type),
       this.getStreams({
         id,
         type,

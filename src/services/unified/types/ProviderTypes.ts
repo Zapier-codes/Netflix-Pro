@@ -723,6 +723,8 @@ export interface UnifiedMediaResult {
   title: string;
   type: 'movie' | 'tv';
   year?: number;
+  /** Full release/air date string, when the source provider exposes one (see IMetadataResult). */
+  releaseDate?: string;
   poster?: string;
   backdrop?: string;
   overview?: string;
@@ -730,6 +732,8 @@ export interface UnifiedMediaResult {
   genres?: string[];
   runtime?: number;
   cast?: unknown[];
+  /** Which metadata provider this came from (e.g. 'tmdb', 'kuryana', 'moviebox'). */
+  source?: string;
   sources: MediaStreamSource[];
   metadata: IMetadataResult;
 }

@@ -104,11 +104,14 @@ export type {
 } from './BoxOfficeBridge.types'
 
 // ==================== NITRO EXPORTS (IF AVAILABLE) ====================
+// NOTE: getBoxOfficeNitroModule() is a lazy getter, not a top-level
+// instance. Do not call it at module scope - only inside functions,
+// hooks, or methods, after the app has mounted.
 
 export {
-  BoxOfficeNitroModule,
+  getBoxOfficeNitroModule,
 } from '../nitro'
 
 export type {
-  BoxOfficeNitroModule as IBoxOfficeNitroModule,
+  IBoxOfficeNitroModule,
 } from '../nitro'
