@@ -21,12 +21,11 @@ allprojects {
     }
 }
 
-apply plugin: "expo-root-project"
-apply plugin: "com.facebook.react.rootproject"
 // Force a single consistent NDK/SDK version across all subprojects.
-// Without this, Expo library modules (e.g. expo-updates) fall back to
-// their own bundled default ndkVersion instead of the one resolved by
-// the expo-root-project plugin above, causing a [CXX1104] mismatch.
+// Must run BEFORE expo-root-project / react-native.rootproject are applied,
+// since those plugins eagerly evaluate some subprojects during their own
+// apply() — registering afterEvaluate after that point throws
+// "project is already evaluated".
 subprojects { subproject ->
     afterEvaluate {
         if (subproject.hasProperty("android")) {
@@ -36,3 +35,6 @@ subprojects { subproject ->
         }
     }
 }
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"
