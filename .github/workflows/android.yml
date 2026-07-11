@@ -309,8 +309,10 @@ jobs:
           CHAQUOPY_PYTHON_VERSION: ${{ env.CHAQUOPY_PYTHON_VERSION }}
           CHAQUOPY_NO_LICENSE: ${{ env.CHAQUOPY_NO_LICENSE }}
 
+      # TEMPORARY: continue-on-error until GitHub storage quota recalculates (6-12 hours)
       - name: Upload APK
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: debug-apk-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/*.apk
