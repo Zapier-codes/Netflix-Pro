@@ -11,7 +11,6 @@ on:
         default: false
 
 jobs:
-  # ─── CLEANUP FIRST: Delete old artifacts and all old releases ───
   cleanup:
     name: Cleanup
     runs-on: ubuntu-latest
@@ -56,20 +55,19 @@ jobs:
           done
           echo "✅ All releases deleted"
 
-  # ─── BUILD WHEELS (internal only, no release output) ───
   build-wheels:
     uses: ./.github/workflows/build-android-wheels.yml
     needs: cleanup
     secrets: inherit
     permissions:
       contents: write
+    with:
+      release_tag: android-wheels-latest   # <-- FIXED
 
-  # ─── BUILD APK ───
   build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
     needs: [cleanup, build-wheels]
-
     steps:
       - name: Free disk space
         run: |
@@ -268,7 +266,6 @@ jobs:
           CHAQUOPY_PYTHON_VERSION: ${{ env.CHAQUOPY_PYTHON_VERSION }}
           CHAQUOPY_NO_LICENSE: ${{ env.CHAQUOPY_NO_LICENSE }}
 
-      # ─── Upload APK to single release, no artifacts ───
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
