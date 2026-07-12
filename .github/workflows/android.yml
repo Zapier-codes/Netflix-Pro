@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [cleanup, build-wheels]
     permissions:
-      contents: write    # <-- FIXED: Added write permission for releases
+      contents: write
     steps:
       - name: Free disk space
         run: |
@@ -201,10 +201,14 @@ jobs:
           for whl in "$WHEELS_DIR"/*.whl; do
             [ -f "$whl" ] || continue
             name=$(basename "$whl")
-            [[ "$name" == *cp313* ]] || { echo "❌ Wrong Python version: $name"; exit 1; }
+            # Only check native wheels for Python version; pure Python wheels are platform-independent
+            if [[ "$name" == *-android_* ]]; then
+              [[ "$name" == *cp313* ]] || { echo "❌ Wrong Python version: $name"; exit 1; }
+            fi
           done
           ls "$WHEELS_DIR"/pydantic_core*.whl 1>/dev/null 2>&1 || { echo "❌ Missing pydantic-core wheel!"; exit 1; }
           ls "$WHEELS_DIR"/jiter*.whl 1>/dev/null 2>&1 || { echo "❌ Missing jiter wheel!"; exit 1; }
+          ls "$WHEELS_DIR"/moviebox_api*.whl 1>/dev/null 2>&1 || { echo "❌ Missing moviebox-api wheel!"; exit 1; }
 
       - name: Cache Chaquopy Python packages
         uses: actions/cache@v4
@@ -258,7 +262,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          [ "${{ github.event.inputs.fresh_build }}" = "true" ] && ./gradlew clean
+          [ "${{ github.event.inputs.fresh_build }}" = 'true' ] && ./gradlew clean
           ./gradlew assembleDebug \
             --no-daemon --build-cache --stacktrace \
             -PreactNativeArchitectures=arm64-v8a,x86_64
