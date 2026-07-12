@@ -1,15 +1,23 @@
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
-import ApkUpdate from 'rn-apk-update';
+// NOTE: the legacy submodule is used deliberately — getContentUriAsync()
+// (needed to hand the downloaded APK to the system installer) only exists
+// on expo-file-system's legacy API, not the newer File/Directory API.
+import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
+// Single source of truth for the app version: read directly from package.json
+// at build time (Metro supports JSON imports out of the box) instead of
+// expo-constants or a duplicated process.env value.
+// Adjust the relative path if updateChecker.tsx doesn't live at src/utils/.
+import packageJson from '../../package.json';
 
 const GITHUB_OWNER = 'Zapier-codes';
 const GITHUB_REPO = 'Netflix-Pro';
 const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/android-apk-latest`;
 const APK_RELEASE_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/android-apk-latest`;
 
-const CURRENT_VERSION = Constants.expoConfig?.version;
+const CURRENT_VERSION: string = packageJson.version;
 const CHECK_FOR_UPDATES_KEY = '@check_for_updates_enabled';
 const LAST_NATIVE_CHECK_KEY = '@last_native_check';
 
@@ -60,6 +68,55 @@ const checkNativeUpdate = async () => {
   }
 };
 
+// ─── Download an APK and hand it to the system installer (Android only) ───
+// iOS has no equivalent — sideloaded APK installs aren't a thing there, so
+// callers should fall back to Linking.openURL(releaseUrl) on iOS.
+const downloadAndInstallApk = async (
+  apkUrl: string,
+  onProgress?: (percent: number) => void
+): Promise<void> => {
+  if (Platform.OS !== 'android') {
+    throw new Error('APK install is only supported on Android');
+  }
+
+  const destination = `${FileSystem.cacheDirectory}update.apk`;
+
+  // Clean up any partial download from a previous attempt.
+  const existing = await FileSystem.getInfoAsync(destination);
+  if (existing.exists) {
+    await FileSystem.deleteAsync(destination, { idempotent: true });
+  }
+
+  const downloadResumable = FileSystem.createDownloadResumable(
+    apkUrl,
+    destination,
+    {},
+    (progress) => {
+      if (onProgress && progress.totalBytesExpectedToWrite > 0) {
+        const percent = Math.round(
+          (progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100
+        );
+        onProgress(percent);
+      }
+    }
+  );
+
+  const result = await downloadResumable.downloadAsync();
+  if (!result || result.status !== 200) {
+    throw new Error(`APK download failed with status ${result?.status ?? 'unknown'}`);
+  }
+
+  // Convert the file:// URI to a content:// URI so the system package
+  // installer (a different app) is allowed to read it.
+  const contentUri = await FileSystem.getContentUriAsync(result.uri);
+
+  await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+    data: contentUri,
+    type: 'application/vnd.android.package-archive',
+    flags: 1, // Intent.FLAG_GRANT_READ_URI_PERMISSION
+  });
+};
+
 // ─── MAIN: Orchestrate both tiers ───
 export const checkForUpdates = async (showAlert = true) => {
   // 1. Always check JS updates first (silent)
@@ -81,15 +138,16 @@ export const checkForUpdates = async (showAlert = true) => {
           {
             text: 'Download & Install',
             onPress: () => {
-              if (nativeUpdate.apkUrl) {
-                // Use rn-apk-update for full APK install
-                ApkUpdate.downloadAndInstallApk(nativeUpdate.apkUrl, {
-                  onProgress: (progress: number) => {
-                    console.log(`APK download: ${progress}%`);
-                  },
-                  onProgressComplete: () => {
-                    console.log('APK download complete');
-                  }
+              if (nativeUpdate.apkUrl && Platform.OS === 'android') {
+                downloadAndInstallApk(nativeUpdate.apkUrl, (percent) => {
+                  console.log(`APK download: ${percent}%`);
+                }).catch((err) => {
+                  console.error('APK install failed:', err);
+                  Alert.alert(
+                    'Install Failed',
+                    'Could not install the update automatically. Opening the release page instead.',
+                    [{ text: 'OK', onPress: () => Linking.openURL(nativeUpdate.releaseUrl) }]
+                  );
                 });
               } else {
                 Linking.openURL(nativeUpdate.releaseUrl);

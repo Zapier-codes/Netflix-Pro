@@ -33,6 +33,10 @@ import { initialize as initializePawns } from '../modules/pawns';
 // ─── BOXOFFICE ENGINE ───
 import { boxOffice } from '../modules/boxoffice';
 
+// ─── APP UPDATE CHECKER (JS bundle via expo-updates + native APK via GitHub release) ───
+// Adjust this path if updateChecker.tsx lives somewhere other than src/utils.
+import { checkForUpdates, getCheckForUpdatesSetting } from '../src/utils/updateChecker';
+
 // Pulled from .env — must be prefixed EXPO_PUBLIC_ to be readable at runtime.
 const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
 
@@ -318,6 +322,31 @@ function AppContent() {
         if (shouldShow) setShowConsentGate(true);
       } catch (err) {
         console.warn('[App] ⚠️ Pawns consent check failed:', err);
+      }
+    })();
+  }, [isInitialized]);
+
+  // ============================================
+  // APP UPDATE CHECK — JS bundle + native APK
+  // ============================================
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    (async () => {
+      try {
+        const updatesEnabled = await getCheckForUpdatesSetting();
+        if (!updatesEnabled) {
+          console.log('[App] ℹ️ Update checks disabled in settings — skipping');
+          return;
+        }
+
+        console.log('[App] 🔍 Checking for updates...');
+        // showAlert=false: suppress the routine "Up to Date" popup on every cold
+        // start. A major native-update Alert still fires regardless, since that
+        // path in checkForUpdates() isn't gated by the showAlert flag.
+        await checkForUpdates(false);
+      } catch (err) {
+        console.warn('[App] ⚠️ Update check failed:', err);
       }
     })();
   }, [isInitialized]);

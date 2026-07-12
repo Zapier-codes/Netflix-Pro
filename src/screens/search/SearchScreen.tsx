@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Zustand Stores
 import { useAppStore } from '../../store/zustand';
@@ -57,10 +58,61 @@ const toRawPosterPath = (fullPosterUrl?: string): string => {
     : fullPosterUrl;
 };
 
-// ─── Sort helper: newest → oldest ───
-const sortNewestFirst = (items: IMetadataResult[]): IMetadataResult[] => {
-  return [...items].sort((a, b) => (b.year || 0) - (a.year || 0));
+// ─── Sort options (MovieBox-style) ───
+type SortOption = 'popularity' | 'rating' | 'release_date' | 'az';
+
+const SORT_OPTIONS: { key: SortOption; label: string; icon: string }[] = [
+  { key: 'popularity', label: 'Popularity', icon: 'flame-outline' },
+  { key: 'rating', label: 'Rating', icon: 'star-outline' },
+  { key: 'release_date', label: 'Release Date', icon: 'calendar-outline' },
+  { key: 'az', label: 'A-Z', icon: 'text-outline' },
+];
+
+const sortResults = (items: IMetadataResult[], sortBy: SortOption): IMetadataResult[] => {
+  const arr = [...items];
+  switch (sortBy) {
+    case 'rating':
+      return arr.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    case 'release_date':
+      return arr.sort((a, b) => (b.year || 0) - (a.year || 0));
+    case 'az':
+      return arr.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    case 'popularity':
+    default:
+      // Popularity falls back to rating when IMetadataResult has no explicit
+      // popularity field — swap in a real popularity field if your API returns one.
+      return arr.sort((a, b) => {
+        const popA = (a as any).popularity ?? (a.rating || 0);
+        const popB = (b as any).popularity ?? (b.rating || 0);
+        return popB - popA;
+      });
+  }
 };
+
+// ─── Local watchlist (self-contained; wire to your real watchlist store if you have one) ───
+const WATCHLIST_KEY = 'search_screen_watchlist_ids';
+
+const getWatchlistIds = async (): Promise<Set<string>> => {
+  try {
+    const raw = await AsyncStorage.getItem(WATCHLIST_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const saveWatchlistIds = async (ids: Set<string>) => {
+  try {
+    await AsyncStorage.setItem(WATCHLIST_KEY, JSON.stringify(Array.from(ids)));
+  } catch {
+    // non-critical local cache — safe to ignore
+  }
+};
+
+// ─── Trending fallback queries for the empty state ───
+const TRENDING_SUGGESTIONS = [
+  'Marvel', 'Korean Drama', 'Action 2024', 'Anime', 'True Crime', 'Comedy',
+];
 
 // ─── Filter Types ───
 interface SearchFilters {
@@ -191,6 +243,16 @@ const SearchScreen = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
+  // ─── Sort control (Popularity / Rating / Release Date / A-Z) ───
+  const [sortBy, setSortBy] = useState<SortOption>('popularity');
+  const [showSortMenu, setShowSortMenu] = useState(false);
+
+  // ─── Results tab segmentation (All / Movies / TV) ───
+  const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv'>('all');
+
+  // ─── Local watchlist ids for inline bookmark toggle ───
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
+
   // ─── Filter State ───
   const [filters, setFilters] = useState<SearchFilters>({
     type: 'all',
@@ -220,6 +282,9 @@ const SearchScreen = () => {
   // ─── Refs for current state ───
   const filtersRef = useRef(filters);
   useEffect(() => { filtersRef.current = filters; }, [filters]);
+
+  const sortByRef = useRef(sortBy);
+  useEffect(() => { sortByRef.current = sortBy; }, [sortBy]);
 
   const activeSearchQueryRef = useRef('');
   const activeModeRef = useRef<ActiveMode>('discover');
@@ -431,7 +496,7 @@ const SearchScreen = () => {
       setResults(withPosters);
 
       const applied = applyFilters(withPosters, currentFilters);
-      const sorted = sortNewestFirst(applied);
+      const sorted = sortResults(applied, sortByRef.current);
       setFilteredResults(sorted);
       setNoResults(sorted.length === 0);
 
@@ -524,14 +589,17 @@ const SearchScreen = () => {
     };
   }, [query, performSearch, resetToDiscover]);
 
-  // ─── Re-apply filters when filters change ───
+  // ─── Re-apply filters, tab, and sort whenever any of them change ───
   useEffect(() => {
     if (results.length > 0) {
-      const filtered = sortNewestFirst(applyFilters(results, filters));
+      const tabFiltered = activeTab === 'all'
+        ? results
+        : results.filter((item) => item.type === activeTab);
+      const filtered = sortResults(applyFilters(tabFiltered, filters), sortBy);
       setFilteredResults(filtered);
       setNoResults(filtered.length === 0);
     }
-  }, [filters, results, applyFilters]);
+  }, [filters, results, applyFilters, sortBy, activeTab]);
 
   // ─── Type filter re-runs search ───
   const isFirstTypeRender = useRef(true);
@@ -556,9 +624,27 @@ const SearchScreen = () => {
       isMounted.current = true;
       loadSearchHistory();
       loadContinueWatching();
+      getWatchlistIds().then((ids) => { if (isMounted.current) setWatchlistIds(ids); });
       return () => { isMounted.current = false; };
     }, [loadSearchHistory, loadContinueWatching])
   );
+
+  // ─── Toggle watchlist membership from search results (no need to open detail) ───
+  const handleToggleWatchlist = useCallback((item: IMetadataResult) => {
+    setWatchlistIds((prev) => {
+      const next = new Set(prev);
+      const id = String(item.id);
+      if (next.has(id)) {
+        next.delete(id);
+        showToast(`Removed "${item.title}" from watchlist`);
+      } else {
+        next.add(id);
+        showToast(`Added "${item.title}" to watchlist`);
+      }
+      saveWatchlistIds(next);
+      return next;
+    });
+  }, [showToast]);
 
   // ─── Handlers ───
   const handleItemPress = useCallback((item: IMetadataResult) => {
@@ -593,6 +679,15 @@ const SearchScreen = () => {
     await clearSearchHistory();
     loadSearchHistory();
     showToast('Search history cleared');
+  };
+
+  // ─── Voice search entry point ───
+  // NOTE: real speech-to-text needs a native module (e.g. @react-native-voice/voice
+  // or expo-speech-recognition) that isn't part of this project yet. Wire your
+  // chosen library's start/stop/result listeners into this handler; for now it
+  // surfaces the affordance without silently pretending to listen.
+  const handleVoiceSearch = () => {
+    showToast('Voice search needs a speech-to-text module wired in — tap to type for now');
   };
 
   const handleClearQuery = () => {
@@ -871,6 +966,149 @@ const SearchScreen = () => {
     );
   };
 
+  // ─── Render results tabs (All / Movies / TV) ───
+  const renderResultsTabs = () => {
+    const tabs: { key: 'all' | 'movie' | 'tv'; label: string }[] = [
+      { key: 'all', label: 'All' },
+      { key: 'movie', label: 'Movies' },
+      { key: 'tv', label: 'TV Shows' },
+    ];
+    return (
+      <View style={styles.tabsRow}>
+        {tabs.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[
+                styles.tabItem,
+                active && { borderBottomColor: colors.gold, borderBottomWidth: 2 },
+              ]}
+              onPress={() => setActiveTab(tab.key)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.tabItemText, { color: active ? colors.gold : colors.textMuted }]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+        {/* People / Collections tabs are omitted — they need a cast/collection search
+            endpoint that unifiedMediaService does not currently expose. */}
+
+        {/* Sort control */}
+        <TouchableOpacity
+          style={styles.sortButton}
+          onPress={() => setShowSortMenu((v) => !v)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="swap-vertical-outline" size={14} color={colors.textMuted} />
+          <Text style={[styles.sortButtonText, { color: colors.textMuted }]}>
+            {SORT_OPTIONS.find((s) => s.key === sortBy)?.label}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // ─── Render sort options dropdown ───
+  const renderSortMenu = () => {
+    if (!showSortMenu) return null;
+    return (
+      <View style={[
+        styles.sortMenu,
+        {
+          backgroundColor: isDark ? 'rgba(30,30,30,0.98)' : 'rgba(255,255,255,0.98)',
+          borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+        }
+      ]}>
+        {SORT_OPTIONS.map((opt) => (
+          <TouchableOpacity
+            key={opt.key}
+            style={styles.sortMenuItem}
+            onPress={() => { setSortBy(opt.key); setShowSortMenu(false); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name={opt.icon as any} size={15} color={sortBy === opt.key ? colors.gold : colors.textMuted} />
+            <Text style={[styles.sortMenuItemText, { color: sortBy === opt.key ? colors.gold : colors.text }]}>
+              {opt.label}
+            </Text>
+            {sortBy === opt.key && <Ionicons name="checkmark" size={15} color={colors.gold} />}
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  // ─── Recent searches as horizontal chips (not buried in a dropdown) ───
+  const renderRecentSearchChips = () => {
+    if (searchHistory.length === 0) return null;
+    return (
+      <View style={styles.recentChipsContainer}>
+        <View style={styles.recentChipsHeader}>
+          <Text style={[styles.recentChipsTitle, { color: colors.textMuted }]}>Recent</Text>
+          <TouchableOpacity onPress={handleClearAllHistory}>
+            <Text style={[styles.recentChipsClear, { color: colors.gold }]}>Clear all</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.recentChipsScroll}
+        >
+          {searchHistory.map((historyItem, index) => (
+            <TouchableOpacity
+              key={`recent-chip-${index}`}
+              style={[
+                styles.recentChip,
+                {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                }
+              ]}
+              onPress={() => handleHistoryItemPress(historyItem)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+              <Text style={[styles.recentChipText, { color: colors.text }]} numberOfLines={1}>
+                {historyItem}
+              </Text>
+              <TouchableOpacity
+                onPress={() => handleRemoveHistoryItem(historyItem)}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="close" size={12} color={colors.textMuted} />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // ─── Trending suggestion chips shown in the empty state ───
+  const renderTrendingSuggestionChips = () => (
+    <View style={styles.trendingChipsContainer}>
+      {TRENDING_SUGGESTIONS.map((label) => (
+        <TouchableOpacity
+          key={label}
+          style={[
+            styles.trendingChip,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+              borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+            }
+          ]}
+          onPress={() => { setQuery(label); performSearch(label, 'typed', 'Searched Results', undefined, true); }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="trending-up-outline" size={12} color={colors.gold} />
+          <Text style={[styles.trendingChipText, { color: colors.text }]}>{label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
   // ─── Render category cards ───
   const renderCategoryCards = () => (
     <View style={styles.categoryGrid}>
@@ -897,27 +1135,78 @@ const SearchScreen = () => {
   );
 
   // ─── Card renderers ───
-  const renderGridCard = (item: IMetadataResult) => (
-    <TouchableOpacity
-      key={`${(item as any).source || 'default'}-${item.type}-${item.id}`}
-      style={styles.trendingCard}
-      onPress={() => handleItemPress(item)}
-      activeOpacity={0.7}
-    >
-      <Image
-        source={item.poster ? { uri: item.poster } : require('../../../assets/icon.png')}
-        style={styles.trendingPoster}
-        resizeMode="cover"
-      />
-      <Text style={[styles.trendingTitle, { color: colors.text }]} numberOfLines={1}>
-        {item.title}
-      </Text>
-    </TouchableOpacity>
-  );
+  const renderGridCard = (item: IMetadataResult, rank?: number) => {
+    const isBookmarked = watchlistIds.has(String(item.id));
+    const runtimeLabel = (item as any).runtime
+      ? `${Math.floor((item as any).runtime / 60)}h ${(item as any).runtime % 60}m`
+      : null;
+    const metaChips = [runtimeLabel, item.certification, item.year].filter(Boolean);
 
-  const renderCardGrid = (items: IMetadataResult[]) => (
+    return (
+      <TouchableOpacity
+        key={`${(item as any).source || 'default'}-${item.type}-${item.id}`}
+        style={styles.trendingCard}
+        onPress={() => handleItemPress(item)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.posterWrap}>
+          <Image
+            source={item.poster ? { uri: item.poster } : require('../../../assets/icon.png')}
+            style={styles.trendingPoster}
+            resizeMode="cover"
+          />
+
+          {/* Rank badge (Top 10 style) */}
+          {rank != null && (
+            <View style={styles.rankBadge}>
+              <Text style={styles.rankBadgeText}>{rank}</Text>
+            </View>
+          )}
+
+          {/* Rating badge, top-right */}
+          {!!item.rating && (
+            <View style={styles.ratingBadge}>
+              <Ionicons name="star" size={9} color="#000" />
+              <Text style={styles.ratingBadgeText}>{item.rating.toFixed(1)}</Text>
+            </View>
+          )}
+
+          {/* HD / source quality tag, bottom-left */}
+          <View style={styles.hdBadge}>
+            <Text style={styles.hdBadgeText}>HD</Text>
+          </View>
+
+          {/* Inline watchlist toggle — add/remove without opening detail */}
+          <TouchableOpacity
+            style={styles.bookmarkButton}
+            onPress={(e) => { e.stopPropagation?.(); handleToggleWatchlist(item); }}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Ionicons
+              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+              size={15}
+              color={isBookmarked ? colors.gold : '#fff'}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={[styles.trendingTitle, { color: colors.text }]} numberOfLines={1}>
+          {item.title}
+        </Text>
+
+        {/* Metadata chip line: runtime • certification • year */}
+        {metaChips.length > 0 && (
+          <Text style={[styles.trendingMeta, { color: colors.textMuted }]} numberOfLines={1}>
+            {metaChips.join(' • ')}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderCardGrid = (items: IMetadataResult[], rankedTop10: boolean = false) => (
     <View style={styles.trendingGrid}>
-      {items.map(renderGridCard)}
+      {items.map((item, index) => renderGridCard(item, rankedTop10 && index < 10 ? index + 1 : undefined))}
     </View>
   );
 
@@ -953,6 +1242,7 @@ const SearchScreen = () => {
       <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
         Find content from TMDB, MovieBox, and more
       </Text>
+      {renderTrendingSuggestionChips()}
     </View>
   );
 
@@ -993,6 +1283,15 @@ const SearchScreen = () => {
           Clear all filters
         </Text>
       </TouchableOpacity>
+
+      {trendingItems.length > 0 && (
+        <View style={styles.noResultsFallback}>
+          <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginTop: 0 }]}>
+            You might like
+          </Text>
+          {renderCardGrid(trendingItems.slice(0, 8))}
+        </View>
+      )}
     </View>
   );
 
@@ -1051,13 +1350,30 @@ const SearchScreen = () => {
             <Ionicons name="close-circle" size={17} color={colors.textMuted} />
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          onPress={handleVoiceSearch}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ marginLeft: 10 }}
+        >
+          <Ionicons name="mic-outline" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
       </View>
+
+      {/* Search scope indicator while a search is in flight */}
+      {loading && !isDiscover && (
+        <Text style={[styles.searchScopeText, { color: colors.textMuted }]}>
+          Searching TMDB · Kuryana · MovieBox…
+        </Text>
+      )}
 
       {/* Search Suggestions Dropdown */}
       {renderSuggestions()}
 
       {/* Continue Watching Row */}
       {isDiscover && renderContinueWatching()}
+
+      {/* Recent searches as scrollable chips (discover mode only) */}
+      {isDiscover && renderRecentSearchChips()}
 
       {/* Filters */}
       {renderFilters()}
@@ -1074,7 +1390,9 @@ const SearchScreen = () => {
           (trendingItems.length > 0 || preloadLoading) && (
             <>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Popular Searches</Text>
-              {preloadLoading && trendingItems.length === 0 ? renderSkeletonGrid(8) : renderCardGrid(trendingItems)}
+              {preloadLoading && trendingItems.length === 0
+                ? renderSkeletonGrid(8)
+                : renderCardGrid(trendingItems, true)}
             </>
           )
         ) : (
@@ -1088,6 +1406,11 @@ const SearchScreen = () => {
                 </Text>
               )}
             </View>
+
+            {/* Segmented result tabs + sort control */}
+            {!loading && results.length > 0 && renderResultsTabs()}
+            {!loading && results.length > 0 && renderSortMenu()}
+
             {loading
               ? renderSkeletonGrid(12)
               : (filteredResults.length > 0 ? renderCardGrid(filteredResults) : (noResults && renderNoResultsState()))}
@@ -1332,6 +1655,9 @@ const styles = StyleSheet.create({
     width: GRID_CARD_WIDTH,
     marginBottom: 16,
   },
+  posterWrap: {
+    position: 'relative',
+  },
   trendingPoster: {
     width: GRID_CARD_WIDTH,
     height: GRID_CARD_HEIGHT,
@@ -1342,6 +1668,69 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 6,
+  },
+  trendingMeta: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  rankBadge: {
+    position: 'absolute',
+    left: 4,
+    bottom: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  rankBadgeText: {
+    color: '#E8A838',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  ratingBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  ratingBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#000',
+  },
+  hdBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  hdBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  bookmarkButton: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   skeletonTitleBar: {
     height: 11,
@@ -1380,6 +1769,133 @@ const styles = StyleSheet.create({
   clearFiltersText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  noResultsFallback: {
+    width: '100%',
+    alignSelf: 'stretch',
+    marginTop: 24,
+  },
+
+  // ─── Results Tabs + Sort ───
+  tabsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    gap: 4,
+  },
+  tabItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sortButton: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  sortButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sortMenu: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  sortMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  sortMenuItemText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+
+  // ─── Recent Search Chips ───
+  recentChipsContainer: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  recentChipsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  recentChipsTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  recentChipsClear: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  recentChipsScroll: {
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  recentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+  },
+  recentChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    maxWidth: 120,
+  },
+
+  // ─── Trending Suggestion Chips (empty state) ───
+  trendingChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 20,
+    paddingHorizontal: 10,
+  },
+  trendingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+  },
+  trendingChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // ─── Search Scope Indicator ───
+  searchScopeText: {
+    fontSize: 11,
+    paddingHorizontal: 16,
+    marginBottom: 4,
+    fontStyle: 'italic',
   },
 });
 

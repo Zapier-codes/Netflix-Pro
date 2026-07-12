@@ -1,4 +1,4 @@
-// src/api/kuryana/kuryanaApi.ts
+// src/services/unified/metadata/KuryanaMetadata.ts
 import axios from 'axios';
 
 const KURYANA_BASE_URL = 'https://kuryana.tbdh.app';
@@ -45,80 +45,73 @@ export interface KuryanaRecommendation {
 export class KuryanaApiService {
   async searchDramas(query: string): Promise<KuryanaDrama[]> {
     try {
-      // Fix: Use backticks and ${} for template literal
-      const response = await axios.get(`${KURYANA_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
-      return response.data.results || [];
-    } catch (error) {
-      console.error('[Kuryana] Search error:', error);
+      // FIXED: /search/q/{query} (NOT /api/search?q=)
+      const response = await axios.get(`${KURYANA_BASE_URL}/search/q/${encodeURIComponent(query)}`);
+      return response.data.results?.dramas || [];
+    } catch (error: any) {
+      console.error('[Kuryana] Search error:', error.message);
       return [];
     }
   }
 
   async getDramaDetails(slug: string): Promise<KuryanaDrama | null> {
     try {
-      // Fix: Use backticks and ${} for template literal with slug parameter
-      const response = await axios.get(`${KURYANA_BASE_URL}/api/drama/${slug}`);
+      // FIXED: /id/{slug} (NOT /api/drama/{slug})
+      const response = await axios.get(`${KURYANA_BASE_URL}/id/${slug}`);
       return response.data;
-    } catch (error) {
-      console.error('[Kuryana] Details error:', error);
+    } catch (error: any) {
+      console.error('[Kuryana] Details error:', error.message);
       return null;
     }
   }
 
   async getDramaReviews(slug: string): Promise<KuryanaReview[]> {
     try {
-      // Fix: Use backticks and ${} for template literal with slug parameter
-      const response = await axios.get(`${KURYANA_BASE_URL}/api/drama/${slug}/reviews`);
+      // FIXED: /id/{slug}/reviews (NOT /api/drama/{slug}/reviews)
+      const response = await axios.get(`${KURYANA_BASE_URL}/id/${slug}/reviews`);
       return response.data.reviews || [];
-    } catch (error) {
-      console.error('[Kuryana] Reviews error:', error);
+    } catch (error: any) {
+      console.error('[Kuryana] Reviews error:', error.message);
       return [];
     }
   }
 
-  async getDramaRecommendations(slug: string): Promise<KuryanaRecommendation[]> {
+  async getDramaCast(slug: string): Promise<KuryanaCast[]> {
     try {
-      // Fix: Use backticks and ${} for template literal with slug parameter
-      const response = await axios.get(`${KURYANA_BASE_URL}/api/drama/${slug}/recommendations`);
-      return response.data.recommendations || [];
-    } catch (error) {
-      console.error('[Kuryana] Recommendations error:', error);
+      // NEW: /id/{slug}/cast
+      const response = await axios.get(`${KURYANA_BASE_URL}/id/${slug}/cast`);
+      return response.data.cast || [];
+    } catch (error: any) {
+      console.error('[Kuryana] Cast error:', error.message);
+      return [];
+    }
+  }
+
+  async getDramaEpisodes(slug: string): Promise<any[]> {
+    try {
+      // NEW: /id/{slug}/episodes
+      const response = await axios.get(`${KURYANA_BASE_URL}/id/${slug}/episodes`);
+      return response.data.episodes || [];
+    } catch (error: any) {
+      console.error('[Kuryana] Episodes error:', error.message);
       return [];
     }
   }
 
   async getSeasonalDramas(year: number, quarter: number): Promise<KuryanaDrama[]> {
     try {
-      // Fix: Use backticks and ${} for template literal with parameters
-      const response = await axios.get(`${KURYANA_BASE_URL}/api/seasonal/${year}/${quarter}`);
+      // FIXED: /seasonal/{year}/{quarter} (NOT /api/seasonal/{year}/{quarter})
+      const response = await axios.get(`${KURYANA_BASE_URL}/seasonal/${year}/${quarter}`);
       return response.data.results || [];
-    } catch (error) {
-      console.error('[Kuryana] Seasonal error:', error);
+    } catch (error: any) {
+      console.error('[Kuryana] Seasonal error:', error.message);
       return [];
     }
   }
 
-  async getTrendingDramas(): Promise<KuryanaDrama[]> {
-    try {
-      // New method for trending dramas
-      const response = await axios.get(`${KURYANA_BASE_URL}/api/trending`);
-      return response.data.results || [];
-    } catch (error) {
-      console.error('[Kuryana] Trending error:', error);
-      return [];
-    }
-  }
-
-  async getPopularDramas(): Promise<KuryanaDrama[]> {
-    try {
-      // New method for popular dramas
-      const response = await axios.get(`${KURYANA_BASE_URL}/api/popular`);
-      return response.data.results || [];
-    } catch (error) {
-      console.error('[Kuryana] Popular error:', error);
-      return [];
-    }
-  }
+  // REMOVED: getTrendingDramas() — endpoint doesn't exist
+  // REMOVED: getPopularDramas() — endpoint doesn't exist
+  // REMOVED: getDramaRecommendations() — endpoint doesn't exist
 }
 
 export const kuryanaApiService = new KuryanaApiService();
