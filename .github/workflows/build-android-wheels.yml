@@ -148,9 +148,8 @@ jobs:
         if: steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
         run: |
           mkdir -p "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
-          pip download moviebox-api==0.5.5.post1 --no-deps \
-            --extra-index-url https://www.piwheels.org/simple \
-            -d "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
+          curl -L -o "${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api-0.5.5.post1-py3-none-any.whl" \
+            "https://www.piwheels.org/simple/moviebox-api/moviebox_api-0.5.5.post1-py3-none-any.whl"
 
       - name: Create or update wheels release
         uses: softprops/action-gh-release@v2
