@@ -78,14 +78,18 @@ jobs:
       - name: Check cached moviebox-api wheel completeness
         id: check-moviebox-api
         run: |
-          required=(
-            "moviebox_api-0.5.5.post1-py3-none-any.whl"
-          )
-          all_present=true
-          for whl in "${required[@]}"; do
-            [ -f "${{ env.MOVIEBOX_API_WHEELS_DIR }}/$whl" ] || all_present=false
-          done
-          echo "moviebox_api_present=$all_present" >> "$GITHUB_OUTPUT"
+          whl_path="${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api-0.5.5.post1-py3-none-any.whl"
+          if [ -f "$whl_path" ]; then
+            if unzip -t "$whl_path" >/dev/null 2>&1; then
+              echo "moviebox_api_present=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "❌ Cached moviebox-api wheel is corrupted, rebuilding..."
+              rm -f "$whl_path"
+              echo "moviebox_api_present=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "moviebox_api_present=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Restore cibuildwheel cache
         uses: actions/cache@v4
@@ -144,12 +148,38 @@ jobs:
           mkdir -p "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
           cibuildwheel --output-dir "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
 
-      - name: Download moviebox-api wheel
+      - name: Build moviebox-api wheel from Git source
         if: steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
         run: |
           mkdir -p "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
-          curl -L -o "${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api-0.5.5.post1-py3-none-any.whl" \
-            "https://www.piwheels.org/simple/moviebox-api/moviebox_api-0.5.5.post1-py3-none-any.whl"
+          
+          # Clone from GitHub
+          git clone --depth 1 https://github.com/Simatwa/moviebox-api.git /tmp/moviebox-api-src
+          
+          cd /tmp/moviebox-api-src
+          
+          # Build wheel from source
+          pip wheel . --no-deps -w "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
+          
+          # Find the built wheel (version may vary slightly)
+          whl_path=$(ls -t ${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api*.whl | head -1)
+          
+          # Verify it's a valid wheel
+          if [ -z "$whl_path" ] || ! unzip -t "$whl_path" >/dev/null 2>&1; then
+            echo "❌ Built moviebox-api wheel is invalid or missing"
+            exit 1
+          fi
+          
+          # Rename to expected version if needed
+          expected_path="${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api-0.5.5.post1-py3-none-any.whl"
+          if [ "$whl_path" != "$expected_path" ]; then
+            mv "$whl_path" "$expected_path"
+            whl_path="$expected_path"
+          fi
+          
+          echo "✅ moviebox-api wheel built and verified:"
+          ls -la "$whl_path"
+          unzip -l "$whl_path" | head -10
 
       - name: Create or update wheels release
         uses: softprops/action-gh-release@v2
