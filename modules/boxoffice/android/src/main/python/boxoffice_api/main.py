@@ -1,7 +1,7 @@
 """
 BoxOffice Engine - Core Python engine for the BoxOffice module.
 Manages the lifecycle, state, and operations of the moviebox.ph backend.
-Uses the real moviebox-api SDK (moviebox_api v1/v2).
+Uses the real moviebox-api SDK (movie_box v1/v2).
 """
 
 import json
@@ -16,7 +16,7 @@ import os
 
 # Real moviebox-api SDK imports
 try:
-    from moviebox_api.v1 import (
+    from movie_box.v1 import (
         MovieAuto,
         Search,
         MovieDetails,
@@ -34,13 +34,13 @@ try:
         SearchSuggestion,
         SubjectType,
     )
-    from moviebox_api.v2 import (
+    from movie_box.v2 import (
         Search as V2Search,
         ItemDetails as V2ItemDetails,
         Homepage as V2Homepage,
         Session as V2Session,
     )
-    from moviebox_api.v1.models import (
+    from movie_box.v1.models import (
         SearchResultsModel,
         SearchResultsItem,
         DownloadableFilesMetadata,

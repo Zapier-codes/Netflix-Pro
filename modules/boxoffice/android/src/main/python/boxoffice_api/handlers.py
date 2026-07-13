@@ -145,7 +145,7 @@ class RequestHandler:
     def handle_search(self, params: Dict) -> Dict[str, Any]:
         """
         Handle search command - search for movies, TV series, music, etc.
-        Maps to moviebox_api.v1.Search or moviebox_api.v2.Search
+        Maps to movie_box.v1.Search or movie_box.v2.Search
         """
         try:
             query = params.get("query", "")
@@ -160,12 +160,12 @@ class RequestHandler:
             session = self._get_session(version)
             
             # Map string subject type to enum
-            from moviebox_api.v1 import SubjectType
+            from movie_box.v1 import SubjectType
             subject_type = getattr(SubjectType, subject_type_str.upper(), SubjectType.ALL)
             
             # Use v2 Search by default, v1 as fallback
             if version == "v2":
-                from moviebox_api.v2 import Search as V2Search
+                from movie_box.v2 import Search as V2Search
                 search = V2Search(
                     session=session,
                     query=query,
@@ -174,7 +174,7 @@ class RequestHandler:
                     per_page=per_page
                 )
             else:
-                from moviebox_api.v1 import Search
+                from movie_box.v1 import Search
                 search = Search(
                     session=session,
                     query=query,
@@ -213,7 +213,7 @@ class RequestHandler:
             
             session = self._get_session(version)
             
-            from moviebox_api.v1 import SearchSuggestion
+            from movie_box.v1 import SearchSuggestion
             suggestion = SearchSuggestion(session=session, query=query)
             results = suggestion.get_content_model_sync()
             
@@ -247,7 +247,7 @@ class RequestHandler:
             
             session = self._get_session(version)
             
-            from moviebox_api.v1 import Trending
+            from movie_box.v1 import Trending
             trending = Trending(
                 session=session,
                 page=page,
@@ -276,7 +276,7 @@ class RequestHandler:
             
             session = self._get_session(version)
             
-            from moviebox_api.v1 import Homepage
+            from movie_box.v1 import Homepage
             homepage = Homepage(session=session)
             results = homepage.get_content_model_sync()
             
@@ -320,7 +320,7 @@ class RequestHandler:
             
             session = self._get_session(version)
             
-            from moviebox_api.v1 import HotMoviesAndTVSeries
+            from movie_box.v1 import HotMoviesAndTVSeries
             hot = HotMoviesAndTVSeries(session=session)
             results = hot.get_content_model_sync()
             
@@ -351,7 +351,7 @@ class RequestHandler:
             
             session = self._get_session(version)
             
-            from moviebox_api.v1 import PopularSearch
+            from movie_box.v1 import PopularSearch
             popular = PopularSearch(session=session)
             results = popular.get_content_model_sync()
             
@@ -376,7 +376,7 @@ class RequestHandler:
     def handle_get_movie_details(self, params: Dict) -> Dict[str, Any]:
         """
         Handle get_movie_details command - returns detailed movie info.
-        Uses moviebox_api.v1.MovieDetails
+        Uses movie_box.v1.MovieDetails
         """
         try:
             url_or_item = params.get("url_or_item")
@@ -386,7 +386,7 @@ class RequestHandler:
             version = params.get("version", "v1")
             session = self._get_session(version)
             
-            from moviebox_api.v1 import MovieDetails
+            from movie_box.v1 import MovieDetails
             details = MovieDetails(
                 url_or_item=url_or_item,
                 session=session
@@ -421,7 +421,7 @@ class RequestHandler:
     def handle_get_tv_series_details(self, params: Dict) -> Dict[str, Any]:
         """
         Handle get_tv_series_details command - returns detailed TV series info.
-        Uses moviebox_api.v1.TVSeriesDetails
+        Uses movie_box.v1.TVSeriesDetails
         """
         try:
             url_or_item = params.get("url_or_item")
@@ -431,7 +431,7 @@ class RequestHandler:
             version = params.get("version", "v1")
             session = self._get_session(version)
             
-            from moviebox_api.v1 import TVSeriesDetails
+            from movie_box.v1 import TVSeriesDetails
             details = TVSeriesDetails(
                 url_or_item=url_or_item,
                 session=session
@@ -462,7 +462,7 @@ class RequestHandler:
     def handle_get_item_details(self, params: Dict) -> Dict[str, Any]:
         """
         Handle get_item_details command - v2 unified item details.
-        Uses moviebox_api.v2.ItemDetails
+        Uses movie_box.v2.ItemDetails
         """
         try:
             url_or_item = params.get("url_or_item")
@@ -471,7 +471,7 @@ class RequestHandler:
             
             session = self._get_session("v2")
             
-            from moviebox_api.v2 import ItemDetails
+            from movie_box.v2 import ItemDetails
             details = ItemDetails(session=session)
             
             # v2 ItemDetails requires setting url_or_item after init
@@ -506,7 +506,7 @@ class RequestHandler:
             version = params.get("version", "v1")
             session = self._get_session(version)
             
-            from moviebox_api.v1 import DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail
+            from movie_box.v1 import DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail
             
             if subject_type == "TV_SERIES":
                 files_detail = DownloadableTVSeriesFilesDetail(
@@ -545,7 +545,7 @@ class RequestHandler:
             year = params.get("year", 0)
             
             # Use MovieAuto for simple auto-download
-            from moviebox_api.v1 import MovieAuto
+            from movie_box.v1 import MovieAuto
             
             auto = MovieAuto(
                 caption_language=caption_language,
@@ -595,7 +595,7 @@ class RequestHandler:
             auto_mode = params.get("auto_mode", False)
             
             # Use Downloader from CLI module for more control
-            from moviebox_api.v1.cli import Downloader
+            from movie_box.v1.cli import Downloader
             
             downloader = Downloader()
             
@@ -695,7 +695,7 @@ class RequestHandler:
     def handle_get_recommendations(self, params: Dict) -> Dict[str, Any]:
         """
         Handle get_recommendations command - get recommendations based on an item.
-        Uses moviebox_api.v1.Recommend
+        Uses movie_box.v1.Recommend
         """
         try:
             url_or_item = params.get("url_or_item")
@@ -708,7 +708,7 @@ class RequestHandler:
             
             session = self._get_session(version)
             
-            from moviebox_api.v1 import Recommend
+            from movie_box.v1 import Recommend
             recommend = Recommend(
                 session=session,
                 url_or_item=url_or_item,

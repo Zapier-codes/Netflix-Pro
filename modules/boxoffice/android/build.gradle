@@ -61,7 +61,7 @@ chaquopy {
             options("--only-binary", ":all:")
             install("pydantic-core==2.33.2")
             install("pydantic==2.11.7")
-            install("moviebox-api==0.5.5.post1")
+            install("movie-box-dl>=2.0.0")
         }
     }
 }

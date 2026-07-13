@@ -22,10 +22,10 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/wheels
       JITER_WHEELS_DIR: ${{ github.workspace }}/wheels/jiter
       PYDANTIC_CORE_WHEELS_DIR: ${{ github.workspace }}/wheels/pydantic-core
-      MOVIEBOX_API_WHEELS_DIR: ${{ github.workspace }}/wheels/moviebox-api
+      MOVIE_BOX_DL_WHEELS_DIR: ${{ github.workspace }}/wheels/movie-box-dl
       JITER_CACHE_KEY: android-wheels-jiter-Linux-0.14.0-cp313-v1
       PYDANTIC_CORE_CACHE_KEY: android-wheels-pydantic-core-Linux-2.33.2-jiter-0.14.0-cp313-v1
-      MOVIEBOX_API_CACHE_KEY: android-wheels-moviebox-api-Linux-0.5.5.post1-cp313-v1
+      MOVIE_BOX_DL_CACHE_KEY: android-wheels-movie-box-dl-Linux-2.0.2-cp313-v1
 
     steps:
       - name: Restore jiter wheels cache
@@ -42,12 +42,12 @@ jobs:
           path: ${{ env.PYDANTIC_CORE_WHEELS_DIR }}
           key: ${{ env.PYDANTIC_CORE_CACHE_KEY }}
 
-      - name: Restore moviebox-api wheel cache
+      - name: Restore movie-box-dl wheel cache
         uses: actions/cache@v4
-        id: moviebox-api-cache
+        id: movie-box-dl-cache
         with:
-          path: ${{ env.MOVIEBOX_API_WHEELS_DIR }}
-          key: ${{ env.MOVIEBOX_API_CACHE_KEY }}
+          path: ${{ env.MOVIE_BOX_DL_WHEELS_DIR }}
+          key: ${{ env.MOVIE_BOX_DL_CACHE_KEY }}
 
       - name: Check cached jiter wheels completeness
         id: check-jiter
@@ -75,20 +75,20 @@ jobs:
           done
           echo "pydantic_core_present=$all_present" >> "$GITHUB_OUTPUT"
 
-      - name: Check cached moviebox-api wheel completeness
-        id: check-moviebox-api
+      - name: Check cached movie-box-dl wheel completeness
+        id: check-movie-box-dl
         run: |
-          whl_path="${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api-0.5.5.post1-py3-none-any.whl"
+          whl_path="${{ env.MOVIE_BOX_DL_WHEELS_DIR }}/movie_box_dl-2.0.2-py3-none-any.whl"
           if [ -f "$whl_path" ]; then
             if unzip -t "$whl_path" >/dev/null 2>&1; then
-              echo "moviebox_api_present=true" >> "$GITHUB_OUTPUT"
+              echo "movie_box_dl_present=true" >> "$GITHUB_OUTPUT"
             else
-              echo "❌ Cached moviebox-api wheel is corrupted, rebuilding..."
+              echo "❌ Cached movie-box-dl wheel is corrupted, rebuilding..."
               rm -f "$whl_path"
-              echo "moviebox_api_present=false" >> "$GITHUB_OUTPUT"
+              echo "movie_box_dl_present=false" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "moviebox_api_present=false" >> "$GITHUB_OUTPUT"
+            echo "movie_box_dl_present=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Restore cibuildwheel cache
@@ -113,15 +113,24 @@ jobs:
           ref: v2.33.2
           path: pydantic-core
 
-      - name: Checkout moviebox-api source
-        if: steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: Simatwa/moviebox-api
-          path: moviebox-api-src
+      - name: Download movie-box-dl from PyPI (no source checkout needed)
+        if: steps.check-movie-box-dl.outputs.movie_box_dl_present != 'true'
+        run: |
+          mkdir -p "${{ env.MOVIE_BOX_DL_WHEELS_DIR }}"
+          pip download --only-binary=:all: --no-deps -d "${{ env.MOVIE_BOX_DL_WHEELS_DIR }}" movie-box-dl==2.0.2
+          
+          # Verify the downloaded wheel
+          whl_path=$(ls -t ${{ env.MOVIE_BOX_DL_WHEELS_DIR }}/movie_box_dl*.whl | head -1)
+          if [ -z "$whl_path" ] || ! unzip -t "$whl_path" >/dev/null 2>&1; then
+            echo "❌ Downloaded movie-box-dl wheel is invalid or missing"
+            exit 1
+          fi
+          
+          echo "✅ movie-box-dl wheel downloaded and verified:"
+          ls -la "$whl_path"
 
       - name: Set up Python 3.13
-        if: steps.check-jiter.outputs.jiter_present != 'true' || steps.check-pydantic-core.outputs.pydantic_core_present != 'true' || steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
+        if: steps.check-jiter.outputs.jiter_present != 'true' || steps.check-pydantic-core.outputs.pydantic_core_present != 'true' || steps.check-movie-box-dl.outputs.movie_box_dl_present != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -155,36 +164,6 @@ jobs:
           mkdir -p "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
           cibuildwheel --output-dir "${{ env.PYDANTIC_CORE_WHEELS_DIR }}"
 
-      - name: Build moviebox-api wheel from Git source
-        if: steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
-        run: |
-          mkdir -p "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
-
-          cd moviebox-api-src
-
-          # Build wheel from source
-          pip wheel . --no-deps -w "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
-          
-          # Find the built wheel (version may vary slightly)
-          whl_path=$(ls -t ${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api*.whl | head -1)
-          
-          # Verify it's a valid wheel
-          if [ -z "$whl_path" ] || ! unzip -t "$whl_path" >/dev/null 2>&1; then
-            echo "❌ Built moviebox-api wheel is invalid or missing"
-            exit 1
-          fi
-          
-          # Rename to expected version if needed
-          expected_path="${{ env.MOVIEBOX_API_WHEELS_DIR }}/moviebox_api-0.5.5.post1-py3-none-any.whl"
-          if [ "$whl_path" != "$expected_path" ]; then
-            mv "$whl_path" "$expected_path"
-            whl_path="$expected_path"
-          fi
-          
-          echo "✅ moviebox-api wheel built and verified:"
-          ls -la "$whl_path"
-          unzip -l "$whl_path" | head -10
-
       - name: Create or update wheels release
         uses: softprops/action-gh-release@v2
         with:
@@ -193,9 +172,9 @@ jobs:
           files: |
             ${{ env.JITER_WHEELS_DIR }}/*.whl
             ${{ env.PYDANTIC_CORE_WHEELS_DIR }}/*.whl
-            ${{ env.MOVIEBOX_API_WHEELS_DIR }}/*.whl
+            ${{ env.MOVIE_BOX_DL_WHEELS_DIR }}/*.whl
           body: |
-            Prebuilt Android wheels for pydantic-core, jiter, and moviebox-api.
+            Prebuilt Android wheels for pydantic-core, jiter, and movie-box-dl.
             **Python:** 3.13 | **ABIs:** arm64-v8a, x86_64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
