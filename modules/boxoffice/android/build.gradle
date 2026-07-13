@@ -58,6 +58,7 @@ chaquopy {
         version = "3.13"
         pip {
             options("--find-links", file("src/main/python/wheels").absolutePath)
+            options("--extra-index-url", "https://www.piwheels.org/simple")
             options("--only-binary", ":all:")
             install("pydantic-core==2.33.2")
             install("pydantic==2.11.7")
