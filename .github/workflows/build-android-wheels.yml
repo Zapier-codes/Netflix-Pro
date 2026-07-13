@@ -113,6 +113,13 @@ jobs:
           ref: v2.33.2
           path: pydantic-core
 
+      - name: Checkout moviebox-api source
+        if: steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: Simatwa/moviebox-api
+          path: moviebox-api-src
+
       - name: Set up Python 3.13
         if: steps.check-jiter.outputs.jiter_present != 'true' || steps.check-pydantic-core.outputs.pydantic_core_present != 'true' || steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
         uses: actions/setup-python@v5
@@ -152,12 +159,9 @@ jobs:
         if: steps.check-moviebox-api.outputs.moviebox_api_present != 'true'
         run: |
           mkdir -p "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
-          
-          # Clone from GitHub
-          git clone --depth 1 https://github.com/Simatwa/moviebox-api.git /tmp/moviebox-api-src
-          
-          cd /tmp/moviebox-api-src
-          
+
+          cd moviebox-api-src
+
           # Build wheel from source
           pip wheel . --no-deps -w "${{ env.MOVIEBOX_API_WHEELS_DIR }}"
           
