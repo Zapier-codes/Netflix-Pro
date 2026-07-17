@@ -1,5 +1,10 @@
 // app/_layout.tsx
-import React, { useEffect, useState, useCallback } from 'react';
+
+// ─── CRITICAL: Import crypto polyfill FIRST ───
+// This uses expo-crypto to provide Node.js crypto functionality for @consumet/extensions
+import './src/crypto-polyfill';
+
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, Text, Platform } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -16,29 +21,156 @@ import { useAppStore } from '../src/store/zustand/store';
 import { ThemeProvider, useTheme, useIsDark } from '../src/contexts/ThemeContext';
 import { AlertProvider } from '../src/contexts/AlertContext';
 
-// Services
+// ─── SERVICES ───
+// All services are imported and initialized at module level
+// This makes them available throughout the app as singletons
+
+// Cache Service
 import { cacheService } from '../src/services/cacheService';
+
+// Preloader Service
 import { preloaderService } from '../src/services/preloaderService';
+
+// Network Service
 import { networkService } from '../src/services/networkService';
+
+// Download Manager
 import downloadManager from '../src/services/downloadManager/DownloadManager';
+
+// Stream Sources
 import { initializeStreamSources } from '../src/services/unified/providers/vidsrc/VidSrcProvider';
 
-// ─── THRILLER PRELOADER ───
+// UNIFIED MEDIA SERVICE - The main orchestrator
+// This is the singleton instance exported from UnifiedMediaService.ts
+import { unifiedMediaService } from '../src/services/unified/UnifiedMediaService';
+
+// Thriller Preloader
 import { thrillerPreloader } from '../src/services/preloader/ThrillerPreloader';
 
 // Pawns consent + SDK
 import { EarningsConsentGate, CONSENT_STORAGE_KEY, checkAndShowConsent } from '../src/components/EarningsConsentGate';
 import { initialize as initializePawns } from '../modules/pawns';
 
-// ─── BOXOFFICE ENGINE ───
+// BoxOffice Engine
 import { boxOffice } from '../modules/boxoffice';
 
-// ─── APP UPDATE CHECKER (JS bundle via expo-updates + native APK via GitHub release) ───
-// Adjust this path if updateChecker.tsx lives somewhere other than src/utils.
+// App Update Checker
 import { checkForUpdates, getCheckForUpdatesSetting } from '../src/utils/updateChecker';
 
-// Pulled from .env — must be prefixed EXPO_PUBLIC_ to be readable at runtime.
+// ─── TMDB API ───
+// Import from the correct location: src/services/unified/metadata/TMDBMetadata.ts
+import tmdbApi from '../src/services/unified/metadata/TMDBMetadata';
+
+// Environment
 const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
+
+// ============================================
+// MODULE-LEVEL INITIALIZATION
+// All services are initialized at module load
+// This ensures they're ready when the app starts
+// ============================================
+
+// Flag to track if module initialization has started
+let moduleInitStarted = false;
+let moduleInitComplete = false;
+let moduleInitPromise: Promise<void> | null = null;
+
+/**
+ * Initialize all services at the module level.
+ * This runs once when the module loads.
+ */
+async function initializeAllServices(): Promise<void> {
+  // Prevent multiple initializations
+  if (moduleInitComplete) {
+    console.log('[App] ✅ Services already initialized');
+    return;
+  }
+
+  if (moduleInitStarted && moduleInitPromise) {
+    console.log('[App] ⏳ Services initialization in progress, waiting...');
+    await moduleInitPromise;
+    return;
+  }
+
+  moduleInitStarted = true;
+  console.log('[App] 🚀 Starting module-level service initialization...');
+
+  moduleInitPromise = (async () => {
+    try {
+      // ─── STEP 1: Initialize BoxOffice Engine ───
+      try {
+        console.log('[BoxOffice] 🚀 Initializing engine...');
+        const configResult = await boxOffice.configure({
+          apiVersion: 'v2',
+          downloadDir: '',
+          captionLanguage: 'English',
+          quality: 'best',
+        });
+        if (!configResult.success) {
+          console.warn('[BoxOffice] ⚠️ Config warning:', configResult.error);
+        }
+        const startResult = await boxOffice.start();
+        if (startResult.success) {
+          console.log('[BoxOffice] ✅ Engine running');
+        } else {
+          console.warn('[BoxOffice] ⚠️ Start failed:', startResult.error);
+        }
+      } catch (err) {
+        console.error('[BoxOffice] ❌ Init error:', err);
+        // Non-fatal: app works without boxoffice
+      }
+
+      // ─── STEP 2: Initialize Unified Media Service ───
+      // This initializes TMDB, Kuryana, and MovieBox providers
+      try {
+        console.log('[App] 🔧 Initializing Unified Media Service...');
+        await unifiedMediaService.initialize();
+        console.log('[App] ✅ Unified Media Service initialized');
+      } catch (err) {
+        console.error('[App] ❌ Unified Media Service failed:', err);
+      }
+
+      // ─── STEP 3: Initialize Network Service ───
+      try {
+        await networkService.initialize();
+        console.log('[App] ✅ Network service initialized');
+      } catch (err) {
+        console.error('[App] ❌ Network service failed:', err);
+      }
+
+      // ─── STEP 4: Initialize Download Manager ───
+      try {
+        await downloadManager.initialize();
+        console.log('[App] ✅ Download manager initialized');
+      } catch (err) {
+        console.error('[App] ❌ Download manager failed:', err);
+      }
+
+      // ─── STEP 5: Initialize Stream Sources ───
+      try {
+        const sources = await initializeStreamSources();
+        console.log('[App] ✅ Stream sources initialized:', sources?.length || 0, 'sources');
+      } catch (err) {
+        console.error('[App] ❌ Stream sources failed:', err);
+      }
+
+      moduleInitComplete = true;
+      console.log('[App] ✅ All services initialized successfully');
+    } catch (err) {
+      console.error('[App] ❌ Module initialization failed:', err);
+      moduleInitComplete = false;
+      throw err;
+    }
+  })();
+
+  await moduleInitPromise;
+}
+
+// Start module-level initialization immediately
+// This runs as soon as the module loads
+initializeAllServices().catch((err) => {
+  console.error('[App] ❌ Fatal: Module initialization failed:', err);
+});
 
 // ============================================
 // LOADING SCREEN
@@ -137,7 +269,7 @@ function AppContent() {
 
   const [error, setError] = useState<string | null>(null);
   const [showConsentGate, setShowConsentGate] = useState(false);
-  const [boxOfficeReady, setBoxOfficeReady] = useState(false);
+  const [servicesReady, setServicesReady] = useState(false);
 
   // ============================================
   // PAWNS SETTINGS NAVIGATION
@@ -147,39 +279,11 @@ function AppContent() {
   }, [router]);
 
   // ============================================
-  // BOXOFFICE ENGINE INIT
+  // PRELOAD CONTENT DATA
   // ============================================
-  const initializeBoxOffice = useCallback(async () => {
-    try {
-      console.log('[BoxOffice] 🚀 Initializing engine...');
-      const configResult = await boxOffice.configure({
-        apiVersion: 'v2',
-        downloadDir: '',
-        captionLanguage: 'English',
-        quality: 'best',
-      });
-      if (!configResult.success) {
-        console.warn('[BoxOffice] ⚠️ Config warning:', configResult.error);
-      }
-      const startResult = await boxOffice.start();
-      if (startResult.success) {
-        console.log('[BoxOffice] ✅ Engine running');
-        setBoxOfficeReady(true);
-      } else {
-        console.warn('[BoxOffice] ⚠️ Start failed:', startResult.error);
-      }
-    } catch (err) {
-      console.error('[BoxOffice] ❌ Init error:', err);
-      // Non-fatal: app works without boxoffice
-    }
-  }, []);
-
-  // ============================================
-  // PRELOAD ALL CONTENT
-  // ============================================
-  const preloadAllContent = useCallback(async () => {
+  const preloadContent = useCallback(async () => {
     setLoading(true);
-    console.log('[App] 🚀 Starting preload...');
+    console.log('[App] 🚀 Starting content preload...');
 
     try {
       // ─── STEP 1: Check cache first ───
@@ -206,8 +310,8 @@ function AppContent() {
         console.log('[App] ✅ Thriller trailers preloaded');
       } else {
         try {
-          const { fetchPopularMovies } = await import('../src/api/tmdbApi');
-          const popularMovies = await fetchPopularMovies();
+          // Use tmdbApi to fetch popular movies as fallback
+          const popularMovies = await tmdbApi.fetchPopularMovies();
           if (popularMovies.length > 0) {
             const thrillerMovies = popularMovies.slice(0, 6);
             console.log('[App] 🎬 Starting eager thriller preload (fallback) for', thrillerMovies.length, 'movies');
@@ -219,33 +323,11 @@ function AppContent() {
         }
       }
 
-      // ─── STEP 4: Initialize services with individual error handling ───
-      try {
-        await networkService.initialize();
-        console.log('[App] ✅ Network service initialized');
-      } catch (err) {
-        console.error('[App] ❌ Network service failed:', err);
-      }
-
-      try {
-        await downloadManager.initialize();
-        console.log('[App] ✅ Download manager initialized');
-      } catch (err) {
-        console.error('[App] ❌ Download manager failed:', err);
-      }
-
-      try {
-        const sources = await initializeStreamSources();
-        console.log('[App] ✅ Stream sources initialized:', sources?.length || 0, 'sources');
-      } catch (err) {
-        console.error('[App] ❌ Stream sources failed:', err);
-      }
-
-      // ─── STEP 5: Mark as ready ───
+      // ─── STEP 4: Mark as ready ───
       setInitialized(true);
       console.log('[App] ✅ App ready');
     } catch (err) {
-      console.error('[App] ❌ Preload failed:', err);
+      console.error('[App] ❌ Content preload failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to load content');
       setInitialized(true);
     } finally {
@@ -275,13 +357,30 @@ function AppContent() {
   }, []);
 
   // ============================================
+  // CHECK SERVICES READY
+  // ============================================
+  useEffect(() => {
+    // Check if module-level services are initialized
+    const checkServices = async () => {
+      // Wait for module initialization to complete
+      if (moduleInitPromise) {
+        await moduleInitPromise;
+      }
+      setServicesReady(true);
+      console.log('[App] ✅ Services are ready');
+    };
+
+    checkServices();
+  }, []);
+
+  // ============================================
   // INITIALIZATION
   // ============================================
   useEffect(() => {
-    // Start boxoffice engine in parallel with content preload
-    initializeBoxOffice();
+    // Wait for services to be ready before preloading content
+    if (!servicesReady) return;
 
-    preloadAllContent();
+    preloadContent();
 
     const refreshTimer = setTimeout(() => {
       refreshInBackground();
@@ -291,11 +390,9 @@ function AppContent() {
       clearTimeout(refreshTimer);
       networkService.destroy();
       // Stop boxoffice engine on unmount
-      if (boxOfficeReady) {
-        boxOffice.stop().catch(() => {});
-      }
+      boxOffice.stop().catch(() => {});
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [servicesReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================
   // PAWNS CONSENT — RESTORE OR PROMPT
@@ -341,9 +438,6 @@ function AppContent() {
         }
 
         console.log('[App] 🔍 Checking for updates...');
-        // showAlert=false: suppress the routine "Up to Date" popup on every cold
-        // start. A major native-update Alert still fires regardless, since that
-        // path in checkForUpdates() isn't gated by the showAlert flag.
         await checkForUpdates(false);
       } catch (err) {
         console.warn('[App] ⚠️ Update check failed:', err);
@@ -351,10 +445,10 @@ function AppContent() {
     })();
   }, [isInitialized]);
 
-  console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'boxoffice:', boxOfficeReady);
+  console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'services:', servicesReady);
 
   // ─── SHOW LOADING SCREEN ───
-  if (!isInitialized && !hasCachedData && isLoading) {
+  if (!servicesReady || (!isInitialized && !hasCachedData && isLoading)) {
     return <LoadingScreen />;
   }
 
@@ -365,7 +459,7 @@ function AppContent() {
         error={error} 
         onRetry={() => {
           setError(null);
-          preloadAllContent();
+          preloadContent();
         }} 
       />
     );

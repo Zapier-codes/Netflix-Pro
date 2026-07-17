@@ -1,3 +1,5 @@
+// src/services/unified/types/ProviderTypes.ts
+
 /**
  * Unified Provider Types
  * Defines all type interfaces for stream and metadata providers
@@ -19,8 +21,15 @@ import {
   StreamProviderConfig as StreamProviderConfigType,
 } from './StreamTypes';
 
-// Re-export them so they're available from ProviderTypes
-export type { StreamSource, StreamRequest, StreamMeta, StreamProviderType, StreamProviderConfigType };
+// ─── RE-EXPORT STREAM TYPES ───
+export type { 
+  StreamSource, 
+  StreamRequest, 
+  StreamMeta, 
+  StreamProviderType, 
+  StreamProviderConfigType,
+  StreamQuality,
+};
 
 // ============================================================================
 // BASE PROVIDER TYPES
@@ -40,7 +49,6 @@ export interface BaseProvider {
   baseUrl?: string;
   apiKey?: string;
   
-  // NEW: Provider metadata
   website?: string;
   documentationUrl?: string;
   supportUrl?: string;
@@ -53,7 +61,6 @@ export interface BaseProvider {
     discord?: string;
   };
   
-  // NEW: Provider status
   status?: 'active' | 'maintenance' | 'deprecated' | 'inactive';
   lastUpdate?: string;
   versionReleaseDate?: string;
@@ -73,7 +80,6 @@ export interface StreamProvider extends BaseProvider {
   isAvailable(): Promise<boolean>;
   healthCheck(): Promise<ProviderHealth>;
   
-  // NEW: Additional stream methods
   getStreamsWithMetadata?(request: StreamRequest): Promise<StreamResultWithMetadata>;
   getAvailableQualities?(id: string, type: 'movie' | 'tv'): Promise<StreamQuality[]>;
   getStreamUrl?(id: string, quality?: StreamQuality): Promise<string>;
@@ -91,7 +97,6 @@ export interface StreamCapabilities {
   geoRestricted: boolean;
   supportedCountries?: string[];
   
-  // NEW: Enhanced capabilities
   audioTracks?: boolean;
   multiAudioTrackSupport?: boolean;
   hdrSupport?: boolean;
@@ -119,7 +124,6 @@ export interface StreamResult {
   meta?: StreamMeta;
   expiresAt?: number;
   
-  // NEW: Additional stream metadata
   audioTracks?: AudioTrack[];
   availableQualities?: string[];
   recommendedQuality?: string;
@@ -155,7 +159,6 @@ export interface ResolvedStream {
   quality: string;
   duration?: number;
   
-  // NEW: Additional resolution info
   bitrate?: number;
   codec?: string;
   container?: string;
@@ -177,7 +180,7 @@ export interface ResolvedStream {
 }
 
 // ============================================================================
-// AUDIO TRACK TYPES (NEW)
+// AUDIO TRACK TYPES
 // ============================================================================
 
 export interface AudioTrack {
@@ -203,7 +206,7 @@ export interface AudioTrack {
 }
 
 // ============================================================================
-// HDR/DRM/DOWNLOAD TYPES (NEW)
+// HDR/DRM/DOWNLOAD TYPES
 // ============================================================================
 
 export interface HDRInfo {
@@ -278,7 +281,6 @@ export interface SubtitleProvider extends BaseProvider {
   isAvailable(): Promise<boolean>;
   healthCheck(): Promise<ProviderHealth>;
   
-  // NEW: Enhanced subtitle methods
   getSubtitleLanguages?(): Promise<string[]>;
   getSubtitleFormats?(): Promise<string[]>;
   uploadSubtitle?(track: SubtitleUploadRequest): Promise<SubtitleTrack>;
@@ -295,7 +297,6 @@ export interface SubtitleCapabilities {
   maxLanguages: number;
   requiresAuth: boolean;
   
-  // NEW: Enhanced capabilities
   uploadSupport?: boolean;
   reportSupport?: boolean;
   automaticTranslation?: boolean;
@@ -324,7 +325,6 @@ export interface SubtitleSearchRequest {
   forced?: boolean;
   hearingImpaired?: boolean;
   
-  // NEW: Additional search params
   fps?: number;
   duration?: number;
   uploader?: string;
@@ -351,7 +351,6 @@ export interface SubtitleTrack {
   fps?: number;
   encoding?: string;
   
-  // NEW: Additional subtitle metadata
   isHearingImpaired?: boolean;
   isMachineTranslated?: boolean;
   isOriginal?: boolean;
@@ -384,7 +383,7 @@ export interface SubtitleUploadRequest {
 }
 
 // ============================================================================
-// METADATA PROVIDER TYPES (ENHANCED)
+// METADATA PROVIDER TYPES
 // ============================================================================
 
 export interface MetadataProvider extends BaseProvider {
@@ -403,10 +402,8 @@ export interface MetadataProvider extends BaseProvider {
   isAvailable(): Promise<boolean>;
   healthCheck(): Promise<ProviderHealth>;
   
-  // NEW: Discover mode - category browsing without keyword
   discover?(filters: DiscoverFilters): Promise<SearchResult[]>;
   
-  // NEW: Enhanced metadata methods
   getWatchProviders?(id: string, type: 'movie' | 'tv'): Promise<WatchProvider[]>;
   getExternalIds?(id: string, type: 'movie' | 'tv'): Promise<ExternalIds>;
   getVideos?(id: string, type: 'movie' | 'tv'): Promise<VideoMetadata[]>;
@@ -441,8 +438,7 @@ export interface MetadataCapabilities {
   supportsFilters: boolean;
   maxExtendedLevel: 'minimal' | 'full' | 'images';
   
-  // NEW: Enhanced capabilities
-  supportsDiscover?: boolean; // NEW: Category browsing without keyword
+  supportsDiscover?: boolean;
   supportsWatchProviders?: boolean;
   supportsVideos?: boolean;
   supportsKeywords?: boolean;
@@ -476,7 +472,6 @@ export interface SearchOptions {
   extended?: boolean;
   filters?: Record<string, string | string[]>;
   
-  // NEW: Enhanced search options
   countries?: string[];
   languages?: string[];
   genres?: string[];
@@ -506,14 +501,13 @@ export interface SearchResult {
   person?: PersonMetadata;
   list?: ListMetadata;
   
-  // NEW: Additional search metadata
   relevanceScore?: number;
   matchType?: 'exact' | 'partial' | 'fuzzy' | 'synonym' | 'autocomplete';
   matchFields?: string[];
 }
 
 // ============================================================================
-// SOCIAL PROVIDER TYPES (ENHANCED)
+// SOCIAL PROVIDER TYPES
 // ============================================================================
 
 export interface SocialProvider extends BaseProvider {
@@ -530,7 +524,6 @@ export interface SocialProvider extends BaseProvider {
   isAvailable(): Promise<boolean>;
   healthCheck(): Promise<ProviderHealth>;
   
-  // NEW: Enhanced social methods
   getUserFollowers?(username: string): Promise<SocialUser[]>;
   getUserFollowing?(username: string): Promise<SocialUser[]>;
   getUserFriends?(username: string): Promise<SocialUser[]>;
@@ -562,7 +555,6 @@ export interface SocialCapabilities {
   follows: boolean;
   requiresAuthForPublic: boolean;
   
-  // NEW: Enhanced capabilities
   trending?: boolean;
   popular?: boolean;
   anticipated?: boolean;
@@ -590,7 +582,6 @@ export interface SocialUser {
   age?: number;
   joinedAt?: string;
   
-  // NEW: Additional user data
   stats?: UserStats;
   followingCount?: number;
   followersCount?: number;
@@ -619,7 +610,6 @@ export interface HistoryEntry {
   show?: ShowMetadata;
   episode?: EpisodeMetadata;
   
-  // NEW: Additional history data
   progress?: number;
   duration?: number;
   platform?: string;
@@ -639,7 +629,6 @@ export interface WatchlistEntry {
   season?: SeasonMetadata;
   episode?: EpisodeMetadata;
   
-  // NEW: Additional watchlist data
   notes?: string;
   priority?: 'high' | 'medium' | 'low';
   tags?: string[];
@@ -665,7 +654,6 @@ export interface CollectionEntry {
     '3d'?: boolean;
   };
   
-  // NEW: Additional collection data
   quality?: string;
   size?: number;
   location?: string;
@@ -698,7 +686,6 @@ export interface UserList {
   };
   user?: SocialUser;
   
-  // NEW: Additional list data
   tags?: string[];
   isFeatured?: boolean;
   isStaffPick?: boolean;
@@ -706,6 +693,7 @@ export interface UserList {
   shares?: number;
 }
 
+// ─── FIXED: Removed duplicate properties (plays, watched, minutes, collected, ratings, comments, total) ───
 export interface UserStats {
   movies: {
     plays: number;
@@ -743,7 +731,6 @@ export interface UserStats {
     distribution: Record<string, number>;
   };
   
-  // NEW: Additional stats
   watchTime?: {
     total: number;
     daily: number;
@@ -767,7 +754,6 @@ export interface HistoryOptions {
   page?: number;
   limit?: number;
   
-  // NEW: Additional options
   sortBy?: 'date' | 'title' | 'rating' | 'duration';
   sortOrder?: 'asc' | 'desc';
   filterCompleted?: boolean;
@@ -775,7 +761,49 @@ export interface HistoryOptions {
 }
 
 // ============================================================================
-// COMMON METADATA TYPES (ENHANCED)
+// SOCIAL TRENDING TYPES
+// ============================================================================
+
+export interface TrendingMovie {
+  watchers: number;
+  movie: MovieMetadata;
+}
+
+export interface TrendingShow {
+  watchers: number;
+  show: ShowMetadata;
+}
+
+export interface PopularMovie {
+  movie: MovieMetadata;
+  popularityScore?: number;
+}
+
+export interface PopularShow {
+  show: ShowMetadata;
+  popularityScore?: number;
+}
+
+export interface AnticipatedMovie {
+  movie: MovieMetadata;
+  anticipationCount?: number;
+}
+
+export interface AnticipatedShow {
+  show: ShowMetadata;
+  anticipationCount?: number;
+}
+
+export interface Comment {
+  id: number;
+  text: string;
+  user: SocialUser;
+  createdAt: string;
+  replies?: Comment[];
+}
+
+// ============================================================================
+// COMMON METADATA TYPES
 // ============================================================================
 
 export interface MediaIds {
@@ -786,7 +814,6 @@ export interface MediaIds {
   tvdb?: number;
   tvrage?: number;
   
-  // NEW: Additional ID types
   facebookId?: string;
   instagramId?: string;
   twitterId?: string;
@@ -817,7 +844,6 @@ export interface MovieMetadata {
   certification?: string;
   images?: MediaImages;
   
-  // NEW: Industry-standard fields
   originalLanguage?: string;
   originCountry?: string[];
   originalTitle?: string;
@@ -838,6 +864,7 @@ export interface MovieMetadata {
   backdropPath?: string;
 }
 
+// ─── FIXED: Removed duplicate `originCountry` property ───
 export interface ShowMetadata {
   title: string;
   year: number;
@@ -867,7 +894,6 @@ export interface ShowMetadata {
   images?: MediaImages;
   seasons?: SeasonMetadata[];
   
-  // NEW: Industry-standard fields
   originalLanguage?: string;
   originCountry?: string[];
   originalTitle?: string;
@@ -886,7 +912,6 @@ export interface ShowMetadata {
   voteAverage?: number;
   posterPath?: string;
   backdropPath?: string;
-  originCountry?: string[];
   originalName?: string;
 }
 
@@ -905,7 +930,6 @@ export interface SeasonMetadata {
   images?: MediaImages;
   episodes?: EpisodeMetadata[];
   
-  // NEW: Industry-standard fields
   airDate?: string;
   posterPath?: string;
   seasonNumber?: number;
@@ -929,7 +953,6 @@ export interface EpisodeMetadata {
   runtime?: number;
   images?: MediaImages;
   
-  // NEW: Industry-standard fields
   airDate?: string;
   episodeNumber?: number;
   name?: string;
@@ -944,6 +967,7 @@ export interface EpisodeMetadata {
   isSeriesFinale?: boolean;
 }
 
+// ─── FIXED: Removed duplicate `biography` property ───
 export interface PersonMetadata {
   name: string;
   ids: MediaIds;
@@ -956,7 +980,6 @@ export interface PersonMetadata {
   knownForDepartment?: string;
   images?: MediaImages;
   
-  // NEW: Industry-standard fields
   alsoKnownAs?: string[];
   adult?: boolean;
   placeOfBirth?: string;
@@ -964,7 +987,6 @@ export interface PersonMetadata {
   popularity?: number;
   imdbId?: string;
   deathday?: string;
-  biography?: string;
 }
 
 export interface ListMetadata {
@@ -997,7 +1019,6 @@ export interface MediaImages {
   screenshot?: string[];
   headshot?: string[];
   
-  // NEW: Additional image types
   backdrop?: string[];
   still?: string[];
   profile?: string[];
@@ -1010,7 +1031,7 @@ export interface MediaImages {
 }
 
 // ============================================================================
-// TRENDING / POPULAR / CALENDAR (ENHANCED)
+// TRENDING / POPULAR / CALENDAR
 // ============================================================================
 
 export interface TrendingResult {
@@ -1018,7 +1039,6 @@ export interface TrendingResult {
   movie?: MovieMetadata;
   show?: ShowMetadata;
   
-  // NEW: Additional metrics
   score?: number;
   rank?: number;
   trendScore?: number;
@@ -1033,7 +1053,6 @@ export interface PopularResult {
   movie?: MovieMetadata;
   show?: ShowMetadata;
   
-  // NEW: Additional metrics
   popularityScore?: number;
   rank?: number;
   views?: number;
@@ -1046,7 +1065,6 @@ export interface CalendarEntry {
   show?: ShowMetadata;
   movie?: MovieMetadata;
   
-  // NEW: Additional calendar data
   isPremiere?: boolean;
   isFinale?: boolean;
   isSpecial?: boolean;
@@ -1056,7 +1074,7 @@ export interface CalendarEntry {
 }
 
 // ============================================================================
-// NEW: ADDITIONAL TYPES (Industry-Standard)
+// ADDITIONAL TYPES (Industry-Standard)
 // ============================================================================
 
 export interface ExternalIds {
@@ -1276,7 +1294,7 @@ export interface Country {
 }
 
 // ============================================================================
-// PROVIDER HEALTH & CONFIG (ENHANCED)
+// PROVIDER HEALTH & CONFIG
 // ============================================================================
 
 export interface ProviderHealth {
@@ -1286,7 +1304,6 @@ export interface ProviderHealth {
   message?: string;
   error?: string;
   
-  // NEW: Enhanced health metrics
   uptime?: number;
   responseTime?: number;
   errorRate?: number;
@@ -1299,6 +1316,7 @@ export interface ProviderHealth {
   quotaReset?: number;
 }
 
+// ─── FIXED: Removed duplicate `timeout` and `enabled` properties ───
 export interface ProviderConfig {
   timeout: number;
   retryCount: number;
@@ -1308,7 +1326,6 @@ export interface ProviderConfig {
   maxConcurrent: number;
   requestDelay: number;
   
-  // NEW: Enhanced config options
   circuitBreaker?: {
     enabled: boolean;
     failureThreshold: number;
@@ -1341,7 +1358,6 @@ export interface MetadataProviderConfig extends ProviderConfig {
   includeImages: boolean;
   language: string;
   
-  // NEW: Enhanced config
   includeAdult?: boolean;
   includeVideo?: boolean;
   includeTrailers?: boolean;
@@ -1360,7 +1376,6 @@ export interface SubtitleProviderConfig extends ProviderConfig {
   includeHearingImpaired: boolean;
   includeForced: boolean;
   
-  // NEW: Enhanced config
   defaultFormat?: 'srt' | 'vtt' | 'ass' | 'ssa';
   includeAutoGenerated?: boolean;
   includeCommunity?: boolean;
@@ -1378,7 +1393,6 @@ export interface SocialProviderConfig extends ProviderConfig {
   includePrivate: boolean;
   maxHistoryItems: number;
   
-  // NEW: Enhanced config
   includeFriends?: boolean;
   includeFollowers?: boolean;
   includeFollowing?: boolean;
@@ -1392,7 +1406,7 @@ export interface SocialProviderConfig extends ProviderConfig {
 }
 
 // ============================================================================
-// PROVIDER REGISTRY TYPES (ENHANCED)
+// PROVIDER REGISTRY TYPES
 // ============================================================================
 
 export type ProviderType = 'stream' | 'metadata' | 'subtitle' | 'social';
@@ -1405,7 +1419,6 @@ export interface RegisteredProvider {
   useCount: number;
   errorCount: number;
   
-  // NEW: Enhanced registration data
   registeredAt?: number;
   lastSuccess?: number;
   lastError?: number;
@@ -1431,7 +1444,6 @@ export interface ProviderRegistry {
   updateHealth(providerId: string, health: ProviderHealth): void;
   getAll(): RegisteredProvider[];
   
-  // NEW: Enhanced registry methods
   getBestProvider(type: ProviderType, criteria?: ProviderSelectionCriteria): RegisteredProvider | undefined;
   getProvidersForContent(contentType: 'movie' | 'tv' | 'anime'): RegisteredProvider[];
   getProviderStats(): ProviderStats;
@@ -1464,7 +1476,7 @@ export interface ProviderStats {
 }
 
 // ============================================================================
-// FACTORY TYPES (ENHANCED)
+// FACTORY TYPES
 // ============================================================================
 
 export interface ProviderFactory {
@@ -1473,7 +1485,6 @@ export interface ProviderFactory {
   createSubtitleProvider(config: SubtitleProviderConfig): SubtitleProvider;
   createSocialProvider(config: SocialProviderConfig): SocialProvider;
   
-  // NEW: Factory helper methods
   getDefaultConfig(providerType: ProviderType): ProviderConfig;
   getConfigForProvider(providerId: string): ProviderConfig;
   validateConfig(providerType: ProviderType, config: ProviderConfig): boolean;
@@ -1481,7 +1492,7 @@ export interface ProviderFactory {
 }
 
 // ============================================================================
-// UNIFIED SERVICE TYPES (ENHANCED)
+// UNIFIED SERVICE TYPES
 // ============================================================================
 
 export interface UnifiedRequest {
@@ -1498,7 +1509,6 @@ export interface UnifiedRequest {
   subtitleLanguage?: string;
   providers?: string[];
   
-  // NEW: Enhanced request options
   region?: string;
   country?: string;
   certification?: string;
@@ -1525,7 +1535,6 @@ export interface UnifiedResponse {
   errors: ProviderError[];
   timestamp: number;
   
-  // NEW: Enhanced response
   audioTracks?: AudioTrack[];
   hdrInfo?: HDRInfo;
   drmInfo?: DRMInfo;
@@ -1547,7 +1556,6 @@ export interface ProviderSource {
   latency: number;
   cached: boolean;
   
-  // NEW: Additional source data
   success?: boolean;
   error?: string;
   quality?: string;
@@ -1563,7 +1571,6 @@ export interface ProviderError {
   message: string;
   retryable: boolean;
   
-  // NEW: Additional error data
   statusCode?: number;
   retryAfter?: number;
   rateLimited?: boolean;
@@ -1574,7 +1581,7 @@ export interface ProviderError {
 }
 
 // ============================================================================
-// AGGREGATION TYPES (ENHANCED)
+// AGGREGATION TYPES
 // ============================================================================
 
 export interface AggregationStrategy {
@@ -1588,7 +1595,6 @@ export interface AggregationStrategy {
   deduplicate<T extends { ids?: MediaIds }>(items: T[]): T[];
   rank<T>(items: T[], criteria: RankingCriteria): T[];
   
-  // NEW: Enhanced aggregation methods
   mergeDuplicates<T extends { ids?: MediaIds }>(items: T[]): T[];
   prioritizeBySource<T extends { source?: string }>(items: T[], sourcePriority: string[]): T[];
   filterByQuality<T extends { quality?: string }>(items: T[], minQuality: string): T[];
@@ -1604,7 +1610,6 @@ export interface RankingCriteria {
   freshness?: number;
   popularity?: number;
   
-  // NEW: Additional ranking criteria
   relevance?: number;
   rating?: number;
   votes?: number;
@@ -1617,11 +1622,12 @@ export interface RankingCriteria {
 }
 
 // ============================================================================
-// STREAMING BACKEND TYPES (Enhanced)
+// STREAMING BACKEND TYPES
 // ============================================================================
 
 export type StreamProviderId = 'consumet' | 'moviebox' | 'vidsrc' | 'xyra';
 
+// ─── FIXED: Removed duplicate nested interface properties ───
 export interface IStreamProvider {
   name: string;
   getStreams(request: {
@@ -1632,7 +1638,6 @@ export interface IStreamProvider {
   }): Promise<MediaStreamSource[]>;
   healthCheck(): Promise<boolean>;
   
-  // NEW: Enhanced stream provider methods
   getStreamsWithMetadata?(request: {
     id: string;
     type: 'movie' | 'tv';
@@ -1661,7 +1666,6 @@ export interface StreamProviderHealthStatus {
   responseTime: number;
   lastChecked: number;
   
-  // NEW: Additional health data
   errorRate?: number;
   successRate?: number;
   uptime?: number;
@@ -1675,7 +1679,6 @@ export interface StreamBackendConfig {
   retryCount?: number;
   [key: string]: unknown;
   
-  // NEW: Enhanced config
   maxRetries?: number;
   retryDelay?: number;
   cacheEnabled?: boolean;
@@ -1697,7 +1700,7 @@ export interface StreamBackendConfig {
 }
 
 // ============================================================================
-// UNIFIED SERVICE TYPES (Enhanced)
+// UNIFIED SERVICE TYPES
 // ============================================================================
 
 export interface UnifiedSearchOptions {
@@ -1706,28 +1709,27 @@ export interface UnifiedSearchOptions {
   year?: number;
   limit?: number;
   
-  // NEW: Industry-standard search filters
-  language?: string;          // Original language filter
-  country?: string;           // Origin country filter
-  region?: string;            // Region for regional content
-  genres?: string[];          // Genre filtering
-  certification?: string;     // Parental rating
-  minRating?: number;         // Minimum rating
-  maxRating?: number;         // Maximum rating
-  minVotes?: number;          // Minimum vote count
-  startYear?: number;         // Year range start
-  endYear?: number;           // Year range end
-  keywords?: string[];        // Keyword matching
-  watchProviders?: number[];  // Where to watch
-  withCast?: string[];        // Cast filter
-  withCrew?: string[];        // Crew filter
-  withCompanies?: string[];   // Production companies
-  withoutGenres?: string[];   // Exclude genres
+  language?: string;
+  country?: string;
+  region?: string;
+  genres?: string[];
+  certification?: string;
+  minRating?: number;
+  maxRating?: number;
+  minVotes?: number;
+  startYear?: number;
+  endYear?: number;
+  keywords?: string[];
+  watchProviders?: number[];
+  withCast?: string[];
+  withCrew?: string[];
+  withCompanies?: string[];
+  withoutGenres?: string[];
   sortBy?: 'popularity.desc' | 'popularity.asc' | 'release_date.desc' | 'release_date.asc' | 'vote_average.desc' | 'vote_average.asc' | 'vote_count.desc' | 'vote_count.asc';
-  includeAdult?: boolean;     // Include adult content
-  languageCode?: string;      // Result language
-  watchRegion?: string;       // Watch region
-  page?: number;              // Pagination
+  includeAdult?: boolean;
+  languageCode?: string;
+  watchRegion?: string;
+  page?: number;
 }
 
 export interface UnifiedStreamOptions {
@@ -1737,7 +1739,6 @@ export interface UnifiedStreamOptions {
   episode?: number;
   preferredQuality?: StreamQuality;
   
-  // NEW: Enhanced stream options
   preferredAudioLanguage?: string;
   preferredSubtitleLanguage?: string;
   includeHDR?: boolean;
@@ -1758,7 +1759,6 @@ export interface UnifiedSubtitleOptions {
   episode?: number;
   language?: string;
   
-  // NEW: Enhanced subtitle options
   format?: 'srt' | 'vtt' | 'ass' | 'ssa' | 'sub';
   hearingImpaired?: boolean;
   forced?: boolean;
@@ -1776,7 +1776,6 @@ export interface UnifiedMediaResult {
   title: string;
   type: 'movie' | 'tv';
   year?: number;
-  /** Full release/air date string, when the source provider exposes one (see IMetadataResult). */
   releaseDate?: string;
   poster?: string;
   backdrop?: string;
@@ -1785,12 +1784,10 @@ export interface UnifiedMediaResult {
   genres?: string[];
   runtime?: number;
   cast?: unknown[];
-  /** Which metadata provider this came from (e.g. 'tmdb', 'kuryana', 'moviebox'). */
   source?: string;
   sources: MediaStreamSource[];
   metadata: IMetadataResult;
   
-  // NEW: Industry-standard fields
   originalLanguage?: string;
   originCountry?: string[];
   originalTitle?: string;
@@ -1815,37 +1812,41 @@ export interface UnifiedMediaResult {
 }
 
 // ============================================================================
-// DEFAULT EXPORTS
+// DEFAULT EXPORTS - VALUES ONLY (No types)
 // ============================================================================
 
 export default {
-  // Types for external use
-  StreamProviderId,
-  StreamQuality,
-  ProviderType,
+  StreamProviderId: {
+    CONSUMET: 'consumet',
+    MOVIEBOX: 'moviebox',
+    VIDSRC: 'vidsrc',
+    XYRA: 'xyra',
+  },
   
-  // New types
-  AudioTrack,
-  HDRInfo,
-  DRMInfo,
-  DownloadInfo,
-  ExternalIds,
-  VideoMetadata,
-  ImageSet,
-  Image,
-  Keyword,
-  Review,
-  RelatedContent,
-  Collection,
-  CollectionPart,
-  ProductionCompany,
-  ProductionCountry,
-  SpokenLanguage,
-  Network,
-  Genre,
-  Certification,
-  Language,
-  Country,
-  ProviderSelectionCriteria,
-  ProviderStats,
+  ProviderType: {
+    STREAM: 'stream',
+    METADATA: 'metadata',
+    SUBTITLE: 'subtitle',
+    SOCIAL: 'social',
+  },
+  
+  HealthStatus: {
+    HEALTHY: 'healthy',
+    DEGRADED: 'degraded',
+    DOWN: 'down',
+  },
+  
+  Quality: {
+    '4K': '4K',
+    '2160p': '2160p',
+    '1440p': '1440p',
+    '1080p': '1080p',
+    '720p': '720p',
+    '480p': '480p',
+    '360p': '360p',
+    '240p': '240p',
+    '144p': '144p',
+    'auto': 'auto',
+    'unknown': 'unknown',
+  },
 };

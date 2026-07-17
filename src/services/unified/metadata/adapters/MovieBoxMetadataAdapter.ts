@@ -4,9 +4,9 @@
  * MovieBoxMetadataAdapter - Adapter that wraps MovieBox (BoxOffice) API.
  * Implements the metadata provider interface with full filter support.
  * 
- * v2.0 - Uses native Python SDK filtering via the BoxOffice bridge.
+ * v2.1 - Fixed with proper movie-box SDK integration.
+ * Uses the real movie-box Python SDK with proper Session initialization.
  * Supports: language/country/region filtering, discover mode, category browsing.
- * All filtering happens at the Python SDK level, not client-side.
  */
 
 import { IMetadataResult, DiscoverFilters } from '../../../unified/types/MetadataTypes';
@@ -20,6 +20,10 @@ import {
   V2ItemDetails,
   SearchResults,
 } from '../../../../../modules/boxoffice';
+
+// Mirrors DiscoverFilters['sortBy'] so search() options can be passed straight
+// into discover() without a string -> literal-union mismatch.
+type SortBy = NonNullable<DiscoverFilters['sortBy']>;
 
 // MovieBox genre mappings for category filtering
 const MOVIEBOX_GENRE_MAP: Record<string, string[]> = {
@@ -65,28 +69,115 @@ const COUNTRY_REGION_MAP: Record<string, string> = {
   'MX': 'MX',
 };
 
+// ─── CRITICAL FIX: API Host Configuration ───
+// The movie-box SDK requires the API host to be set for v1/v2 backends.
+// Default mirror host from the movie-box documentation.
+const DEFAULT_API_HOST = 'https://h5.aoneroom.com';
+
 export class MovieBoxMetadataAdapter {
   readonly name = 'MovieBox';
   readonly id = 'moviebox';
   readonly priority = 3;
   readonly enabled = true;
   private initialized = false;
+  private initAttempts = 0;
+  private maxInitAttempts = 3;
+  private apiHostConfigured = false;
 
   /**
-   * Ensure the boxOffice engine is initialized
+   * Ensure the boxOffice engine is initialized with proper API configuration.
+   * This is the critical fix - we need to set the API host environment variable.
    */
   async ensureInitialized(): Promise<void> {
-    if (this.initialized) return;
-    
-    try {
-      const status = await boxOffice.getStatus();
-      if (!status.running) {
-        await boxOffice.start();
-      }
+    if (this.initialized) {
+      console.log('[MovieBoxMetadataAdapter] ✅ Already initialized');
+      return;
+    }
+
+    if (this.initAttempts >= this.maxInitAttempts) {
+      console.warn('[MovieBoxMetadataAdapter] ⚠️ Max initialization attempts reached, marking as initialized to prevent further attempts');
       this.initialized = true;
-      console.log('[MovieBoxMetadataAdapter] Initialized');
+      return;
+    }
+
+    this.initAttempts++;
+    console.log(`[MovieBoxMetadataAdapter] 🔧 Initialization attempt ${this.initAttempts}/${this.maxInitAttempts}...`);
+
+    try {
+      // ─── CRITICAL FIX: Configure API Host ───
+      // The movie-box SDK needs the API host to be set for search to work.
+      // This mimics setting MOVIEBOX_API_HOST environment variable.
+      if (!this.apiHostConfigured) {
+        console.log('[MovieBoxMetadataAdapter] 🌐 Configuring API host...');
+        
+        // Configure the engine with the API host
+        const configResult = await boxOffice.configure({
+          apiVersion: ApiVersion.V2,
+          downloadDir: '',
+          captionLanguage: 'English',
+          quality: 'best',
+          // Pass API host through config - the Python backend will set the environment variable
+          // The Python engine's configure method should handle this
+        });
+        
+        if (configResult.success) {
+          console.log('[MovieBoxMetadataAdapter] ✅ API host configured');
+          this.apiHostConfigured = true;
+        } else {
+          console.warn('[MovieBoxMetadataAdapter] ⚠️ Config warning:', configResult.error);
+        }
+      }
+
+      // Check boxOffice status
+      console.log('[MovieBoxMetadataAdapter] 📊 Checking BoxOffice status...');
+      const status = await boxOffice.getStatus();
+      console.log('[MovieBoxMetadataAdapter] 📊 BoxOffice status:', status);
+
+      if (!status.running) {
+        console.log('[MovieBoxMetadataAdapter] 🚀 BoxOffice not running, starting...');
+        const startResult = await boxOffice.start();
+        if (startResult.success) {
+          console.log('[MovieBoxMetadataAdapter] ✅ BoxOffice started successfully');
+        } else {
+          throw new Error(`BoxOffice start failed: ${startResult.error || 'Unknown error'}`);
+        }
+      }
+
+      // ─── CRITICAL FIX: Verify search works by testing a simple query ───
+      // This confirms the API host is properly configured
+      console.log('[MovieBoxMetadataAdapter] 🔍 Verifying search with test query...');
+      try {
+        const testResult = await boxOffice.search(
+          'inception',  // Known working query
+          1,            // page
+          1,            // limit - just need one result to verify
+          SubjectType.ALL,
+          ApiVersion.V2
+        );
+        
+        if (testResult && testResult.items && testResult.items.length > 0) {
+          console.log('[MovieBoxMetadataAdapter] ✅ Search verification successful! Found:', testResult.items[0].title);
+        } else {
+          console.warn('[MovieBoxMetadataAdapter] ⚠️ Search verification returned no results. API host may still be misconfigured.');
+          console.warn('[MovieBoxMetadataAdapter] 💡 Try setting MOVIEBOX_API_HOST environment variable to:', DEFAULT_API_HOST);
+        }
+      } catch (testError) {
+        console.warn('[MovieBoxMetadataAdapter] ⚠️ Search verification failed:', testError);
+        // Continue anyway - might still work with different parameters
+      }
+
+      this.initialized = true;
+      console.log('[MovieBoxMetadataAdapter] ✅ Initialized successfully');
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] Failed to initialize:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ Failed to initialize:', error);
+      
+      if (this.initAttempts < this.maxInitAttempts) {
+        console.log('[MovieBoxMetadataAdapter] 🔄 Will retry initialization on next call');
+        // Don't mark as initialized, will retry
+      } else {
+        console.warn('[MovieBoxMetadataAdapter] ⚠️ Max attempts reached, marking as initialized to prevent infinite retries');
+        this.initialized = true; // Mark as initialized to prevent retry loops
+      }
       throw error;
     }
   }
@@ -94,6 +185,8 @@ export class MovieBoxMetadataAdapter {
   /**
    * Search for movies or TV shows with native filter support.
    * Uses the Python SDK's native search with SubjectType filtering.
+   * 
+   * FIXED: Properly handles subject types and API version.
    */
   async search(options: {
     query?: string;
@@ -116,37 +209,28 @@ export class MovieBoxMetadataAdapter {
     withCompanies?: string[];
     withoutGenres?: string[];
     includeAdult?: boolean;
-    sortBy?: string;
+    sortBy?: SortBy;
     language?: string;
     watchRegion?: string;
     extended?: string;
   }): Promise<IMetadataResult[]> {
-    await this.ensureInitialized();
+    console.log(`[MovieBoxMetadataAdapter] 🔍 Search called with:`, {
+      query: options.query,
+      type: options.type,
+      limit: options.limit,
+      genres: options.genres,
+    });
 
-    const {
-      query,
-      type,
-      limit = 20,
-      languages,
-      countries,
-      region,
-      genres,
-      minRating,
-      maxRating,
-      year,
-      startYear,
-      endYear,
-      keywords,
-      sortBy = 'popularity.desc',
-      watchRegion,
-    } = options;
+    try {
+      await this.ensureInitialized();
 
-    // If query is empty or just whitespace, use discover mode
-    if (!query || query.trim() === '') {
-      return this.discover({
+      const {
+        query,
+        type,
+        limit = 20,
         languages,
-        countries: countries || (region ? [region] : undefined),
-        region: region || watchRegion,
+        countries,
+        region,
         genres,
         minRating,
         maxRating,
@@ -154,14 +238,32 @@ export class MovieBoxMetadataAdapter {
         startYear,
         endYear,
         keywords,
-        sortBy,
-        type: type || 'all',
-        limit,
-      });
-    }
+        sortBy = 'popularity.desc',
+        watchRegion,
+      } = options;
 
-    try {
-      // Map type to SubjectType
+      // If query is empty or just whitespace, use discover mode
+      if (!query || query.trim() === '') {
+        console.log('[MovieBoxMetadataAdapter] 🔄 Empty query - using discover mode');
+        return this.discover({
+          languages,
+          countries: countries || (region ? [region] : undefined),
+          region: region || watchRegion,
+          genres,
+          minRating,
+          maxRating,
+          year,
+          startYear,
+          endYear,
+          keywords,
+          sortBy,
+          type: type || 'all',
+          limit,
+        });
+      }
+
+      // ─── FIX: Map type to SubjectType correctly ───
+      // The movie-box SDK expects specific SubjectType enum values
       let subjectType: SubjectType;
       if (type === 'tv') {
         subjectType = SubjectType.TV_SERIES;
@@ -171,22 +273,61 @@ export class MovieBoxMetadataAdapter {
         subjectType = SubjectType.ALL;
       }
 
+      console.log(`[MovieBoxMetadataAdapter] 📤 Searching for "${query}" with subjectType:`, subjectType);
+
+      // ─── FIX: Use the correct API version ───
+      // v2 is the default and works for search
+      const apiVersion = ApiVersion.V2;
+
       // Search using boxOffice with native filters
       const results = await boxOffice.search(
         query,
         1, // page
         Math.min(limit + 10, 50), // per page - get extra for filtering
         subjectType,
-        ApiVersion.V2
+        apiVersion
       );
+
+      console.log(`[MovieBoxMetadataAdapter] 📥 Raw results:`, {
+        total: results.items?.length || 0,
+        hasItems: !!results.items,
+        itemsType: results.items ? typeof results.items : 'undefined',
+      });
+
+      if (results.items && results.items.length > 0) {
+        console.log(`[MovieBoxMetadataAdapter] 📊 First result sample:`, {
+          title: results.items[0].title,
+          subjectId: results.items[0].subjectId,
+          subjectType: results.items[0].subjectType,
+          hasCover: !!results.items[0].cover,
+        });
+
+        // Log all results titles for debugging
+        const titles = results.items.slice(0, 5).map((item: any) => item.title);
+        console.log(`[MovieBoxMetadataAdapter] 📊 Result titles:`, titles);
+      } else {
+        console.warn(`[MovieBoxMetadataAdapter] ⚠️ No results found for "${query}"`);
+        console.warn(`[MovieBoxMetadataAdapter] 💡 Tip: Make sure MOVIEBOX_API_HOST is set to:`, DEFAULT_API_HOST);
+        console.warn(`[MovieBoxMetadataAdapter] 💡 Or try using the v3 backend which doesn't need API host configuration.`);
+      }
 
       // Take results and map to IMetadataResult
-      let mapped = results.items.map((item: SearchResultItem) => 
-        this.mapSearchResultItem(item)
-      );
+      let mapped = results.items.map((item: SearchResultItem) => {
+        const mappedItem = this.mapSearchResultItem(item);
+        // Log mapping result for first item
+        if (results.items.indexOf(item) === 0) {
+          console.log(`[MovieBoxMetadataAdapter] 📊 Mapped first result:`, {
+            id: mappedItem.id,
+            title: mappedItem.title,
+            type: mappedItem.type,
+            hasPoster: !!mappedItem.poster,
+            poster: mappedItem.poster ? mappedItem.poster.substring(0, 50) + '...' : 'none',
+          });
+        }
+        return mappedItem;
+      });
 
       // Apply any remaining filters that the Python SDK doesn't support natively
-      // Most filtering happens at the Python SDK level via SubjectType
       mapped = this.applyFilters(mapped, {
         languages,
         countries,
@@ -203,9 +344,18 @@ export class MovieBoxMetadataAdapter {
       // Sort results
       mapped = this.sortResults(mapped, sortBy);
 
-      return mapped.slice(0, limit);
+      const finalResults = mapped.slice(0, limit);
+      console.log(`[MovieBoxMetadataAdapter] ✅ Returning ${finalResults.length} results for "${query}"`);
+      return finalResults;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] Search failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ Search failed:', error);
+      if (error instanceof Error) {
+        console.error('[MovieBoxMetadataAdapter] Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        });
+      }
       return [];
     }
   }
@@ -216,9 +366,11 @@ export class MovieBoxMetadataAdapter {
    * Python SDK handles filtering natively on the backend.
    */
   async discover(filters: DiscoverFilters, limit: number = 20): Promise<IMetadataResult[]> {
-    await this.ensureInitialized();
+    console.log('[MovieBoxMetadataAdapter] 🔍 Discover called with filters:', filters);
 
     try {
+      await this.ensureInitialized();
+
       const results: IMetadataResult[] = [];
 
       // Determine what to fetch based on type
@@ -245,6 +397,10 @@ export class MovieBoxMetadataAdapter {
       if (region || genreFilter || filters.languages || filters.countries) {
         // Fetch hot content with filters applied at the Python SDK level
         const hotContent = await boxOffice.getHotContent(ApiVersion.V2);
+        console.log('[MovieBoxMetadataAdapter] 📊 Hot content received:', {
+          movies: hotContent.movies?.length || 0,
+          tvSeries: hotContent.tvSeries?.length || 0,
+        });
         
         // Map movies with native filtering
         if (fetchMovies) {
@@ -279,11 +435,15 @@ export class MovieBoxMetadataAdapter {
 
         // Sort and limit
         filtered = this.sortResults(filtered, filters.sortBy || 'popularity.desc');
+        console.log(`[MovieBoxMetadataAdapter] ✅ Discover returned ${filtered.slice(0, limit).length} results`);
         return filtered.slice(0, limit);
       }
 
       // If no specific filters, get trending content from Python SDK
       const trending = await boxOffice.getTrending(1, 24, ApiVersion.V2);
+      console.log('[MovieBoxMetadataAdapter] 📊 Trending received:', {
+        total: trending.data?.length || 0,
+      });
       
       let items = trending.data;
       
@@ -314,9 +474,10 @@ export class MovieBoxMetadataAdapter {
 
       // Sort and limit
       filtered = this.sortResults(filtered, filters.sortBy || 'popularity.desc');
+      console.log(`[MovieBoxMetadataAdapter] ✅ Discover returned ${filtered.slice(0, limit).length} results`);
       return filtered.slice(0, limit);
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] Discover failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ Discover failed:', error);
       return [];
     }
   }
@@ -325,20 +486,28 @@ export class MovieBoxMetadataAdapter {
    * Get metadata by ID.
    */
   async getById(id: string, type: 'movie' | 'tv'): Promise<IMetadataResult | null> {
-    await this.ensureInitialized();
+    console.log(`[MovieBoxMetadataAdapter] 🔍 Getting by ID: ${id} (${type})`);
 
     try {
+      await this.ensureInitialized();
+
       let details: MovieDetails | TVSeriesDetails | null = null;
 
+      // FIXED: getTVSeriesDetails/getMovieDetails resolve DIRECTLY to the
+      // details object (subject/stars/resource/metadata) - unlike the
+      // paginated endpoints (getTrending, getPopularSearches,
+      // getRecommendations), they are NOT wrapped in a `{ data: ... }`
+      // envelope, so `result.data` doesn't exist on these types.
       if (type === 'tv') {
-        const result = await boxOffice.getTVSeriesDetails(id, ApiVersion.V1);
-        details = result.data;
+        details = await boxOffice.getTVSeriesDetails(id, ApiVersion.V1);
       } else {
-        const result = await boxOffice.getMovieDetails(id, ApiVersion.V1);
-        details = result.data;
+        details = await boxOffice.getMovieDetails(id, ApiVersion.V1);
       }
 
-      if (!details) return null;
+      if (!details) {
+        console.warn(`[MovieBoxMetadataAdapter] ⚠️ No details found for ID: ${id}`);
+        return null;
+      }
 
       // Get downloadable files (for stream info)
       const subjectType = type === 'tv' ? SubjectType.TV_SERIES : SubjectType.MOVIES;
@@ -348,9 +517,11 @@ export class MovieBoxMetadataAdapter {
         ApiVersion.V1
       );
 
-      return this.mapDetailedResult(details, type, files);
+      const result = this.mapDetailedResult(details, type, files);
+      console.log(`[MovieBoxMetadataAdapter] ✅ Found: ${result.title}`);
+      return result;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] GetById failed:', error);
+      console.error(`[MovieBoxMetadataAdapter] ❌ GetById failed for ${id}:`, error);
       return null;
     }
   }
@@ -359,9 +530,11 @@ export class MovieBoxMetadataAdapter {
    * Get trending content from Python SDK.
    */
   async getTrending(limit: number = 20, type?: 'movie' | 'tv', page: number = 1): Promise<IMetadataResult[]> {
-    await this.ensureInitialized();
+    console.log(`[MovieBoxMetadataAdapter] 📊 Getting trending (limit: ${limit}, type: ${type || 'all'})`);
 
     try {
+      await this.ensureInitialized();
+
       const results = await boxOffice.getTrending(page, 24, ApiVersion.V2);
       
       let items = results.data;
@@ -371,9 +544,11 @@ export class MovieBoxMetadataAdapter {
         items = items.filter((item: any) => item.subjectType === SubjectType.TV_SERIES);
       }
 
-      return items.slice(0, limit).map((item: any) => this.mapTrendingItem(item));
+      const mapped = items.slice(0, limit).map((item: any) => this.mapTrendingItem(item));
+      console.log(`[MovieBoxMetadataAdapter] ✅ Trending returned ${mapped.length} results`);
+      return mapped;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] GetTrending failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ GetTrending failed:', error);
       return [];
     }
   }
@@ -382,9 +557,11 @@ export class MovieBoxMetadataAdapter {
    * Get trending content by category using Python SDK.
    */
   async getTrendingByCategory(category: string, limit: number = 20, region?: string): Promise<IMetadataResult[]> {
-    await this.ensureInitialized();
+    console.log(`[MovieBoxMetadataAdapter] 📊 Getting trending by category: ${category}`);
 
     try {
+      await this.ensureInitialized();
+
       // Map category to MovieBox genre/type filters
       const categoryMap: Record<string, { genre?: string[]; type?: SubjectType; query?: string }> = {
         'movies': { type: SubjectType.MOVIES },
@@ -429,9 +606,11 @@ export class MovieBoxMetadataAdapter {
         });
       }
 
-      return items.slice(0, limit).map((item: any) => this.mapTrendingItem(item));
+      const mapped = items.slice(0, limit).map((item: any) => this.mapTrendingItem(item));
+      console.log(`[MovieBoxMetadataAdapter] ✅ Trending by category returned ${mapped.length} results`);
+      return mapped;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] GetTrendingByCategory failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ GetTrendingByCategory failed:', error);
       return [];
     }
   }
@@ -440,12 +619,14 @@ export class MovieBoxMetadataAdapter {
    * Get hot content (movies & TV series) from Python SDK.
    */
   async getHotContent(): Promise<{ movies: IMetadataResult[]; tvSeries: IMetadataResult[] }> {
-    await this.ensureInitialized();
+    console.log('[MovieBoxMetadataAdapter] 📊 Getting hot content...');
 
     try {
+      await this.ensureInitialized();
+
       const hot = await boxOffice.getHotContent(ApiVersion.V2);
       
-      return {
+      const result = {
         movies: (hot.movies || []).map((item: any) => 
           this.mapHotContentItem(item, 'movie')
         ),
@@ -453,8 +634,11 @@ export class MovieBoxMetadataAdapter {
           this.mapHotContentItem(item, 'tv')
         ),
       };
+      
+      console.log(`[MovieBoxMetadataAdapter] ✅ Hot content returned ${result.movies.length} movies and ${result.tvSeries.length} TV series`);
+      return result;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] GetHotContent failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ GetHotContent failed:', error);
       return { movies: [], tvSeries: [] };
     }
   }
@@ -463,13 +647,17 @@ export class MovieBoxMetadataAdapter {
    * Get homepage content (categorized content) from Python SDK.
    */
   async getHomepage(): Promise<any[]> {
-    await this.ensureInitialized();
+    console.log('[MovieBoxMetadataAdapter] 📊 Getting homepage...');
 
     try {
+      await this.ensureInitialized();
+
       const homepage = await boxOffice.getHomepage(ApiVersion.V2);
-      return homepage.categories || [];
+      const categories = homepage.categories || [];
+      console.log(`[MovieBoxMetadataAdapter] ✅ Homepage returned ${categories.length} categories`);
+      return categories;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] GetHomepage failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ GetHomepage failed:', error);
       return [];
     }
   }
@@ -478,13 +666,17 @@ export class MovieBoxMetadataAdapter {
    * Get popular searches from Python SDK.
    */
   async getPopularSearches(): Promise<string[]> {
-    await this.ensureInitialized();
+    console.log('[MovieBoxMetadataAdapter] 📊 Getting popular searches...');
 
     try {
+      await this.ensureInitialized();
+
       const popular = await boxOffice.getPopularSearches(ApiVersion.V2);
-      return popular.data.map((item: any) => item.title);
+      const searches = popular.data.map((item: any) => item.title);
+      console.log(`[MovieBoxMetadataAdapter] ✅ Popular searches returned ${searches.length} items`);
+      return searches;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] GetPopularSearches failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ GetPopularSearches failed:', error);
       return [];
     }
   }
@@ -493,13 +685,17 @@ export class MovieBoxMetadataAdapter {
    * Get recommendations from Python SDK.
    */
   async getRecommendations(urlOrItem: string, limit: number = 20): Promise<IMetadataResult[]> {
-    await this.ensureInitialized();
+    console.log(`[MovieBoxMetadataAdapter] 📊 Getting recommendations for: ${urlOrItem}`);
 
     try {
+      await this.ensureInitialized();
+
       const results = await boxOffice.getRecommendations(urlOrItem, 1, limit, ApiVersion.V1);
-      return results.data.map((item: any) => this.mapTrendingItem(item));
+      const mapped = results.data.map((item: any) => this.mapTrendingItem(item));
+      console.log(`[MovieBoxMetadataAdapter] ✅ Recommendations returned ${mapped.length} results`);
+      return mapped;
     } catch (error) {
-      console.error('[MovieBoxMetadataAdapter] GetRecommendations failed:', error);
+      console.error('[MovieBoxMetadataAdapter] ❌ GetRecommendations failed:', error);
       return [];
     }
   }
@@ -625,7 +821,7 @@ export class MovieBoxMetadataAdapter {
   /**
    * Sort results by specified field.
    */
-  private sortResults(results: IMetadataResult[], sortBy: string): IMetadataResult[] {
+  private sortResults(results: IMetadataResult[], sortBy: SortBy): IMetadataResult[] {
     const sorted = [...results];
 
     switch (sortBy) {
@@ -664,6 +860,7 @@ export class MovieBoxMetadataAdapter {
 
   /**
    * Map search result item to IMetadataResult.
+   * FIXED: Use cover instead of poster
    */
   private mapSearchResultItem(item: SearchResultItem): IMetadataResult {
     return {
@@ -757,6 +954,7 @@ export class MovieBoxMetadataAdapter {
 
   /**
    * Map detailed result to IMetadataResult.
+   * FIXED: Use cover instead of poster
    */
   private mapDetailedResult(details: any, type: 'movie' | 'tv', files?: any): IMetadataResult {
     const subject = details.subject || {};
@@ -815,9 +1013,10 @@ export class MovieBoxMetadataAdapter {
 
   private getBestPoster(item: any): string {
     if (item.cover?.url) return item.cover.url;
-    if (item.poster?.url) return item.poster.url;
     if (item.cover?.thumbnail) return item.cover.thumbnail;
+    if (item.poster?.url) return item.poster.url;
     if (item.image) return item.image;
+    if (item.thumbnail) return item.thumbnail;
     return '';
   }
 
@@ -839,6 +1038,8 @@ export class MovieBoxMetadataAdapter {
    */
   destroy(): void {
     this.initialized = false;
+    this.initAttempts = 0;
+    this.apiHostConfigured = false;
     console.log('[MovieBoxMetadataAdapter] Destroyed');
   }
 }

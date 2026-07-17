@@ -15,6 +15,17 @@ const TMDB_POSTER_SIZE = 'w500';
 const TMDB_BACKDROP_SIZE = 'w1280';
 const TMDB_PROFILE_SIZE = 'w185';
 
+// Sort option literal type matching DiscoverFilters.sortBy
+type SortOption =
+  | 'popularity.desc'
+  | 'popularity.asc'
+  | 'release_date.desc'
+  | 'release_date.asc'
+  | 'vote_average.desc'
+  | 'vote_average.asc'
+  | 'vote_count.desc'
+  | 'vote_count.asc';
+
 export class TMDBMetadataAdapter {
   readonly name = 'TMDB';
   readonly id = 'tmdb';
@@ -56,7 +67,7 @@ export class TMDBMetadataAdapter {
     withCompanies?: string[];
     withoutGenres?: string[];
     includeAdult?: boolean;
-    sortBy?: string;
+    sortBy?: SortOption;
     language?: string;
     watchRegion?: string;
     extended?: string;
@@ -129,7 +140,7 @@ export class TMDBMetadataAdapter {
 
       // Apply filters client-side since search endpoint doesn't support all filters
       const mapped = this.mapSearchResults(filtered, 'tmdb');
-      
+
       // Apply additional filters
       let processed = this.applyFilters(mapped, {
         languages,
@@ -166,7 +177,7 @@ export class TMDBMetadataAdapter {
 
     try {
       const results: IMetadataResult[] = [];
-      
+
       // Determine what to fetch based on type
       const fetchMovies = filters.type === 'all' || filters.type === 'movie';
       const fetchShows = filters.type === 'all' || filters.type === 'tv';
@@ -438,10 +449,10 @@ export class TMDBMetadataAdapter {
    */
   private async fetchFromTMDB(url: string, params: any): Promise<any> {
     const TMDB_API_KEY = 'fa953c513c37da857fb3155738358ff0';
-    
+
     const fullUrl = new URL(url);
     fullUrl.searchParams.append('api_key', TMDB_API_KEY);
-    
+
     // Add all params
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null && value !== '') {
@@ -466,8 +477,8 @@ export class TMDBMetadataAdapter {
    */
   private mapSearchResults(items: any[], source: string): IMetadataResult[] {
     return items.map((item: any) => ({
-      id: item.id?.toString() || '',
-      title: item.title || item.name || '',
+      id: item.id?.toString() ?? '',
+      title: item.title ?? item.name ?? '',
       type: item.media_type === 'tv' || item.name ? 'tv' : 'movie',
       year: item.release_date ? parseInt(item.release_date.split('-')[0]) :
             item.first_air_date ? parseInt(item.first_air_date.split('-')[0]) :
@@ -475,16 +486,16 @@ export class TMDBMetadataAdapter {
       releaseDate: item.release_date || item.first_air_date || undefined,
       poster: item.poster_path ? `${TMDB_IMAGE_BASE}/${TMDB_POSTER_SIZE}${item.poster_path}` : undefined,
       backdrop: item.backdrop_path ? `${TMDB_IMAGE_BASE}/${TMDB_BACKDROP_SIZE}${item.backdrop_path}` : undefined,
-      overview: item.overview || '',
-      rating: item.vote_average || 0,
-      popularity: item.popularity || 0,
-      voteCount: item.vote_count || 0,
-      genres: item.genre_ids?.map((id: number) => id.toString()) || [],
+      overview: item.overview ?? '',
+      rating: item.vote_average ?? 0,
+      popularity: item.popularity ?? 0,
+      voteCount: item.vote_count ?? 0,
+      genres: item.genre_ids?.map((id: number) => id.toString()) ?? [],
       keywords: [],
       source: source,
-      originalLanguage: item.original_language || item.original_language || undefined,
-      originalTitle: item.original_title || item.original_name || item.title || item.name || '',
-      originCountry: item.origin_country || [],
+      originalLanguage: item.original_language ?? undefined,
+      originalTitle: item.original_title ?? item.original_name ?? item.title ?? item.name ?? '',
+      originCountry: item.origin_country ?? [],
       certification: undefined,
       tagline: undefined,
       status: item.status,
@@ -496,11 +507,11 @@ export class TMDBMetadataAdapter {
       spokenLanguages: undefined,
       productionCompanies: undefined,
       productionCountries: undefined,
-      numberOfSeasons: item.number_of_seasons || undefined,
-      numberOfEpisodes: item.number_of_episodes || undefined,
-      lastAirDate: item.last_air_date || undefined,
-      inProduction: item.in_production || false,
-      runtime: item.runtime || item.episode_run_time?.[0] || undefined,
+      numberOfSeasons: item.number_of_seasons ?? undefined,
+      numberOfEpisodes: item.number_of_episodes ?? undefined,
+      lastAirDate: item.last_air_date ?? undefined,
+      inProduction: item.in_production ?? false,
+      runtime: item.runtime ?? item.episode_run_time?.[0] ?? undefined,
       cast: [],
     }));
   }
@@ -510,10 +521,10 @@ export class TMDBMetadataAdapter {
    */
   private mapDetailedResult(item: any, type: 'movie' | 'tv'): IMetadataResult {
     const isMovie = type === 'movie';
-    
+
     return {
-      id: item.id?.toString() || '',
-      title: item.title || item.name || '',
+      id: item.id?.toString() ?? '',
+      title: item.title ?? item.name ?? '',
       type: isMovie ? 'movie' : 'tv',
       year: item.release_date ? parseInt(item.release_date.split('-')[0]) :
             item.first_air_date ? parseInt(item.first_air_date.split('-')[0]) :
@@ -521,13 +532,13 @@ export class TMDBMetadataAdapter {
       releaseDate: item.release_date || item.first_air_date || undefined,
       poster: item.poster_path ? `${TMDB_IMAGE_BASE}/${TMDB_POSTER_SIZE}${item.poster_path}` : undefined,
       backdrop: item.backdrop_path ? `${TMDB_IMAGE_BASE}/${TMDB_BACKDROP_SIZE}${item.backdrop_path}` : undefined,
-      overview: item.overview || '',
-      tagline: item.tagline || undefined,
-      rating: item.vote_average || 0,
-      popularity: item.popularity || 0,
-      voteCount: item.vote_count || 0,
-      runtime: item.runtime || item.episode_run_time?.[0] || undefined,
-      genres: item.genres?.map((g: any) => g.name) || [],
+      overview: item.overview ?? '',
+      tagline: item.tagline ?? undefined,
+      rating: item.vote_average ?? 0,
+      popularity: item.popularity ?? 0,
+      voteCount: item.vote_count ?? 0,
+      runtime: item.runtime ?? item.episode_run_time?.[0] ?? undefined,
+      genres: item.genres?.map((g: any) => g.name) ?? [],
       keywords: [],
       cast: item.credits?.cast?.slice(0, 10).map((c: any) => ({
         character: c.character,
@@ -535,16 +546,16 @@ export class TMDBMetadataAdapter {
           name: c.name,
           ids: {},
         },
-      })) || [],
+      })) ?? [],
       source: 'tmdb',
-      
+
       // Enhanced fields
-      originalLanguage: item.original_language || undefined,
-      originalTitle: item.original_title || item.original_name || item.title || item.name || '',
-      originCountry: item.origin_country || item.production_countries?.map((c: any) => c.iso_3166_1) || [],
-      certification: item.releases?.results?.[0]?.certification || 
-                     item.content_ratings?.results?.[0]?.rating || 
-                     item.certification || undefined,
+      originalLanguage: item.original_language ?? undefined,
+      originalTitle: item.original_title ?? item.original_name ?? item.title ?? item.name ?? '',
+      originCountry: item.origin_country ?? item.production_countries?.map((c: any) => c.iso_3166_1) ?? [],
+      certification: item.releases?.results?.[0]?.certification ?? 
+                     item.content_ratings?.results?.[0]?.rating ?? 
+                     item.certification ?? undefined,
       status: item.status,
       belongsToCollection: item.belongs_to_collection ? {
         id: item.belongs_to_collection.id,
@@ -559,90 +570,113 @@ export class TMDBMetadataAdapter {
         name: n.name,
         logoPath: n.logo_path,
         originCountry: n.origin_country,
-      })) || [],
+      })) ?? [],
       spokenLanguages: item.spoken_languages?.map((l: any) => ({
         englishName: l.english_name,
         iso639_1: l.iso_639_1,
         name: l.name,
-      })) || [],
+      })) ?? [],
       productionCompanies: item.production_companies?.map((c: any) => ({
         id: c.id,
         name: c.name,
         logoPath: c.logo_path,
         originCountry: c.origin_country,
-      })) || [],
+      })) ?? [],
       productionCountries: item.production_countries?.map((c: any) => ({
         iso3166_1: c.iso_3166_1,
         name: c.name,
-      })) || [],
-      numberOfSeasons: item.number_of_seasons || undefined,
-      numberOfEpisodes: item.number_of_episodes || undefined,
-      lastAirDate: item.last_air_date || undefined,
-      inProduction: item.in_production || false,
+      })) ?? [],
+      numberOfSeasons: item.number_of_seasons ?? undefined,
+      numberOfEpisodes: item.number_of_episodes ?? undefined,
+      lastAirDate: item.last_air_date ?? undefined,
+      inProduction: item.in_production ?? false,
     };
   }
 
   /**
    * Apply filters client-side (fallback when API doesn't support them).
    */
-  private applyFilters(results: IMetadataResult[], filters: any): IMetadataResult[] {
+  private applyFilters(results: IMetadataResult[], filters: {
+    languages?: string[];
+    countries?: string[];
+    region?: string;
+    genres?: string[];
+    certifications?: string[];
+    minRating?: number;
+    maxRating?: number;
+    year?: number;
+    startYear?: number;
+    endYear?: number;
+    keywords?: string[];
+    includeAdult?: boolean;
+    sortBy?: SortOption;
+  }): IMetadataResult[] {
     let filtered = [...results];
 
     // Filter by language
     if (filters.languages && filters.languages.length > 0) {
+      const langs = filters.languages;
       filtered = filtered.filter(item => 
-        item.originalLanguage && filters.languages.includes(item.originalLanguage)
+        item.originalLanguage !== undefined && langs.includes(item.originalLanguage)
       );
     }
 
     // Filter by country
     if (filters.countries && filters.countries.length > 0) {
+      const ctrys = filters.countries;
       filtered = filtered.filter(item => 
-        item.originCountry && item.originCountry.some(c => filters.countries.includes(c))
+        item.originCountry !== undefined && item.originCountry.some(c => ctrys.includes(c))
       );
     }
 
     // Filter by certification
     if (filters.certifications && filters.certifications.length > 0) {
+      const certs = filters.certifications;
       filtered = filtered.filter(item => 
-        item.certification && filters.certifications.includes(item.certification)
+        item.certification !== undefined && certs.includes(item.certification)
       );
     }
 
     // Filter by genre
     if (filters.genres && filters.genres.length > 0) {
+      const gens = filters.genres;
       filtered = filtered.filter(item => 
-        item.genres && item.genres.some(g => filters.genres.includes(g))
+        item.genres !== undefined && item.genres.some(g => gens.includes(g))
       );
     }
 
     // Filter by min rating
     if (filters.minRating !== undefined) {
-      filtered = filtered.filter(item => (item.rating || 0) >= filters.minRating);
+      const minR = filters.minRating;
+      filtered = filtered.filter(item => (item.rating ?? 0) >= minR);
     }
 
     // Filter by max rating
     if (filters.maxRating !== undefined) {
-      filtered = filtered.filter(item => (item.rating || 0) <= filters.maxRating);
+      const maxR = filters.maxRating;
+      filtered = filtered.filter(item => (item.rating ?? 0) <= maxR);
     }
 
     // Filter by year
-    if (filters.year) {
+    if (filters.year !== undefined) {
       filtered = filtered.filter(item => item.year === filters.year);
     }
 
     // Filter by year range
     if (filters.startYear !== undefined) {
-      filtered = filtered.filter(item => (item.year || 0) >= filters.startYear);
+      const sYear = filters.startYear;
+      filtered = filtered.filter(item => (item.year ?? 0) >= sYear);
     }
     if (filters.endYear !== undefined) {
-      filtered = filtered.filter(item => (item.year || 0) <= filters.endYear);
+      const eYear = filters.endYear;
+      filtered = filtered.filter(item => (item.year ?? 0) <= eYear);
     }
 
     // Filter by keywords
     if (filters.keywords && filters.keywords.length > 0) {
+      const kw = filters.keywords;
       filtered = filtered.filter(item => 
-        item.keywords && item.keywords.some(k => filters.keywords.includes(k))
+        item.keywords !== undefined && item.keywords.some(k => kw.includes(k))
       );
     }
 
@@ -657,14 +691,14 @@ export class TMDBMetadataAdapter {
   /**
    * Sort results by specified field.
    */
-  private sortResults(results: IMetadataResult[], sortBy: string): IMetadataResult[] {
+  private sortResults(results: IMetadataResult[], sortBy: SortOption): IMetadataResult[] {
     const sorted = [...results];
 
     switch (sortBy) {
       case 'popularity.desc':
-        return sorted.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        return sorted.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
       case 'popularity.asc':
-        return sorted.sort((a, b) => (a.popularity || 0) - (b.popularity || 0));
+        return sorted.sort((a, b) => (a.popularity ?? 0) - (b.popularity ?? 0));
       case 'release_date.desc':
         return sorted.sort((a, b) => {
           const dateA = a.releaseDate ? new Date(a.releaseDate).getTime() : 0;
@@ -678,15 +712,15 @@ export class TMDBMetadataAdapter {
           return dateA - dateB;
         });
       case 'vote_average.desc':
-        return sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        return sorted.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
       case 'vote_average.asc':
-        return sorted.sort((a, b) => (a.rating || 0) - (b.rating || 0));
+        return sorted.sort((a, b) => (a.rating ?? 0) - (b.rating ?? 0));
       case 'vote_count.desc':
-        return sorted.sort((a, b) => (b.voteCount || 0) - (a.voteCount || 0));
+        return sorted.sort((a, b) => (b.voteCount ?? 0) - (a.voteCount ?? 0));
       case 'vote_count.asc':
-        return sorted.sort((a, b) => (a.voteCount || 0) - (b.voteCount || 0));
+        return sorted.sort((a, b) => (a.voteCount ?? 0) - (b.voteCount ?? 0));
       default:
-        return sorted.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        return sorted.sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
     }
   }
 }

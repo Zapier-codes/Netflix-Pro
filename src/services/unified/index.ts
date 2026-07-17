@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unified Media Service - Main entry point for the unified media layer.
  */
 
@@ -81,7 +81,7 @@ export { ProviderRegistry } from './ProviderRegistry'
 export { StreamNormalizer } from './StreamNormalizer'
 
 // ============================================================================
-// METADATA PROVIDERS
+// METADATA PROVIDERS - COMPLETE LIST (5 providers)
 // ============================================================================
 
 export { MetadataAggregatorNew as MetadataAggregatorNewImpl } from './metadata/MetadataAggregatorNew'
@@ -89,6 +89,9 @@ export { default as TMDBMetadata } from './metadata/TMDBMetadata'
 export { default as KuryanaMetadata } from './metadata/KuryanaMetadata'
 export { TMDBMetadataAdapter } from './metadata/adapters/TMDBMetadataAdapter'
 export { KuryanaMetadataAdapter } from './metadata/adapters/KuryanaMetadataAdapter'
+export { MovieBoxMetadataAdapter } from './metadata/adapters/MovieBoxMetadataAdapter'
+export { ConsumetMetadataAdapter } from './metadata/adapters/ConsumetMetadataAdapter'
+export { TraktMetadataAdapter } from './metadata/adapters/TraktMetadataAdapter'
 
 // ============================================================================
 // STREAMING PROVIDERS

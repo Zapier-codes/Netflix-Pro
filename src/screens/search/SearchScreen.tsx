@@ -29,7 +29,7 @@ import { useSearchAggregation } from '../../hooks/supabase/useSearchAggregation'
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
-// ─── Unified multi-source search engine (TMDB + Kuryana + MovieBox) ───
+// ─── Unified multi-source search engine (TMDB + Kuryana + MovieBox + Consumet + Trakt) ───
 import { unifiedMediaService } from '../../services/unified/UnifiedMediaService';
 import { IMetadataResult } from '../../services/unified/types/MetadataTypes';
 import { DiscoverFilters } from '../../services/unified/types/MetadataTypes';
@@ -79,8 +79,6 @@ const sortResults = (items: IMetadataResult[], sortBy: SortOption): IMetadataRes
       return arr.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     case 'popularity':
     default:
-      // Popularity falls back to rating when IMetadataResult has no explicit
-      // popularity field — swap in a real popularity field if your API returns one.
       return arr.sort((a, b) => {
         const popA = (a as any).popularity ?? (a.rating || 0);
         const popB = (b as any).popularity ?? (b.rating || 0);
@@ -89,7 +87,7 @@ const sortResults = (items: IMetadataResult[], sortBy: SortOption): IMetadataRes
   }
 };
 
-// ─── Local watchlist (self-contained; wire to your real watchlist store if you have one) ───
+// ─── Local watchlist ───
 const WATCHLIST_KEY = 'search_screen_watchlist_ids';
 
 const getWatchlistIds = async (): Promise<Set<string>> => {
@@ -119,7 +117,7 @@ interface SearchFilters {
   type: 'all' | 'movie' | 'tv';
   year: string;
   minRating: number;
-  source: 'all' | 'tmdb' | 'kuryana' | 'moviebox';
+  source: 'all' | 'tmdb' | 'kuryana' | 'moviebox' | 'consumet' | 'trakt';
   genre: string;
   language: string;
   certification: string;
@@ -128,7 +126,7 @@ interface SearchFilters {
 
 type ActiveMode = 'discover' | 'typed' | 'category' | 'genre';
 
-// ─── Category Cards with real classification signals ───
+// ─── Category Cards ───
 const CATEGORY_CARDS: { 
   label: string; 
   query: string; 
@@ -170,6 +168,12 @@ const CATEGORY_CARDS: {
     query: 'chinese drama', 
     icon: 'globe-outline',
     filters: { languages: ['zh', 'cn'], countries: ['CN', 'TW', 'HK'], genres: ['Drama'], type: 'tv' }
+  },
+  { 
+    label: 'Consumet', 
+    query: 'anime', 
+    icon: 'sparkles-outline',
+    filters: { type: 'all' }
   },
 ];
 
@@ -243,14 +247,14 @@ const SearchScreen = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
-  // ─── Sort control (Popularity / Rating / Release Date / A-Z) ───
+  // ─── Sort control ───
   const [sortBy, setSortBy] = useState<SortOption>('popularity');
   const [showSortMenu, setShowSortMenu] = useState(false);
 
-  // ─── Results tab segmentation (All / Movies / TV) ───
+  // ─── Results tab segmentation ───
   const [activeTab, setActiveTab] = useState<'all' | 'movie' | 'tv'>('all');
 
-  // ─── Local watchlist ids for inline bookmark toggle ───
+  // ─── Local watchlist ids ───
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
 
   // ─── Filter State ───
@@ -269,7 +273,6 @@ const SearchScreen = () => {
     'Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary',
     'Drama', 'Family', 'Fantasy', 'Horror', 'Mystery', 'Romance',
     'Sci-Fi', 'Thriller', 'War', 'Western',
-    // Asian drama genres
     'Wuxia', 'Xianxia', 'Historical', 'Period', 'Martial Arts',
     'Sageuk', 'Melodrama', 'Slice of Life', 'School', 'Youth',
   ]);
@@ -416,7 +419,12 @@ const SearchScreen = () => {
     saveToHistory: boolean = true
   ) => {
     const trimmedQuery = searchQuery.trim();
+    
+    console.log(`[Search] 🔍 Starting search: "${trimmedQuery}" | Mode: ${mode} | Title: ${title}`);
+    console.log(`[Search] 📋 Category filters:`, categoryFilters || 'None');
+    
     if (!trimmedQuery && !categoryFilters) {
+      console.log('[Search] ⚠️ Empty query and no filters — resetting to discover');
       resetToDiscover();
       return;
     }
@@ -435,6 +443,10 @@ const SearchScreen = () => {
     setShowSuggestions(false);
 
     try {
+      console.log('[Search] 🔧 Ensuring UnifiedMediaService is initialized...');
+      await unifiedMediaService.initialize();
+      console.log('[Search] ✅ UnifiedMediaService is ready');
+
       const currentFilters = filtersRef.current;
       
       // Build search options with all filters
@@ -474,46 +486,129 @@ const SearchScreen = () => {
         searchOptions.genres = [currentFilters.genre];
       }
 
+      // Add source filter - NEW
+      if (currentFilters.source !== 'all') {
+        searchOptions.source = currentFilters.source;
+      }
+
+      console.log(`[Search] 📤 Sending search request with options:`, JSON.stringify(searchOptions, null, 2));
+
       // Use discover mode if no query and we have category filters
       let searchResults: IMetadataResult[];
       if (!trimmedQuery && categoryFilters) {
-        // Use discover mode
         const discoverFilters: DiscoverFilters = {
           ...categoryFilters,
           type: currentFilters.type !== 'all' ? currentFilters.type : categoryFilters.type || 'all',
           limit: 50,
         };
-        // @ts-ignore - discover is available
+        console.log(`[Search] 🔄 Using DISCOVER mode with filters:`, JSON.stringify(discoverFilters, null, 2));
         searchResults = await unifiedMediaService.discover(discoverFilters);
       } else {
-        // Regular search
+        console.log(`[Search] 🔎 Using SEARCH mode with query: "${trimmedQuery}"`);
         searchResults = await unifiedMediaService.search(searchOptions);
       }
 
-      if (!isMounted.current) return;
+      console.log(`[Search] 📥 Received ${searchResults.length} results from search`);
 
-      const withPosters = searchResults.filter((item) => !!item.poster);
-      setResults(withPosters);
+      if (!isMounted.current) {
+        console.log('[Search] ⚠️ Component unmounted — ignoring results');
+        return;
+      }
 
-      const applied = applyFilters(withPosters, currentFilters);
+      // ─── FIX: Don't filter out results without posters ───
+      // Instead, provide a fallback poster for Kuryana and other results
+      const resultsWithFallbackPosters = searchResults.map(item => {
+        // If no poster, try to find any image field
+        if (!item.poster) {
+          // Check for Kuryana's image fields
+          const cover = (item as any).cover;
+          const image = (item as any).image;
+          const thumbnail = (item as any).thumbnail;
+          const backdrop = item.backdrop;
+          
+          // Use first available image
+          const fallbackPoster = cover || image || thumbnail || backdrop || '';
+          
+          return {
+            ...item,
+            poster: fallbackPoster || 'https://via.placeholder.com/300x450/1a1a2e/ffffff?text=No+Image',
+            // Store original source for debugging
+            _originalSource: item.source,
+          };
+        }
+        return item;
+      });
+
+      // Log what we found
+      const sources = resultsWithFallbackPosters.reduce((acc: any, item) => {
+        const source = item.source || 'unknown';
+        acc[source] = (acc[source] || 0) + 1;
+        return acc;
+      }, {});
+      
+      console.log(`[Search] 📊 Results by source:`, sources);
+      console.log(`[Search] 🖼️ ${resultsWithFallbackPosters.filter(item => item.poster).length} results have images`);
+
+      // Log sample results from each source
+      const sampleBySource: Record<string, any[]> = {};
+      resultsWithFallbackPosters.forEach(item => {
+        const source = item.source || 'unknown';
+        if (!sampleBySource[source]) sampleBySource[source] = [];
+        if (sampleBySource[source].length < 3) {
+          sampleBySource[source].push({
+            id: item.id,
+            title: item.title,
+            type: item.type,
+            source: item.source,
+            year: item.year,
+            rating: item.rating,
+            hasPoster: !!item.poster,
+          });
+        }
+      });
+      
+      console.log(`[Search] 📊 Sample results by source:`, sampleBySource);
+
+      setResults(resultsWithFallbackPosters);
+
+      const applied = applyFilters(resultsWithFallbackPosters, currentFilters);
+      console.log(`[Search] 🔍 After applying filters: ${applied.length} results`);
+
       const sorted = sortResults(applied, sortByRef.current);
+      console.log(`[Search] 📊 After sorting: ${sorted.length} results`);
+
       setFilteredResults(sorted);
       setNoResults(sorted.length === 0);
 
-      // Save to history only for typed searches
+      if (sorted.length === 0) {
+        console.log(`[Search] ❌ NO RESULTS for "${trimmedQuery}" — displaying fallback suggestions`);
+      } else {
+        console.log(`[Search] ✅ Found ${sorted.length} results for "${trimmedQuery}"`);
+      }
+
+      // Save to history only for typed searches with results
       if (saveToHistory && mode === 'typed' && sorted.length > 0) {
+        console.log(`[Search] 💾 Saving to search history: "${trimmedQuery}"`);
         await saveSearchQuery(trimmedQuery);
         loadSearchHistory();
         recordSearchToSupabase(trimmedQuery);
       }
     } catch (error) {
-      console.error('[Search] Error:', error);
+      console.error('[Search] ❌ Error during search:', error);
+      if (error instanceof Error) {
+        console.error('[Search] ❌ Error name:', error.name);
+        console.error('[Search] ❌ Error message:', error.message);
+        console.error('[Search] ❌ Error stack:', error.stack);
+      }
       setResults([]);
       setFilteredResults([]);
       setNoResults(true);
       showToast('Search failed. Please try again.');
     } finally {
-      if (isMounted.current) setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+        console.log(`[Search] 🏁 Search completed for "${trimmedQuery}"`);
+      }
     }
   }, [applyFilters, loadSearchHistory, recordSearchToSupabase, showToast, resetToDiscover]);
 
@@ -524,14 +619,12 @@ const SearchScreen = () => {
       return;
     }
 
-    // Clear suggestions if query is empty
     if (!query.trim()) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
 
-    // Show suggestions after 300ms of typing
     if (suggestionsTimeout.current) {
       clearTimeout(suggestionsTimeout.current);
     }
@@ -539,21 +632,26 @@ const SearchScreen = () => {
     setIsLoadingSuggestions(true);
     suggestionsTimeout.current = setTimeout(async () => {
       try {
-        // Use MavinEngine for search suggestions
+        console.log(`[Suggestions] 🔍 Fetching suggestions for: "${query}"`);
         const result = await MavinEngine.getSearchSuggestions(query, 0);
         if (result && result.suggestions) {
-          setSuggestions(result.suggestions.slice(0, 10));
+          const suggestionList = result.suggestions.slice(0, 10);
+          console.log(`[Suggestions] ✅ Received ${suggestionList.length} suggestions:`, suggestionList);
+          setSuggestions(suggestionList);
           setShowSuggestions(true);
+        } else {
+          console.log('[Suggestions] ⚠️ No suggestions returned');
+          setSuggestions([]);
+          setShowSuggestions(false);
         }
       } catch (error) {
-        console.error('[Search] Suggestions error:', error);
-        // Fallback: use query as suggestion
-        setSuggestions([query]);
-        setShowSuggestions(true);
+        console.error('[Suggestions] ❌ Error fetching suggestions:', error);
+        setSuggestions([]);
+        setShowSuggestions(false);
       } finally {
         setIsLoadingSuggestions(false);
       }
-    }, 300);
+    }, 200);
 
     return () => {
       if (suggestionsTimeout.current) {
@@ -574,13 +672,16 @@ const SearchScreen = () => {
       return;
     }
 
+    setShowSuggestions(false);
+    setSuggestions([]);
+
     if (debounceTimeout.current) {
       clearTimeout(debounceTimeout.current);
     }
 
     debounceTimeout.current = setTimeout(() => {
       performSearch(query, 'typed', 'Searched Results', undefined, false);
-    }, 500);
+    }, 600);
 
     return () => {
       if (debounceTimeout.current) {
@@ -629,7 +730,7 @@ const SearchScreen = () => {
     }, [loadSearchHistory, loadContinueWatching])
   );
 
-  // ─── Toggle watchlist membership from search results (no need to open detail) ───
+  // ─── Toggle watchlist ───
   const handleToggleWatchlist = useCallback((item: IMetadataResult) => {
     setWatchlistIds((prev) => {
       const next = new Set(prev);
@@ -655,51 +756,57 @@ const SearchScreen = () => {
   }, []);
 
   const handleSuggestionPress = useCallback((suggestion: string) => {
+    console.log(`[Suggestion] 🔍 Selected suggestion: "${suggestion}"`);
     skipQueryEffectRef.current = true;
     setQuery(suggestion);
     setShowSuggestions(false);
+    setSuggestions([]);
     performSearch(suggestion, 'typed', 'Searched Results', undefined, true);
     Keyboard.dismiss();
   }, [performSearch]);
 
   const handleHistoryItemPress = useCallback((historyQuery: string) => {
+    console.log(`[History] 🔍 Selected history item: "${historyQuery}"`);
     skipQueryEffectRef.current = true;
     setQuery(historyQuery);
     setShowSuggestions(false);
+    setSuggestions([]);
     performSearch(historyQuery, 'typed', 'Searched Results', undefined, true);
     Keyboard.dismiss();
   }, [performSearch]);
 
   const handleRemoveHistoryItem = async (historyQuery: string) => {
+    console.log(`[History] 🗑️ Removing history item: "${historyQuery}"`);
     await removeSearchQuery(historyQuery);
     loadSearchHistory();
   };
 
   const handleClearAllHistory = async () => {
+    console.log('[History] 🗑️ Clearing all search history');
     await clearSearchHistory();
     loadSearchHistory();
     showToast('Search history cleared');
   };
 
-  // ─── Voice search entry point ───
-  // NOTE: real speech-to-text needs a native module (e.g. @react-native-voice/voice
-  // or expo-speech-recognition) that isn't part of this project yet. Wire your
-  // chosen library's start/stop/result listeners into this handler; for now it
-  // surfaces the affordance without silently pretending to listen.
   const handleVoiceSearch = () => {
+    console.log('[Voice] 🎤 Voice search triggered');
     showToast('Voice search needs a speech-to-text module wired in — tap to type for now');
   };
 
   const handleClearQuery = () => {
+    console.log('[Search] 🧹 Clearing search query');
     skipQueryEffectRef.current = true;
     setQuery('');
     setShowSuggestions(false);
+    setSuggestions([]);
     resetToDiscover();
   };
 
   const handleCategoryPress = useCallback((cat: typeof CATEGORY_CARDS[0]) => {
+    console.log(`[Category] 🏷️ Category pressed: "${cat.label}" with query: "${cat.query}"`);
     Keyboard.dismiss();
     setShowSuggestions(false);
+    setSuggestions([]);
     
     if (query.length > 0) {
       skipQueryEffectRef.current = true;
@@ -709,21 +816,22 @@ const SearchScreen = () => {
     performSearch(cat.query, 'category', cat.label, cat.filters, false);
   }, [query, performSearch]);
 
-  // ─── Continue Watching handler ───
   const handleContinueWatchingPress = useCallback((item: ContinueWatchingItem) => {
+    console.log(`[ContinueWatching] ▶️ Resuming: "${item.title}" at ${item.progress * 100}%`);
     router.push(
       `/movie/${item.id}?mediaType=${item.type}&title=${encodeURIComponent(item.title)}&poster_path=${encodeURIComponent(item.poster || '')}&resume=${item.progress}`
     );
   }, []);
 
   const handleRemoveContinueWatching = async (id: string) => {
+    console.log(`[ContinueWatching] 🗑️ Removing from continue watching: ${id}`);
     await removeFromContinueWatching(id);
     loadContinueWatching();
   };
 
-  // ─── Genre toggle ───
   const handleGenreToggle = useCallback((genre: string) => {
     const turningOff = filters.genre === genre;
+    console.log(`[Genre] 🏷️ Toggling genre: "${genre}" (turning ${turningOff ? 'OFF' : 'ON'})`);
 
     if (activeMode === 'category' || activeMode === 'typed') {
       setFilters(prev => ({ ...prev, genre: turningOff ? '' : genre }));
@@ -744,22 +852,24 @@ const SearchScreen = () => {
     performSearch(genre.toLowerCase(), 'genre', genre, { genres: [genre] }, false);
   }, [filters.genre, activeMode, query, performSearch, resetToDiscover]);
 
-  // ─── Filter toggle helpers ───
   const toggleLanguage = useCallback((code: string) => {
+    console.log(`[Filter] 🌐 Toggling language: "${code}"`);
     setFilters(prev => ({ ...prev, language: prev.language === code ? '' : code }));
   }, []);
 
   const toggleCertification = useCallback((code: string) => {
+    console.log(`[Filter] 🎫 Toggling certification: "${code}"`);
     setFilters(prev => ({ ...prev, certification: prev.certification === code ? '' : code }));
   }, []);
 
   const toggleYearRange = useCallback((range: string) => {
+    console.log(`[Filter] 📅 Toggling year range: "${range}"`);
     setFilters(prev => ({ ...prev, yearRange: prev.yearRange === range ? '' : range }));
   }, []);
 
   // ─── Render suggestions dropdown ───
   const renderSuggestions = () => {
-    if (!showSuggestions || suggestions.length === 0) return null;
+    if (!showSuggestions || suggestions.length === 0 || !query.trim()) return null;
 
     return (
       <View style={[
@@ -793,7 +903,6 @@ const SearchScreen = () => {
             </TouchableOpacity>
           ))}
           
-          {/* Recent searches in suggestions */}
           {searchHistory.length > 0 && (
             <>
               <View style={styles.suggestionDivider}>
@@ -954,9 +1063,20 @@ const SearchScreen = () => {
       onPress: () => toggleYearRange(range),
     }));
 
+    // NEW: Source filter
+    const sourceItems = [
+      { key: 'all', label: 'All', active: filters.source === 'all', onPress: () => setFilters({ ...filters, source: 'all' }) },
+      { key: 'tmdb', label: 'TMDB', active: filters.source === 'tmdb', onPress: () => setFilters({ ...filters, source: 'tmdb' }) },
+      { key: 'kuryana', label: 'Kuryana', active: filters.source === 'kuryana', onPress: () => setFilters({ ...filters, source: 'kuryana' }) },
+      { key: 'moviebox', label: 'MovieBox', active: filters.source === 'moviebox', onPress: () => setFilters({ ...filters, source: 'moviebox' }) },
+      { key: 'consumet', label: 'Consumet', active: filters.source === 'consumet', onPress: () => setFilters({ ...filters, source: 'consumet' }) },
+      { key: 'trakt', label: 'Trakt', active: filters.source === 'trakt', onPress: () => setFilters({ ...filters, source: 'trakt' }) },
+    ];
+
     return (
       <View style={styles.filtersContainer}>
         {renderRow('Type', typeItems)}
+        {renderRow('Source', sourceItems)}
         {renderRow('Genre', genreItems)}
         {renderRow('Language', languageItems)}
         {renderRow('Certification', certificationItems)}
@@ -966,7 +1086,7 @@ const SearchScreen = () => {
     );
   };
 
-  // ─── Render results tabs (All / Movies / TV) ───
+  // ─── Render results tabs ───
   const renderResultsTabs = () => {
     const tabs: { key: 'all' | 'movie' | 'tv'; label: string }[] = [
       { key: 'all', label: 'All' },
@@ -993,10 +1113,7 @@ const SearchScreen = () => {
             </TouchableOpacity>
           );
         })}
-        {/* People / Collections tabs are omitted — they need a cast/collection search
-            endpoint that unifiedMediaService does not currently expose. */}
 
-        {/* Sort control */}
         <TouchableOpacity
           style={styles.sortButton}
           onPress={() => setShowSortMenu((v) => !v)}
@@ -1040,7 +1157,7 @@ const SearchScreen = () => {
     );
   };
 
-  // ─── Recent searches as horizontal chips (not buried in a dropdown) ───
+  // ─── Recent searches as horizontal chips ───
   const renderRecentSearchChips = () => {
     if (searchHistory.length === 0) return null;
     return (
@@ -1086,7 +1203,7 @@ const SearchScreen = () => {
     );
   };
 
-  // ─── Trending suggestion chips shown in the empty state ───
+  // ─── Trending suggestion chips ───
   const renderTrendingSuggestionChips = () => (
     <View style={styles.trendingChipsContainer}>
       {TRENDING_SUGGESTIONS.map((label) => (
@@ -1142,6 +1259,20 @@ const SearchScreen = () => {
       : null;
     const metaChips = [runtimeLabel, item.certification, item.year].filter(Boolean);
 
+    // Determine source badge color
+    const getSourceBadge = (source?: string) => {
+      switch (source) {
+        case 'tmdb': return { label: 'TMDB', color: '#01B4E4' };
+        case 'kuryana': return { label: 'Kuryana', color: '#FF6B35' };
+        case 'moviebox': return { label: 'MovieBox', color: '#E50914' };
+        case 'consumet': return { label: 'Consumet', color: '#7B2FBE' };
+        case 'trakt': return { label: 'Trakt', color: '#ED1C24' };
+        default: return { label: source || 'Unknown', color: '#666' };
+      }
+    };
+
+    const sourceBadge = getSourceBadge(item.source);
+
     return (
       <TouchableOpacity
         key={`${(item as any).source || 'default'}-${item.type}-${item.id}`}
@@ -1156,14 +1287,12 @@ const SearchScreen = () => {
             resizeMode="cover"
           />
 
-          {/* Rank badge (Top 10 style) */}
           {rank != null && (
             <View style={styles.rankBadge}>
               <Text style={styles.rankBadgeText}>{rank}</Text>
             </View>
           )}
 
-          {/* Rating badge, top-right */}
           {!!item.rating && (
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={9} color="#000" />
@@ -1171,12 +1300,15 @@ const SearchScreen = () => {
             </View>
           )}
 
-          {/* HD / source quality tag, bottom-left */}
           <View style={styles.hdBadge}>
             <Text style={styles.hdBadgeText}>HD</Text>
           </View>
 
-          {/* Inline watchlist toggle — add/remove without opening detail */}
+          {/* Source badge */}
+          <View style={[styles.sourceBadge, { backgroundColor: sourceBadge.color }]}>
+            <Text style={styles.sourceBadgeText}>{sourceBadge.label}</Text>
+          </View>
+
           <TouchableOpacity
             style={styles.bookmarkButton}
             onPress={(e) => { e.stopPropagation?.(); handleToggleWatchlist(item); }}
@@ -1194,7 +1326,6 @@ const SearchScreen = () => {
           {item.title}
         </Text>
 
-        {/* Metadata chip line: runtime • certification • year */}
         {metaChips.length > 0 && (
           <Text style={[styles.trendingMeta, { color: colors.textMuted }]} numberOfLines={1}>
             {metaChips.join(' • ')}
@@ -1240,7 +1371,7 @@ const SearchScreen = () => {
         Search Movies & TV Shows
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-        Find content from TMDB, MovieBox, and more
+        Find content from TMDB, Kuryana, MovieBox, Consumet, and Trakt
       </Text>
       {renderTrendingSuggestionChips()}
     </View>
@@ -1259,7 +1390,7 @@ const SearchScreen = () => {
         <Ionicons name="search-outline" size={48} color={colors.textMuted} />
       </View>
       <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        No results found
+        No results found for "{activeSearchQueryRef.current}"
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
         Try adjusting your search or filters
@@ -1328,7 +1459,7 @@ const SearchScreen = () => {
         <Ionicons name="search" size={18} color={colors.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search movies, TV shows, and more..."
+          placeholder="Search movies, TV shows, anime, and more..."
           placeholderTextColor={colors.textMuted}
           value={query}
           onChangeText={setQuery}
@@ -1339,6 +1470,14 @@ const SearchScreen = () => {
           onFocus={() => {
             if (query.trim()) {
               setShowSuggestions(true);
+            }
+          }}
+          onSubmitEditing={() => {
+            if (query.trim()) {
+              setShowSuggestions(false);
+              setSuggestions([]);
+              performSearch(query, 'typed', 'Searched Results', undefined, true);
+              Keyboard.dismiss();
             }
           }}
         />
@@ -1359,10 +1498,10 @@ const SearchScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Search scope indicator while a search is in flight */}
+      {/* Search scope indicator */}
       {loading && !isDiscover && (
         <Text style={[styles.searchScopeText, { color: colors.textMuted }]}>
-          Searching TMDB · Kuryana · MovieBox…
+          Searching TMDB · Kuryana · MovieBox · Consumet · Trakt…
         </Text>
       )}
 
@@ -1372,7 +1511,7 @@ const SearchScreen = () => {
       {/* Continue Watching Row */}
       {isDiscover && renderContinueWatching()}
 
-      {/* Recent searches as scrollable chips (discover mode only) */}
+      {/* Recent searches as scrollable chips */}
       {isDiscover && renderRecentSearchChips()}
 
       {/* Filters */}
@@ -1455,7 +1594,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  // ─── Suggestions Dropdown ───
   suggestionsContainer: {
     marginHorizontal: 16,
     marginTop: 4,
@@ -1494,7 +1632,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // ─── Continue Watching ───
   continueWatchingContainer: {
     paddingHorizontal: 16,
     marginBottom: 8,
@@ -1552,7 +1689,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ─── Filters ───
   filtersContainer: {
     paddingTop: 4,
     paddingBottom: 8,
@@ -1590,7 +1726,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ─── Categories ───
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1613,7 +1748,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ─── Content ───
   centerContent: {
     flex: 1,
     justifyContent: 'center',
@@ -1644,7 +1778,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ─── Grid ───
   trendingGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1721,6 +1854,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#fff',
   },
+  sourceBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    borderRadius: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  sourceBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#fff',
+  },
   bookmarkButton: {
     position: 'absolute',
     bottom: 4,
@@ -1739,7 +1885,6 @@ const styles = StyleSheet.create({
     width: '70%',
   },
 
-  // ─── Empty State ───
   emptyIconContainer: {
     width: 80,
     height: 80,
@@ -1776,7 +1921,6 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
 
-  // ─── Results Tabs + Sort ───
   tabsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1826,7 +1970,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // ─── Recent Search Chips ───
   recentChipsContainer: {
     marginTop: 4,
     marginBottom: 8,
@@ -1867,7 +2010,6 @@ const styles = StyleSheet.create({
     maxWidth: 120,
   },
 
-  // ─── Trending Suggestion Chips (empty state) ───
   trendingChipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1890,7 +2032,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ─── Search Scope Indicator ───
   searchScopeText: {
     fontSize: 11,
     paddingHorizontal: 16,
