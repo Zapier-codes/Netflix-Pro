@@ -89,22 +89,14 @@ export { default as TMDBMetadata } from './metadata/TMDBMetadata'
 export { default as KuryanaMetadata } from './metadata/KuryanaMetadata'
 export { TMDBMetadataAdapter } from './metadata/adapters/TMDBMetadataAdapter'
 export { KuryanaMetadataAdapter } from './metadata/adapters/KuryanaMetadataAdapter'
-export { MovieBoxMetadataAdapter } from './metadata/adapters/MovieBoxMetadataAdapter'
-export { ConsumetMetadataAdapter } from './metadata/adapters/ConsumetMetadataAdapter'
 export { TraktMetadataAdapter } from './metadata/adapters/TraktMetadataAdapter'
 
 // ============================================================================
 // STREAMING PROVIDERS
 // ============================================================================
-
-export { ConsumetApiService as ConsumetProvider } from './providers/consumet/ConsumetProvider'
-export { default as MovieboxProvider } from './providers/moviebox/MovieboxProvider'
-export { default as VidSrcProvider } from './providers/vidsrc/VidSrcProvider'
-export { default as XyraProvider } from './providers/xyra/XyraProvider'
-
-export { ConsumetStreamAdapter } from './providers/adapters/ConsumetStreamAdapter'
-export { XyraStreamAdapter } from './providers/adapters/XyraStreamAdapter'
-export { VidSrcStreamAdapter } from './providers/adapters/VidSrcStreamAdapter'
+// Phase 1 removed all piracy-scraping providers (VidSrc, Consumet, MovieBox,
+// Xyra) and their stream adapters. There is currently NO playback provider
+// wired in — see handover.md "Phase 2" for what a licensed replacement needs.
 
 // ============================================================================
 // SUBTITLE PROVIDERS
@@ -113,7 +105,7 @@ export { VidSrcStreamAdapter } from './providers/adapters/VidSrcStreamAdapter'
 export { default as OpenSubtitlesProvider } from './subtitles/OpenSubtitlesProvider'
 export { default as SubdlProvider } from './subtitles/SubdlProvider'
 export { UnifiedSubtitlesService as UnifiedSubtitles } from './subtitles/UnifiedSubtitles'
-export { default as XyraSubtitleProvider } from './subtitles/XyraSubtitleProvider'
+// XyraSubtitleProvider removed — depended on the deleted Xyra piracy API.
 
 // ============================================================================
 // SOCIAL SERVICES

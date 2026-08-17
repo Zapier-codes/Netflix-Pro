@@ -6,7 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { getImageUrl } from '../services/unified/metadata/TMDBMetadata';
 import ImagePlaceholder from './ImagePlaceholder';
 import Badge from './Badge';
-import { SPORT_LOGO_MAP } from '../api/ApiService';
+// Live sports (SPORT_LOGO_MAP) removed with the piracy-stream layer in Phase 1 — see handover.md.
 
 const { width } = Dimensions.get('window');
 const FOOTER_HEIGHT = 45;
@@ -111,9 +111,10 @@ const MediaCard = ({
   let imageSource = null;
 
   if (isLiveStream) {
-    const sportToken = item.sportToken || 'DEFAULT';
-    const logoUrl = SPORT_LOGO_MAP[sportToken] || SPORT_LOGO_MAP['DEFAULT'];
-    imageSource = { uri: logoUrl };
+    // Live sports streaming was removed in Phase 1 (piracy source). Falls through
+    // to the poster path below, which will be null for live-stream items until
+    // this feature is either rebuilt on a licensed source or removed for good.
+    imageSource = null;
   } else {
     imageSource = posterPath && !imageError ? { uri: getImageUrl(posterPath) } : null;
   }

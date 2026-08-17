@@ -10,7 +10,6 @@ import {
   Animated,
   Image,
 } from 'react-native';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { ThrillerItem } from '../../services/preloader/ThrillerPreloader';
@@ -64,100 +63,19 @@ const ThrillerCell: React.FC<{
   onPress: (item: any) => void;
 }> = ({ item, index, isVisible, onPress }) => {
   const { colors } = useTheme();
-  const [isReady, setIsReady] = useState(false);
-  const [hasError, setHasError] = useState(false);
-  const [canMountPlayer, setCanMountPlayer] = useState(false);
   const isLastInRow = index % GRID_COLUMNS === GRID_COLUMNS - 1;
-
-  const indexRef = useRef(index);
-  useEffect(() => {
-    indexRef.current = index;
-  }, [index]);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // ─── Staggered mount ───
+  // ─── Fade poster in on mount ───
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (isVisible) {
-        setCanMountPlayer(true);
-      }
-    }, indexRef.current * 200);
-
-    return () => {
-      clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVisible]);
-
-  // ─── Player instance ───
-  const player = useVideoPlayer(
-    canMountPlayer && isVisible && item.videoUrl ? item.videoUrl : null,
-    (playerInstance) => {
-      if (canMountPlayer && isVisible && item.videoUrl) {
-        playerInstance.loop = true;
-        playerInstance.muted = true;
-        playerInstance.play();
-      }
-    }
-  );
-
-  // ─── Playback settings ───
-  useEffect(() => {
-    if (player && canMountPlayer && isVisible && item.videoUrl) {
-      player.loop = true;
-      player.muted = true;
-      player.play();
-    } else if (player && !isVisible) {
-      player.pause();
-    }
-  }, [player, canMountPlayer, isVisible, item.videoUrl]);
-
-  // ─── Ready tracking ───
-  useEffect(() => {
-    if (player && canMountPlayer && isVisible && item.videoUrl) {
-      const checkReady = setInterval(() => {
-        if (player.playing) {
-          setIsReady(true);
-          clearInterval(checkReady);
-        }
-      }, 100);
-
-      const timeout = setTimeout(() => {
-        clearInterval(checkReady);
-        if (!player.playing) {
-          setHasError(true);
-        }
-      }, 5000);
-
-      return () => {
-        clearInterval(checkReady);
-        clearTimeout(timeout);
-      };
-    } else {
-      setIsReady(false);
-    }
-  }, [player, canMountPlayer, isVisible, item.videoUrl]);
-
-  // ─── Force muted ───
-  useEffect(() => {
-    if (player) {
-      player.muted = true;
-    }
-  }, [player]);
-
-  // ─── Crossfade ───
-  useEffect(() => {
-    if (isReady) {
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 350,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      fadeAnim.setValue(0);
-    }
-  }, [isReady, fadeAnim]);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 350,
+      delay: index * 60,
+      useNativeDriver: true,
+    }).start();
+  }, [fadeAnim, index]);
 
   const handlePress = () => {
     onPress({
@@ -172,7 +90,7 @@ const ThrillerCell: React.FC<{
   };
 
   const thumbnailUrl = item.posterPath ? getImageUrl(item.posterPath) : null;
-  const attemptingVideo = !!(item.isLoaded && item.videoUrl && canMountPlayer && isVisible && !hasError);
+  const hasTrailer = !!(item.isLoaded && item.youtubeKey);
 
   return (
     <TouchableOpacity
@@ -184,8 +102,8 @@ const ThrillerCell: React.FC<{
       onPress={handlePress}
       activeOpacity={0.8}
     >
-      <View style={styles.thumbnailContainer}>
-        {/* Cover art - always visible */}
+      <Animated.View style={[styles.thumbnailContainer, { opacity: fadeAnim }]}>
+        {/* Cover art */}
         {thumbnailUrl ? (
           <Image source={{ uri: thumbnailUrl }} style={styles.poster} resizeMode="cover" />
         ) : (
@@ -194,30 +112,15 @@ const ThrillerCell: React.FC<{
           </View>
         )}
 
-        {/* Video overlay - fades in over poster when ready */}
-        {attemptingVideo && (
-          <Animated.View style={[styles.videoWrapper, { opacity: fadeAnim }]}>
-            <VideoView
-              player={player}
-              style={styles.video}
-              contentFit="cover"
-              isMuted={true}
-              allowsPictureInPicture={false}
-              nativeControls={false}
-              surfaceType="textureView"
-            />
-          </Animated.View>
-        )}
-
-        {/* "NEW" Badge - only when video is actually playing */}
-        {isReady && (
-          <View style={styles.newBadgeWrapper}>
-            <View style={[styles.newBadge, { backgroundColor: '#E50914' }]}>
-              <Text style={styles.newBadgeText}>NEW</Text>
+        {/* Play badge — indicates an official trailer is available (opens details/trailer on press) */}
+        {hasTrailer && (
+          <View style={styles.playBadgeWrapper}>
+            <View style={styles.playBadge}>
+              <Ionicons name="play" size={14} color="#fff" />
             </View>
           </View>
         )}
-      </View>
+      </Animated.View>
 
       <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
         {item.title}
@@ -238,7 +141,7 @@ const SkeletonCell: React.FC<{ colors: any; index: number }> = ({ colors, index 
       ]}
     >
       <View style={styles.thumbnailContainer}>
-        <View style={[styles.video, { backgroundColor: colors.surfaceRaised }]} />
+        <View style={[styles.poster, { backgroundColor: colors.surfaceRaised }]} />
       </View>
       <View style={[styles.skeletonTitle, { backgroundColor: colors.surfaceRaised }]} />
     </View>
@@ -264,8 +167,8 @@ export const ThrillerGrid: React.FC<ThrillerGridProps> = ({
     }
 
     // Separate loaded trailers from fallbacks
-    const loadedItems = items.filter((item) => item.isLoaded && item.videoUrl);
-    const fallbackItems = items.filter((item) => !(item.isLoaded && item.videoUrl));
+    const loadedItems = items.filter((item) => item.isLoaded && item.youtubeKey);
+    const fallbackItems = items.filter((item) => !(item.isLoaded && item.youtubeKey));
 
     // Shuffle both pools independently
     const shuffledLoaded = shuffleArray(loadedItems);
@@ -350,12 +253,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     overflow: 'hidden',
   },
-  video: {
-    width: CELL_WIDTH,
-    height: CELL_HEIGHT,
-    borderRadius: 6,
-    backgroundColor: '#000',
-  },
   posterContainer: {
     width: CELL_WIDTH,
     height: CELL_HEIGHT,
@@ -370,13 +267,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#1a1a1a',
   },
-  videoWrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: CELL_WIDTH,
-    height: CELL_HEIGHT,
-  },
   overlay: {
     position: 'absolute',
     top: 0,
@@ -386,26 +276,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  newBadgeWrapper: {
+  playBadgeWrapper: {
     position: 'absolute',
-    top: 6,
-    left: 6,
+    bottom: 6,
+    right: 6,
     zIndex: 10,
   },
-  newBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 3,
-    minWidth: 46,
+  playBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  newBadgeText: {
-    fontSize: 7,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
   },
   itemTitle: {
     fontSize: 10,

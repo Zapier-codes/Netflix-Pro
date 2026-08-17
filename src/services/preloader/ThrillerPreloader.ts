@@ -1,7 +1,6 @@
 // src/services/preloader/ThrillerPreloader.ts
 import { cacheManager } from '../cache/CacheManager';
-import { getImageUrl } from '../unified/metadata/TMDBMetadata';
-import { search, getStreamInfo, StreamInfoItem, InfoItem } from '../../../modules/mavin-engine';
+import { getImageUrl, fetchMovieVideos, fetchTVVideos } from '../unified/metadata/TMDBMetadata';
 
 export interface ThrillerItem {
   id: string;
@@ -11,10 +10,8 @@ export interface ThrillerItem {
   backdropPath: string;
   overview: string;
   voteAverage: number;
-  videoUrl?: string;
-  duration?: number;
-  uploaderName?: string;
-  viewCount?: number;
+  /** Official YouTube video id (from TMDB /videos) for the trailer, if one exists. */
+  youtubeKey?: string;
   isLoaded: boolean;
 }
 
@@ -211,7 +208,7 @@ export class ThrillerPreloader {
       return cached;
     }
 
-    const trailer = await this.fetchTrailer(movie);
+    const youtubeKey = await this.fetchTrailerKey(movie);
 
     const item: ThrillerItem = {
       id: `thriller_${movie.id}`,
@@ -221,11 +218,8 @@ export class ThrillerPreloader {
       backdropPath: movie.backdrop_path || '',
       overview: movie.overview || '',
       voteAverage: movie.vote_average || 0,
-      videoUrl: trailer?.url,
-      duration: trailer?.duration || 0,
-      uploaderName: trailer?.uploaderName || 'YouTube',
-      viewCount: trailer?.viewCount || 0,
-      isLoaded: !!trailer?.url,
+      youtubeKey,
+      isLoaded: !!youtubeKey,
     };
 
     if (item.isLoaded) {
@@ -241,120 +235,24 @@ export class ThrillerPreloader {
     return item;
   }
 
-  // ─── Fetch trailer from MavinEngine ───
-  private async fetchTrailer(movie: any): Promise<{
-    url: string;
-    duration: number;
-    uploaderName: string;
-    viewCount: number;
-  } | null> {
+  // ─── Fetch the official trailer's YouTube key straight from TMDB ───
+  private async fetchTrailerKey(movie: any): Promise<string | undefined> {
     try {
-      const year = movie.release_date?.split('-')[0] || '';
-      const searchQuery = `${movie.title} ${year} official trailer`.trim();
+      const isTV = !!movie.name && !movie.title;
+      const videos = isTV
+        ? await fetchTVVideos(movie.id)
+        : await fetchMovieVideos(movie.id);
 
-      console.log(`[ThrillerPreloader] Searching for: ${searchQuery}`);
+      const trailer =
+        videos.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer' && v.official) ||
+        videos.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer') ||
+        videos.find((v: any) => v.site === 'YouTube');
 
-      const searchResult = await search(searchQuery, 'videos');
-
-      if (!searchResult || !('results' in searchResult) || !searchResult.results?.length) {
-        console.log(`[ThrillerPreloader] No search results for: ${searchQuery}`);
-        return null;
-      }
-
-      const videoResults = searchResult.results.filter(
-        (r: InfoItem): r is StreamInfoItem => r.type === 'stream'
-      );
-
-      if (videoResults.length === 0) {
-        console.log(`[ThrillerPreloader] No video-type results for: ${searchQuery}`);
-        return null;
-      }
-
-      const bestMatch = this.selectBestTrailer(videoResults);
-      if (!bestMatch) {
-        return null;
-      }
-
-      const streamInfo = await getStreamInfo(bestMatch.url);
-
-      if (!streamInfo || !streamInfo.success) {
-        console.log(
-          `[ThrillerPreloader] getStreamInfo failed for ${bestMatch.url}: ${streamInfo?.error || 'unknown error'}`
-        );
-        return null;
-      }
-
-      const candidateStreams =
-        streamInfo.videoStreams?.length ? streamInfo.videoStreams : streamInfo.videoOnlyStreams;
-
-      if (!candidateStreams || candidateStreams.length === 0) {
-        console.log(`[ThrillerPreloader] No playable video streams for ${bestMatch.url}`);
-        return null;
-      }
-
-      const videoStream = this.selectBestStream(candidateStreams);
-      if (!videoStream) {
-        return null;
-      }
-
-      return {
-        url: videoStream.url,
-        duration: streamInfo.duration || 0,
-        uploaderName: streamInfo.uploaderName || 'YouTube',
-        viewCount: streamInfo.viewCount || 0,
-      };
+      return trailer?.key;
     } catch (error) {
-      console.error('[ThrillerPreloader] Fetch trailer error:', error);
-      return null;
+      console.error(`[ThrillerPreloader] Error fetching trailer for ${movie.id}:`, error);
+      return undefined;
     }
-  }
-
-  // ─── Select the best trailer from search results ───
-  private selectBestTrailer(results: StreamInfoItem[]): StreamInfoItem | null {
-    if (!results || results.length === 0) return null;
-
-    const scored = results.map((item) => {
-      let score = 0;
-      const title = (item.name || '').toLowerCase();
-
-      if (title.includes('official trailer')) score += 50;
-      if (title.includes('official')) score += 30;
-      if (title.includes('trailer')) score += 20;
-
-      if (item.viewCount) {
-        score += Math.min(Math.log10(item.viewCount + 1) * 10, 30);
-      }
-
-      if (title.length < 60) score += 10;
-
-      if (title.includes('review')) score -= 20;
-      if (title.includes('compilation')) score -= 20;
-      if (title.includes('podcast')) score -= 20;
-      if (title.includes('reaction')) score -= 20;
-
-      if (item.isShortFormContent) score -= 40;
-      if (item.isLive) score -= 100;
-
-      return { item, score };
-    });
-
-    scored.sort((a, b) => b.score - a.score);
-    return scored[0]?.item || null;
-  }
-
-  // ─── Select the best video stream ───
-  private selectBestStream(streams: { url: string; height: number }[]): { url: string; height: number } | null {
-    if (!streams || streams.length === 0) return null;
-
-    const sorted = [...streams].sort((a, b) => (b.height || 0) - (a.height || 0));
-
-    const best = sorted[0];
-    if (best.height > 1080) {
-      const cap = sorted.find((s) => s.height <= 1080 && s.height >= 720);
-      return cap || best;
-    }
-
-    return best;
   }
 
   // ─── Create a fallback item without a trailer ───

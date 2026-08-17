@@ -1,11 +1,11 @@
 /**
  * useSearchSuggestions - Hook for managing search suggestions
- * Uses MavinEngine for autocomplete suggestions
+ * Uses TMDB's multi-search endpoint for autocomplete suggestions
  * Features: debounced input, loading state, error handling
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import MavinEngine from '../../../../modules/mavin-engine';
+import { searchMedia } from '../../services/unified/metadata/TMDBMetadata';
 
 interface UseSearchSuggestionsReturn {
   suggestions: string[];
@@ -54,18 +54,16 @@ export function useSearchSuggestions(
 
     debounceTimeout.current = setTimeout(async () => {
       try {
-        const result = await MavinEngine.getSearchSuggestions(query, 0);
-        
+        const results = await searchMedia(query);
+
         if (!isMounted.current) return;
-        
-        if (result && result.suggestions) {
-          const limited = result.suggestions.slice(0, maxSuggestions);
-          setSuggestions(limited);
-          setIsVisible(limited.length > 0);
-        } else {
-          setSuggestions([]);
-          setIsVisible(false);
-        }
+
+        const titles = results
+          .map((item: any) => item.title || item.name)
+          .filter((title: string | undefined): title is string => Boolean(title));
+        const limited = Array.from(new Set(titles)).slice(0, maxSuggestions);
+        setSuggestions(limited);
+        setIsVisible(limited.length > 0);
       } catch (err) {
         if (!isMounted.current) return;
         setError(err instanceof Error ? err.message : 'Failed to get suggestions');
