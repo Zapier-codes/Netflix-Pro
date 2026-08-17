@@ -16,6 +16,17 @@ marked ✅. Do not silently expand scope into later phases.
 ## 0. REPO BASICS
 
 - **Repo:** `https://github.com/Zapier-codes/Netflix-pro`
+- **Branch: `termux` — NOT `main`.** All work since patch 0012 lives on
+  a branch called `termux`, which forked from `main` at commit
+  `8635d39` ("fixed all component issues"). `main` has since moved on
+  with its own extra commit (`cd7c8b1`, "start from here") that
+  `termux` does not have — the two branches have diverged. A plain
+  `git clone` checks out `main` by default, which has **no
+  `HANDOVER.md` at all**. Always explicitly check out `termux` (see
+  Clone instructions below) before doing anything else, and build every
+  patch on top of `termux`'s tip — a patch built against `main` will
+  fail `git am` on the human's device, exactly as happened once
+  already.
 - **Owner/dev (human):** "Pops" — Android/full-stack dev, works from
   Termux on Android with SSH access to GitHub, prefers numbered
   `git format-patch`-style `.patch` files applied via
@@ -38,6 +49,7 @@ marked ✅. Do not silently expand scope into later phases.
 ```bash
 git clone https://github.com/Zapier-codes/Netflix-pro.git
 cd Netflix-pro
+git checkout termux         # NOT main — see "Branch" note in section 0 above
 git log --oneline -5        # sanity check you're on latest
 cat HANDOVER.md             # this file — always re-read it fresh, don't trust memory
 ```
