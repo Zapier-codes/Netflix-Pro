@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ConsumetMetadata - Local wrapper service around the raw Consumet
  * provider layer (src/api/consumet/consumetApi.ts).
  *
@@ -21,9 +21,9 @@ import {
   ConsumetMovie,
   ConsumetTVShow,
   ConsumetAnime,
-} from '../provi';
+} from '../providers/consumet/ConsumetProvider';
 
-// ─── PUBLIC TYPES ───
+// â”€â”€â”€ PUBLIC TYPES â”€â”€â”€
 
 export type ConsumetContentType = 'movie' | 'tv' | 'anime';
 export type ConsumetSearchType = ConsumetContentType | 'all';
@@ -54,7 +54,7 @@ export interface ConsumetContent {
   cast?: ConsumetCastMember[];
 }
 
-// ─── CACHE ───
+// â”€â”€â”€ CACHE â”€â”€â”€
 
 interface CacheEntry<T> {
   value: T;
@@ -85,7 +85,7 @@ class SimpleCache {
   }
 }
 
-// ─── SERVICE ───
+// â”€â”€â”€ SERVICE â”€â”€â”€
 
 export class ConsumetMetadataService {
   private cache = new SimpleCache();
@@ -213,7 +213,7 @@ export class ConsumetMetadataService {
     console.log('[ConsumetMetadata] Destroyed');
   }
 
-  // ─── INTERNAL HELPERS ───
+  // â”€â”€â”€ INTERNAL HELPERS â”€â”€â”€
 
   /**
    * Runs `fn` for each concrete content type implied by `type` (expanding
@@ -302,3 +302,4 @@ export class ConsumetMetadataService {
 export const consumetMetadataService = new ConsumetMetadataService();
 
 export default consumetMetadataService;
+

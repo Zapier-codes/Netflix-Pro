@@ -5,6 +5,12 @@
  * v2.0 - Extended with industry-standard fields for complete content classification
  * Supports: language/country filtering, parental ratings, watch providers,
  * franchise grouping, popularity metrics, and rich content metadata.
+ * 
+ * v2.1 - ADDED: Season interface and displaySeasons field for TV show support
+ * - Added ISeason interface for structured season data
+ * - Added seasons field to IMetadataResult
+ * - Added displaySeasons field for filtered season numbers
+ * - Enhanced TV show support with complete season metadata
  */
 
 // ============================================================================
@@ -84,6 +90,41 @@ export interface ContentClassification {
   spokenLanguages?: string[];
   translations?: string[];
   adult?: boolean;
+}
+
+// ============================================================================
+// SEASON TYPES (NEW - Added for TV show support)
+// ============================================================================
+
+/**
+ * ISeason - Complete season information for TV shows
+ * Used to display season pills and provide episode data
+ */
+export interface ISeason {
+  /** The season number (1, 2, 3, etc.) - This is what displays as S1, S2, S3 */
+  seasonNumber: number;
+  /** Total episodes in this season */
+  episodeCount: number;
+  /** The date the season premiered (YYYY-MM-DD) */
+  airDate?: string;
+  /** The season name (e.g., "Season 1", "The Final Season") */
+  name?: string;
+  /** Description/overview of the season */
+  overview?: string;
+  /** URL to the season poster image */
+  posterPath?: string;
+  /** TMDB ID for the season */
+  id?: number;
+  /** When this season was last updated */
+  updatedAt?: string;
+  /** Rating for this season */
+  rating?: MediaRating;
+  /** Number of votes for this season */
+  votes?: number;
+  /** Network that aired this season */
+  network?: string;
+  /** Images for this season */
+  images?: MediaImageSet;
 }
 
 // ============================================================================
@@ -216,7 +257,7 @@ export interface UnifiedShow {
 }
 
 // ============================================================================
-// SEASON TYPES
+// SEASON TYPES (Extended)
 // ============================================================================
 
 export interface UnifiedSeason {
@@ -239,7 +280,6 @@ export interface UnifiedSeason {
   posterPath?: string;
   seasonNumber?: number;
   name?: string;
-  episodes?: UnifiedEpisode[];
 }
 
 // ============================================================================
@@ -340,7 +380,6 @@ export interface UnifiedPerson {
   popularity?: number;
   imdbId?: string;
   deathday?: string;
-  biography?: string; // Already exists but keeping for clarity
 }
 
 export interface PersonCredits<T> {
@@ -600,7 +639,7 @@ export interface UnifiedComment {
  * 
  * v2.0 - Extended with all industry-standard fields for complete content classification
  * 
- * NEW FIELDS:
+ * NEW FIELDS v2.0:
  * - originalLanguage: What language was it made in? (e.g., "en", "hi", "ko")
  * - originCountry: What country was it made in? (e.g., ["US"], ["IN"], ["KR"])
  * - originalTitle: The original title before translation
@@ -618,6 +657,12 @@ export interface UnifiedComment {
  * - spokenLanguages: Languages spoken in the content
  * - productionCompanies: Studios/companies that produced it
  * - productionCountries: Countries where it was produced
+ * 
+ * NEW FIELDS v2.1 (TV Show Season Support):
+ * - seasons: Complete season data array for TV shows
+ * - displaySeasons: Filtered season numbers for UI display (excludes season 0, specials)
+ * - numberOfSeasons: Total number of seasons
+ * - numberOfEpisodes: Total number of episodes
  */
 export interface IMetadataResult {
   // ─── Core Identity ──────────────────────────────────────────────────────────
@@ -637,45 +682,67 @@ export interface IMetadataResult {
   
   // ─── Content Description ──────────────────────────────────────────────────
   overview?: string;
-  tagline?: string; // NEW: Movie/show tagline
-  status?: 'Released' | 'Post Production' | 'In Production' | 'Planned' | 'Canceled' | 'Ended' | 'Returning Series' | 'Pilot'; // NEW
+  tagline?: string; // Movie/show tagline
+  status?: 'Released' | 'Post Production' | 'In Production' | 'Planned' | 'Canceled' | 'Ended' | 'Returning Series' | 'Pilot';
   genres?: string[];
-  keywords?: string[]; // NEW: Searchable keywords/tags
+  keywords?: string[]; // Searchable keywords/tags
   
   // ─── Ratings & Metrics ────────────────────────────────────────────────────
   rating?: number;
-  popularity?: number; // NEW: Current popularity score
-  voteCount?: number; // NEW: Number of votes/ratings
+  popularity?: number; // Current popularity score
+  voteCount?: number; // Number of votes/ratings
   runtime?: number;
   
   // ─── Classification ───────────────────────────────────────────────────────
-  originalLanguage?: string; // NEW: What language was it made in?
-  originCountry?: string[]; // NEW: What country was it made in?
-  originalTitle?: string; // NEW: The original title before translation
-  certification?: string; // NEW: Parental rating (e.g., "PG-13", "R", "TV-MA")
+  originalLanguage?: string; // What language was it made in?
+  originCountry?: string[]; // What country was it made in?
+  originalTitle?: string; // The original title before translation
+  certification?: string; // Parental rating (e.g., "PG-13", "R", "TV-MA")
   
   // ─── Franchise & Collections ─────────────────────────────────────────────
-  belongsToCollection?: BelongsToCollection; // NEW: Franchise grouping (e.g., "Marvel Cinematic Universe")
+  belongsToCollection?: BelongsToCollection; // Franchise grouping (e.g., "Marvel Cinematic Universe")
   
   // ─── Where to Watch ──────────────────────────────────────────────────────
-  watchProviders?: WatchProvider[]; // NEW: Where to watch this content
+  watchProviders?: WatchProvider[]; // Where to watch this content
   
   // ─── Cast & Crew ──────────────────────────────────────────────────────────
   cast?: CastMember[];
   
   // ─── Production Information ──────────────────────────────────────────────
-  budget?: number; // NEW: Production budget (for movies)
-  revenue?: number; // NEW: Box office revenue (for movies)
-  networks?: Network[]; // NEW: TV networks/streaming platforms (for shows)
-  spokenLanguages?: SpokenLanguage[]; // NEW: Languages spoken in the content
-  productionCompanies?: ProductionCompany[]; // NEW: Studios/companies that produced it
-  productionCountries?: ProductionCountry[]; // NEW: Countries where it was produced
+  budget?: number; // Production budget (for movies)
+  revenue?: number; // Box office revenue (for movies)
+  networks?: Network[]; // TV networks/streaming platforms (for shows)
+  spokenLanguages?: SpokenLanguage[]; // Languages spoken in the content
+  productionCompanies?: ProductionCompany[]; // Studios/companies that produced it
+  productionCountries?: ProductionCountry[]; // Countries where it was produced
   
   // ─── TV-Specific ──────────────────────────────────────────────────────────
-  numberOfSeasons?: number; // NEW: Total seasons (for TV shows)
-  numberOfEpisodes?: number; // NEW: Total episodes (for TV shows)
-  lastAirDate?: string; // NEW: Last air date (for TV shows)
-  inProduction?: boolean; // NEW: Is it still in production?
+  numberOfSeasons?: number; // Total seasons (for TV shows)
+  numberOfEpisodes?: number; // Total episodes (for TV shows)
+  lastAirDate?: string; // Last air date (for TV shows)
+  inProduction?: boolean; // Is it still in production?
+  
+  // ─── TV Show Season Data (NEW v2.1) ──────────────────────────────────────
+  /**
+   * Complete season data for TV shows.
+   * Contains detailed information about each season including:
+   * - seasonNumber: The season number (1, 2, 3, etc.) - displays as S1, S2, S3
+   * - episodeCount: Number of episodes in this season
+   * - airDate: When this season premiered
+   * - name: Season name (e.g., "Season 1", "The Final Season")
+   * - overview: Description of the season
+   * - posterPath: URL to the season poster
+   * - id: TMDB ID for the season
+   */
+  seasons?: ISeason[];
+  
+  /**
+   * Filtered season numbers for UI display.
+   * Excludes season 0 (specials), seasons without air dates, and special seasons.
+   * Example: [1, 2, 3, 4] for a show with 4 regular seasons.
+   * This is used directly by DetailsScreen to render season pills (S1, S2, S3, S4).
+   */
+  displaySeasons?: number[];
   
   // ─── Provider Data ──────────────────────────────────────────────────────
   providerData?: Record<string, unknown>; // Raw provider data (for debugging)
@@ -795,7 +862,7 @@ export interface MetadataProvider {
 }
 
 // ============================================================================
-// DISCOVER FILTERS (NEW)
+// DISCOVER FILTERS
 // ============================================================================
 
 /**
@@ -841,6 +908,9 @@ export interface DiscoverFilters {
   // Pagination
   page?: number;
   limit?: number;
+  
+  // NEW: Exclude languages (for filtering out specific languages)
+  excludeLanguages?: string[];
 }
 
 // ============================================================================

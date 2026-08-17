@@ -276,6 +276,7 @@ export interface Recommendations {
 
 export interface EngineConfig {
   apiVersion?: ApiVersion
+  apiHost?: string
   downloadDir?: string
   captionLanguage?: string
   quality?: string
@@ -400,6 +401,7 @@ class BoxOfficeBridge {
     if (this.useNitro) {
       return await this.nitro.configure({
         apiVersion: config.apiVersion ?? ApiVersion.V2,
+        apiHost: config.apiHost,
         downloadDir: config.downloadDir ?? '',
         captionLanguage: config.captionLanguage ?? 'English',
         quality: config.quality ?? 'best',

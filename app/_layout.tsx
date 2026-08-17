@@ -1,9 +1,5 @@
 // app/_layout.tsx
 
-// ─── CRITICAL: Import crypto polyfill FIRST ───
-// This uses expo-crypto to provide Node.js crypto functionality for @consumet/extensions
-import './src/crypto-polyfill';
-
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, Text, Platform } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
@@ -12,6 +8,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider as ReduxProvider } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createVideoPlayer } from 'expo-video';
 
 // Store
 import { store } from '../src/store/store';
@@ -64,6 +62,72 @@ import tmdbApi from '../src/services/unified/metadata/TMDBMetadata';
 // Environment
 const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
 
+// ─── ───────────────────────────────────────────────────────────── ───
+// ─── SINGLE VIDEO PLAYER INITIALIZATION ───
+// ─── ───────────────────────────────────────────────────────────── ───
+// Global key for the single video player instance
+const VIDEO_PLAYER_KEY = '__VideoPlayer__';
+
+let playerInitialized = false;
+
+/**
+ * Initialize a single video player at app startup.
+ * This prevents "Activity not ready" errors when creating players lazily.
+ * 
+ * Using a single player is simpler and more efficient than master-slave
+ * since the video already contains audio - no need for separate pipelines.
+ */
+function initializeVideoPlayer(): void {
+  if (playerInitialized) {
+    console.log('[App] Video player already initialized');
+    return;
+  }
+
+  // Check if player already exists in global scope
+  if ((global as any)[VIDEO_PLAYER_KEY]) {
+    console.log('[App] Video player already exists in global scope');
+    playerInitialized = true;
+    return;
+  }
+
+  try {
+    console.log('[App] 🎬 Initializing Video Player...');
+
+    // ─── Create single Video Player ───
+    const player = createVideoPlayer(null);
+    player.muted = false;
+    player.loop = false;
+    player.staysActiveInBackground = true;
+    player.volume = 1.0;
+    (global as any)[VIDEO_PLAYER_KEY] = player;
+    playerInitialized = true;
+    console.log('[App] ✅ Video player created and configured');
+
+  } catch (error) {
+    console.error('[App] ❌ Failed to initialize Video Player:', error);
+    // Non-fatal: player will be created lazily when needed
+  }
+}
+
+// ─── ───────────────────────────────────────────────────────────── ───
+// ─── REACT QUERY CLIENT ───
+// ─── ───────────────────────────────────────────────────────────── ───
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes
+      retry: 2,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+});
+
 // ============================================
 // MODULE-LEVEL INITIALIZATION
 // All services are initialized at module load
@@ -82,24 +146,32 @@ let moduleInitPromise: Promise<void> | null = null;
 async function initializeAllServices(): Promise<void> {
   // Prevent multiple initializations
   if (moduleInitComplete) {
-    console.log('[App] ✅ Services already initialized');
+    console.log('[App] Services already initialized');
     return;
   }
 
   if (moduleInitStarted && moduleInitPromise) {
-    console.log('[App] ⏳ Services initialization in progress, waiting...');
+    console.log('[App] Services initialization in progress, waiting...');
     await moduleInitPromise;
     return;
   }
 
   moduleInitStarted = true;
-  console.log('[App] 🚀 Starting module-level service initialization...');
+  console.log('[App] Starting module-level service initialization...');
 
   moduleInitPromise = (async () => {
     try {
+      // ─── STEP 0: Initialize Single Video Player FIRST ───
+      try {
+        initializeVideoPlayer();
+      } catch (err) {
+        console.error('[App] Video player init failed:', err);
+        // Non-fatal: player will be created lazily
+      }
+
       // ─── STEP 1: Initialize BoxOffice Engine ───
       try {
-        console.log('[BoxOffice] 🚀 Initializing engine...');
+        console.log('[BoxOffice] Initializing engine...');
         const configResult = await boxOffice.configure({
           apiVersion: 'v2',
           downloadDir: '',
@@ -107,57 +179,56 @@ async function initializeAllServices(): Promise<void> {
           quality: 'best',
         });
         if (!configResult.success) {
-          console.warn('[BoxOffice] ⚠️ Config warning:', configResult.error);
+          console.warn('[BoxOffice] Config warning:', configResult.error);
         }
         const startResult = await boxOffice.start();
         if (startResult.success) {
-          console.log('[BoxOffice] ✅ Engine running');
+          console.log('[BoxOffice] Engine running');
         } else {
-          console.warn('[BoxOffice] ⚠️ Start failed:', startResult.error);
+          console.warn('[BoxOffice] Start failed:', startResult.error);
         }
       } catch (err) {
-        console.error('[BoxOffice] ❌ Init error:', err);
+        console.error('[BoxOffice] Init error:', err);
         // Non-fatal: app works without boxoffice
       }
 
       // ─── STEP 2: Initialize Unified Media Service ───
-      // This initializes TMDB, Kuryana, and MovieBox providers
       try {
-        console.log('[App] 🔧 Initializing Unified Media Service...');
+        console.log('[App] Initializing Unified Media Service...');
         await unifiedMediaService.initialize();
-        console.log('[App] ✅ Unified Media Service initialized');
+        console.log('[App] Unified Media Service initialized');
       } catch (err) {
-        console.error('[App] ❌ Unified Media Service failed:', err);
+        console.error('[App] Unified Media Service failed:', err);
       }
 
       // ─── STEP 3: Initialize Network Service ───
       try {
         await networkService.initialize();
-        console.log('[App] ✅ Network service initialized');
+        console.log('[App] Network service initialized');
       } catch (err) {
-        console.error('[App] ❌ Network service failed:', err);
+        console.error('[App] Network service failed:', err);
       }
 
       // ─── STEP 4: Initialize Download Manager ───
       try {
         await downloadManager.initialize();
-        console.log('[App] ✅ Download manager initialized');
+        console.log('[App] Download manager initialized');
       } catch (err) {
-        console.error('[App] ❌ Download manager failed:', err);
+        console.error('[App] Download manager failed:', err);
       }
 
       // ─── STEP 5: Initialize Stream Sources ───
       try {
         const sources = await initializeStreamSources();
-        console.log('[App] ✅ Stream sources initialized:', sources?.length || 0, 'sources');
+        console.log('[App] Stream sources initialized:', sources?.length || 0, 'sources');
       } catch (err) {
-        console.error('[App] ❌ Stream sources failed:', err);
+        console.error('[App] Stream sources failed:', err);
       }
 
       moduleInitComplete = true;
-      console.log('[App] ✅ All services initialized successfully');
+      console.log('[App] All services initialized successfully');
     } catch (err) {
-      console.error('[App] ❌ Module initialization failed:', err);
+      console.error('[App] Module initialization failed:', err);
       moduleInitComplete = false;
       throw err;
     }
@@ -169,7 +240,7 @@ async function initializeAllServices(): Promise<void> {
 // Start module-level initialization immediately
 // This runs as soon as the module loads
 initializeAllServices().catch((err) => {
-  console.error('[App] ❌ Fatal: Module initialization failed:', err);
+  console.error('[App] Fatal: Module initialization failed:', err);
 });
 
 // ============================================
@@ -283,51 +354,51 @@ function AppContent() {
   // ============================================
   const preloadContent = useCallback(async () => {
     setLoading(true);
-    console.log('[App] 🚀 Starting content preload...');
+    console.log('[App] Starting content preload...');
 
     try {
       // ─── STEP 1: Check cache first ───
       const cachedData = await cacheService.getHomeData();
       if (cachedData) {
-        console.log('[App] ✅ Cached data found with', cachedData.trending?.length || 0, 'trending items');
+        console.log('[App] Cached data found with', cachedData.trending?.length || 0, 'trending items');
         setHasCachedData(true);
       } else {
-        console.log('[App] ℹ️ No cached data found, will fetch fresh');
+        console.log('[App] No cached data found, will fetch fresh');
       }
 
       // ─── STEP 2: Preload home screen data ───
       const homeData = await preloaderService.preloadHomeScreen();
       if (homeData) {
-        console.log('[App] ✅ Home data preloaded with', homeData.trending?.length || 0, 'trending items');
+        console.log('[App] Home data preloaded with', homeData.trending?.length || 0, 'trending items');
         setHasCachedData(true);
       }
 
       // ─── STEP 3: EAGER PRELOAD THRILLER TRAILERS ───
       if (homeData?.popular && homeData.popular.length > 0) {
         const thrillerMovies = homeData.popular.slice(0, 6);
-        console.log('[App] 🎬 Starting eager thriller preload for', thrillerMovies.length, 'movies');
+        console.log('[App] Starting eager thriller preload for', thrillerMovies.length, 'movies');
         await thrillerPreloader.eagerPreload(thrillerMovies);
-        console.log('[App] ✅ Thriller trailers preloaded');
+        console.log('[App] Thriller trailers preloaded');
       } else {
         try {
           // Use tmdbApi to fetch popular movies as fallback
           const popularMovies = await tmdbApi.fetchPopularMovies();
           if (popularMovies.length > 0) {
             const thrillerMovies = popularMovies.slice(0, 6);
-            console.log('[App] 🎬 Starting eager thriller preload (fallback) for', thrillerMovies.length, 'movies');
+            console.log('[App] Starting eager thriller preload (fallback) for', thrillerMovies.length, 'movies');
             await thrillerPreloader.eagerPreload(thrillerMovies);
-            console.log('[App] ✅ Thriller trailers preloaded (fallback)');
+            console.log('[App] Thriller trailers preloaded (fallback)');
           }
         } catch (thrillerErr) {
-          console.warn('[App] ⚠️ Thriller preload fallback failed:', thrillerErr);
+          console.warn('[App] Thriller preload fallback failed:', thrillerErr);
         }
       }
 
       // ─── STEP 4: Mark as ready ───
       setInitialized(true);
-      console.log('[App] ✅ App ready');
+      console.log('[App] App ready');
     } catch (err) {
-      console.error('[App] ❌ Content preload failed:', err);
+      console.error('[App] Content preload failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to load content');
       setInitialized(true);
     } finally {
@@ -340,19 +411,19 @@ function AppContent() {
   // ============================================
   const refreshInBackground = useCallback(async () => {
     try {
-      console.log('[App] 🔄 Background refresh starting...');
+      console.log('[App] Background refresh starting...');
       const homeData = await preloaderService.preloadHomeScreen();
       if (homeData) {
-        console.log('[App] ✅ Background refresh complete with', homeData.trending?.length || 0, 'trending items');
+        console.log('[App] Background refresh complete with', homeData.trending?.length || 0, 'trending items');
       }
 
       if (homeData?.popular && homeData.popular.length > 0) {
         const thrillerMovies = homeData.popular.slice(0, 6);
         await thrillerPreloader.eagerPreload(thrillerMovies);
-        console.log('[App] ✅ Background thriller refresh complete');
+        console.log('[App] Background thriller refresh complete');
       }
     } catch (err) {
-      console.warn('[App] ⚠️ Background refresh failed:', err);
+      console.warn('[App] Background refresh failed:', err);
     }
   }, []);
 
@@ -367,7 +438,7 @@ function AppContent() {
         await moduleInitPromise;
       }
       setServicesReady(true);
-      console.log('[App] ✅ Services are ready');
+      console.log('[App] Services are ready');
     };
 
     checkServices();
@@ -401,7 +472,7 @@ function AppContent() {
     if (!isInitialized) return;
 
     if (!PAWNS_API_KEY) {
-      console.warn('[App] ⚠️ EXPO_PUBLIC_PAWNS_API_KEY not set — skipping Pawns consent flow');
+      console.warn('[App] EXPO_PUBLIC_PAWNS_API_KEY not set — skipping Pawns consent flow');
       return;
     }
 
@@ -411,14 +482,14 @@ function AppContent() {
 
         if (priorDecision) {
           await initializePawns(PAWNS_API_KEY);
-          console.log('[App] ✅ Pawns SDK restored for this session');
+          console.log('[App] Pawns SDK restored for this session');
           return;
         }
 
         const shouldShow = await checkAndShowConsent();
         if (shouldShow) setShowConsentGate(true);
       } catch (err) {
-        console.warn('[App] ⚠️ Pawns consent check failed:', err);
+        console.warn('[App] Pawns consent check failed:', err);
       }
     })();
   }, [isInitialized]);
@@ -433,19 +504,19 @@ function AppContent() {
       try {
         const updatesEnabled = await getCheckForUpdatesSetting();
         if (!updatesEnabled) {
-          console.log('[App] ℹ️ Update checks disabled in settings — skipping');
+          console.log('[App] Update checks disabled in settings — skipping');
           return;
         }
 
-        console.log('[App] 🔍 Checking for updates...');
+        console.log('[App] Checking for updates...');
         await checkForUpdates(false);
       } catch (err) {
-        console.warn('[App] ⚠️ Update check failed:', err);
+        console.warn('[App] Update check failed:', err);
       }
     })();
   }, [isInitialized]);
 
-  console.log('[App] 🎨 Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'services:', servicesReady);
+  console.log('[App] Rendering with initialized:', isInitialized, 'cached:', hasCachedData, 'services:', servicesReady);
 
   // ─── SHOW LOADING SCREEN ───
   if (!servicesReady || (!isInitialized && !hasCachedData && isLoading)) {
@@ -503,7 +574,9 @@ export default function RootLayout() {
     <ReduxProvider store={store}>
       <ThemeProvider>
         <AlertProvider>
-          <AppContent />
+          <QueryClientProvider client={queryClient}>
+            <AppContent />
+          </QueryClientProvider>
         </AlertProvider>
       </ThemeProvider>
     </ReduxProvider>

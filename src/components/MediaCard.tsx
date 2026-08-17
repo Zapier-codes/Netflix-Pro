@@ -1,20 +1,12 @@
 // src/components/MediaCard.tsx
 import React, { useState } from 'react';
-import {
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  Dimensions,
-  View,
-  Text,
-  Alert,
-} from 'react-native';
+import { StyleSheet, Image, TouchableOpacity, Dimensions, View, Text, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { getImageUrl } from '../services/unified/metadata/TMDBMetadata';
 import ImagePlaceholder from './ImagePlaceholder';
 import Badge from './Badge';
-import { SPORT_LOGO_MAP } from '../api/streameastApi';
+import { SPORT_LOGO_MAP } from '../api/ApiService';
 
 const { width } = Dimensions.get('window');
 const FOOTER_HEIGHT = 45;
@@ -113,12 +105,8 @@ const MediaCard = ({
   const episodeInfo = getEpisodeInfo();
   const mediaType = getMediaType();
 
-  const cardWidth = isLiveStream
-    ? 240
-    : customWidth || defaultWidth;
-  const imageContainerHeight = isLiveStream
-    ? 135
-    : customImageHeight || defaultHeight;
+  const cardWidth = isLiveStream ? 240 : customWidth || defaultWidth;
+  const imageContainerHeight = isLiveStream ? 135 : customImageHeight || defaultHeight;
 
   let imageSource = null;
 
@@ -127,9 +115,7 @@ const MediaCard = ({
     const logoUrl = SPORT_LOGO_MAP[sportToken] || SPORT_LOGO_MAP['DEFAULT'];
     imageSource = { uri: logoUrl };
   } else {
-    imageSource = posterPath && !imageError
-      ? { uri: getImageUrl(posterPath) }
-      : null;
+    imageSource = posterPath && !imageError ? { uri: getImageUrl(posterPath) } : null;
   }
 
   const handleRemove = () => {
@@ -162,25 +148,29 @@ const MediaCard = ({
   // ─── Live Stream Card ───
   if (isLiveStream) {
     return (
-      <View style={[
-        styles.outerContainer, 
-        { 
-          width: cardWidth,
-          backgroundColor: isDark ? '#1a0000' : 'rgba(255,0,0,0.05)',
-        }
-      ]}>
+      <View
+        style={[
+          styles.outerContainer,
+          {
+            width: cardWidth,
+            backgroundColor: isDark ? '#1a0000' : 'rgba(255,0,0,0.05)',
+          },
+        ]}
+      >
         <TouchableOpacity
           style={styles.touchableContainer}
           onPress={handlePlay}
           activeOpacity={0.8}
         >
-          <View style={[
-            styles.imageContainer, 
-            { 
-              height: imageContainerHeight,
-              backgroundColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
-            }
-          ]}>
+          <View
+            style={[
+              styles.imageContainer,
+              {
+                height: imageContainerHeight,
+                backgroundColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
+              },
+            ]}
+          >
             {imageSource ? (
               <Image
                 source={imageSource}
@@ -194,12 +184,14 @@ const MediaCard = ({
             <Badge isLive={true} isUpcoming={!item.isLive} />
           </View>
         </TouchableOpacity>
-        <View style={[
-          styles.liveStreamFooterContainer, 
-          { 
-            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
-          }
-        ]}>
+        <View
+          style={[
+            styles.liveStreamFooterContainer,
+            {
+              backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
+            },
+          ]}
+        >
           <Text style={[styles.liveStreamTitle, { color: colors.text }]} numberOfLines={2}>
             {displayTitle}
           </Text>
@@ -216,25 +208,29 @@ const MediaCard = ({
   // ─── Continue Watching Card ───
   if (isContinueWatching) {
     return (
-      <View style={[
-        styles.outerContainer, 
-        { 
-          width: cardWidth,
-          backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
-        }
-      ]}>
+      <View
+        style={[
+          styles.outerContainer,
+          {
+            width: cardWidth,
+            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
+          },
+        ]}
+      >
         <TouchableOpacity
           style={styles.touchableContainer}
           onPress={handlePlay}
           activeOpacity={0.8}
         >
-          <View style={[
-            styles.imageContainer, 
-            { 
-              height: imageContainerHeight,
-              backgroundColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
-            }
-          ]}>
+          <View
+            style={[
+              styles.imageContainer,
+              {
+                height: imageContainerHeight,
+                backgroundColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
+              },
+            ]}
+          >
             {imageSource ? (
               <Image
                 source={imageSource}
@@ -247,17 +243,24 @@ const MediaCard = ({
             )}
             <View style={styles.playOverlay}>
               <View style={[styles.playButtonBackground, { backgroundColor: 'rgba(0,0,0,0.7)' }]} />
-              <Ionicons name="play-circle-outline" size={90} color="#FFFFFF" style={styles.playIcon} />
+              <Ionicons
+                name="play-circle-outline"
+                size={90}
+                color="#FFFFFF"
+                style={styles.playIcon}
+              />
             </View>
           </View>
         </TouchableOpacity>
 
-        <View style={[
-          styles.footerContainer, 
-          { 
-            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
-          }
-        ]}>
+        <View
+          style={[
+            styles.footerContainer,
+            {
+              backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
+            },
+          ]}
+        >
           {episodeInfo && (
             <Text style={[styles.episodeText, { color: colors.textSub }]} numberOfLines={1}>
               {episodeInfo}
@@ -269,8 +272,18 @@ const MediaCard = ({
             </Text>
           )}
           {progress > 0 && progress < 1 && (
-            <View style={[styles.progressBarContainer, { backgroundColor: isDark ? colors.surfaceRaised : 'rgba(0,0,0,0.05)' }]}>
-              <View style={[styles.progressBarFill, { backgroundColor: colors.gold, width: `${progress * 100}%` }]} />
+            <View
+              style={[
+                styles.progressBarContainer,
+                { backgroundColor: isDark ? colors.surfaceRaised : 'rgba(0,0,0,0.05)' },
+              ]}
+            >
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { backgroundColor: colors.gold, width: `${progress * 100}%` },
+                ]}
+              />
             </View>
           )}
           <View style={styles.footerActions}>
@@ -288,25 +301,25 @@ const MediaCard = ({
 
   // ─── Regular Media Card ───
   return (
-    <View style={[
-      styles.outerContainer, 
-      { 
-        width: cardWidth,
-        backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
-      }
-    ]}>
-      <TouchableOpacity
-        style={styles.touchableContainer}
-        onPress={handlePlay}
-        activeOpacity={0.8}
-      >
-        <View style={[
-          styles.imageContainer, 
-          { 
-            height: imageContainerHeight,
-            backgroundColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
-          }
-        ]}>
+    <View
+      style={[
+        styles.outerContainer,
+        {
+          width: cardWidth,
+          backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
+        },
+      ]}
+    >
+      <TouchableOpacity style={styles.touchableContainer} onPress={handlePlay} activeOpacity={0.8}>
+        <View
+          style={[
+            styles.imageContainer,
+            {
+              height: imageContainerHeight,
+              backgroundColor: isDark ? '#222' : 'rgba(0,0,0,0.05)',
+            },
+          ]}
+        >
           {imageSource ? (
             <Image
               source={imageSource}
@@ -332,12 +345,14 @@ const MediaCard = ({
           )}
         </View>
       </TouchableOpacity>
-      <View style={[
-        styles.footerContainer, 
-        { 
-          backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
-        }
-      ]}>
+      <View
+        style={[
+          styles.footerContainer,
+          {
+            backgroundColor: isDark ? colors.surface : 'rgba(255,255,255,0.5)',
+          },
+        ]}
+      >
         <Text style={[styles.episodeText, { color: colors.text }]} numberOfLines={2}>
           {displayTitle}
         </Text>
