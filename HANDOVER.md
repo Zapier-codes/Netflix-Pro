@@ -21,9 +21,13 @@ marked ✅. Do not silently expand scope into later phases.
   `git format-patch`-style `.patch` files applied via
   `git am <patch> && git push`.
 - **Stack:** Expo SDK 55, React Native, TypeScript, `expo-router`
-  (file-based routing), Zustand + some Redux (`src/store`), Supabase
-  backend pieces, custom native modules in `modules/` (`mavin-engine`,
-  `pawns`, `boxoffice`).
+  (file-based routing), Supabase backend pieces, custom native modules
+  in `modules/` (`mavin-engine`, `pawns`, `boxoffice`, and an apparently
+  empty `python-scraper/` — see Known Issues). State management is
+  messier than "Zustand + some Redux" suggests: there are **three**
+  parallel systems (`src/store/zustand/*`, `src/store/store.ts`, and a
+  second, differently-configured `src/store/rtk/store.ts`) — see
+  Section 3A and Known Issues below before touching state in any phase.
 - **App identity:** Netflix-style streaming client. Movies/TV via TMDB
   metadata, stream extraction from multiple sources (VidSrc, Xyra,
   Consumet, StreamEast for live), subtitles via OpenSubtitles/SubDL,
@@ -206,6 +210,70 @@ covers the modern UI for the player itself — don't wait for Phase 5's
 design system to make the player look decent; Phase 2 should use
 reasonable modern styling directly, and Phase 5+ can later reconcile it
 with the app-wide design system).
+
+---
+
+## 3A. RE-AUDIT — 2026-08-17 (doc-only pass, no phase work done)
+
+This session did **not** do phase work. It re-cloned the repo, read every
+screen/service/store directory, and found the Section 3 discovery notes
+above are **out of date on the player**, and that phases 4–30 were written
+from the phase-title list only, without touching the actual code. This
+section corrects that. **Read this before starting Phase 1.**
+
+**The player is not a stub.** `src/screens/player/VideoPlayerScreen.tsx`
+is 1,114 lines and already imports/wires `useVideoControls`,
+`useBrightness`, `useBuffering`, `useSeekBar`, `useGestures`,
+`useWatchProgress`, `useSubtitles`, `useAutoPlay`,
+`useEpisodeNavigation`, and `useStreamExtraction`, plus
+`SourceSelectionModal`/`SubtitlesModal`. None of these extra hooks
+(`useBuffering.ts`, `useSeekBar.ts`, `useGestures.ts`,
+`useWatchProgress.ts`, `useEpisodeNavigation.ts`) are mentioned anywhere
+above — re-read all five before starting Phase 1, they likely already
+cover ground the old Phase 1/3 scope assumed was missing.
+
+**Routing is already largely fixed.** `app/player/index.tsx` already
+exists and handles query params via `useLocalSearchParams`. The details
+screen already calls `router.push({ pathname: '/player', params: {...} })`
+(object form, not the broken template-literal form Section 3 describes)
+at two call sites. **However the file is not `DetailsScreen.tsx` — it's
+`src/screens/details/DetailsScreenNew.tsx`.** Every reference to
+`DetailsScreen.tsx` anywhere in this doc (including Phase 9) means
+`DetailsScreenNew.tsx`. Phase 3 should re-verify end-to-end wiring and
+prop-shape matching rather than rebuild routing from scratch.
+
+**Gestures are partial, not absent.** `useGestures.ts` (252 lines)
+already implements double-tap left/right seek with debounced batching.
+It has **no** drag-to-seek-with-preview and **no** volume handling —
+`react-native-volume-manager` is in `package.json` but unused anywhere in
+`src/`. So Phase 1's real scope is: add horizontal-drag seek + the
+volume hook/slider into the *existing* `useGestures.ts`, not build a
+gesture layer from zero.
+
+**Undocumented architecture issue for a later phase:** the app runs
+**three parallel state systems** at once — `src/store/store.ts` (plain
+RTK, `contentApi`/`downloadsApi` + slices), `src/store/rtk/store.ts`
+(a *second*, differently-configured RTK store with `redux-persist` and
+its own `streamingApi`), and `src/store/zustand/*` (used by
+`app/_layout.tsx`, `ThemeContext.tsx`, `useApp.ts`,
+`CleanupService.ts`, `DownloadManager.ts`, `NetworkMonitor.ts` — i.e.
+Zustand is what's actually wired into the live app; the two Redux stores
+look largely dead/duplicate code). Not in scope for any existing phase —
+added to Known Issues below, needs a decision (likely as part of Phase
+24 performance/dead-code work, or its own phase) before Phase 24 runs.
+
+**Other undocumented items found in this pass**, added to Known Issues:
+a `modules/python-scraper/` directory (empty in this clone — check
+whether it's meant to be a submodule that didn't get added, or dead
+scaffolding), a 19MB `Demo.mp4` committed at repo root, and `.bak` files
+for `LibraryScreen.tsx`, `DownloadsScreen.tsx`, `SettingsScreen.tsx`, and
+`AnimatedHeader.tsx` (Phase 28's clutter list below has been expanded
+with these plus several root-level files it missed: `check.ps1`,
+`rn_complete_structure.txt`, `run_export.bat`).
+
+Section 4 below (Phase 4–30 details) has been expanded with real file
+paths from this audit so later sessions aren't starting from a bare
+phase title the way this doc originally left them.
 
 ---
 
@@ -424,53 +492,69 @@ existing props/callbacks stay identical.
 
 ### Phase 7 — Home screen redesign
 
-**Goal:** Modernize `src/screens/home/*` — hero section (featured
-content), row layout, scroll polish (parallax on hero as user scrolls is
-a nice pro touch if `react-native-reanimated` — already a dependency —
-supports it cleanly).
+**Goal:** Modernize `src/screens/home/HomeScreen.tsx` (single file —
+there's no other file under `src/screens/home/`) plus
+`src/components/FeaturedContent.tsx` (hero) and
+`src/components/content/ContinueWatchingRow.tsx` — hero section, row
+layout, scroll polish (parallax on hero as user scrolls is a nice pro
+touch if `react-native-reanimated` — already a dependency — supports it
+cleanly).
 
 ---
 
 ### Phase 8 — MediaCard / MediaRow visual overhaul
 
 **Goal:** `src/components/MediaCard.tsx`, `MediaRow.tsx`,
-`src/components/skeleton/*` — modern press states (scale/opacity
-feedback), better shimmer skeleton loading, consistent card radii per
-Phase 4 tokens.
+`src/components/skeleton/SkeletonLoader.tsx` (the skeleton dir has just
+this one file, despite the plural folder name) — modern press states
+(scale/opacity feedback), better shimmer skeleton loading, consistent
+card radii per Phase 4 tokens.
 
 ---
 
 ### Phase 9 — Details screen redesign
 
-**Goal:** `src/screens/details/DetailsScreen.tsx` — this file is large;
-modern hero image treatment, glass action bar (play/download/add to
-list), animated section transitions (cast, episodes, subtitles list,
-recommendations).
+**Goal:** `src/screens/details/DetailsScreenNew.tsx` — **note the
+filename**: earlier phases/discovery notes in this doc call it
+`DetailsScreen.tsx`, that file does not exist, the real one is
+`DetailsScreenNew.tsx`. Large file; modern hero image treatment, glass
+action bar (play/download/add to list), animated section transitions
+(cast, episodes, subtitles list, recommendations). This screen also
+renders `src/components/comments/CommentItem.tsx` — that's currently the
+*only* comments component (see Phase 21, the comments feature is
+thinner than its own phase title implies).
 
 ---
 
 ### Phase 10 — Search screen redesign
 
-**Goal:** `src/screens/search/*`, `src/components/search/*` — live/typed
-results, modern filter chips, proper empty and error states using the
-Phase 17 system if it exists yet (if not yet, use sensible interim
-styling and flag it for a Phase 17 revisit).
+**Goal:** `src/screens/search/SearchScreen.tsx`,
+`src/components/search/AdvancedFilters.tsx`,
+`src/components/search/SearchSuggestions.tsx` — live/typed results,
+modern filter chips, proper empty and error states using the Phase 17
+system if it exists yet (if not yet, use sensible interim styling and
+flag it for a Phase 17 revisit).
 
 ---
 
 ### Phase 11 — Library / Downloads screen redesign
 
-**Goal:** `src/screens/library/*`, `src/screens/downloads/*`,
+**Goal:** `src/screens/library/LibraryScreen.tsx`,
+`src/screens/downloads/DownloadsScreen.tsx`,
 `DownloadedMediaCard.tsx`, `DownloadProgressCard.tsx` — grid/list view
 toggle, glass cards, download progress rings instead of flat bars.
+`LibraryScreen.tsx.bak` and `DownloadsScreen.tsx.bak` sit next to the
+live files — don't edit the `.bak` copies, and leave their cleanup to
+Phase 28.
 
 ---
 
 ### Phase 12 — Settings screen redesign
 
-**Goal:** `src/screens/settings/*` — grouped sections (iOS-Settings-app
-style groupings), modern switches, a proper in-app theme picker UI (now
-that Phase 4's tokens support it).
+**Goal:** `src/screens/settings/SettingsScreen.tsx` (a
+`SettingsScreen.tsx.bak` also exists — same note as Phase 11, ignore it)
+— grouped sections (iOS-Settings-app style groupings), modern switches,
+a proper in-app theme picker UI (now that Phase 4's tokens support it).
 
 ---
 
@@ -478,22 +562,28 @@ that Phase 4's tokens support it).
 
 **Goal:** `app/sports.tsx`, `src/components/SportCard.tsx`,
 `SportRow.tsx` — live badges, score ticker visual polish, modern layout
-consistent with Phase 7/8's card language.
+consistent with Phase 7/8's card language. There is no
+`src/screens/sports/` directory — the whole screen lives in the single
+`app/sports.tsx` route file plus the two shared components above.
 
 ---
 
 ### Phase 14 — Notifications screen
 
-**Goal:** `src/screens/notifications/*` — modern list styling, swipe
-actions (mark read / dismiss) if not present, empty state.
+**Goal:** `src/screens/notifications/NotificationsScreen.tsx` (single
+file), backed by `src/store/notificationsStore.ts` — modern list
+styling, swipe actions (mark read / dismiss) if not present, empty
+state.
 
 ---
 
 ### Phase 15 — Navigation shell redesign
 
 **Goal:** `app/(tabs)/_layout.tsx`, `src/components/TopNavigation.tsx`,
-`src/components/header/*` — glass/blur tab bar, active-tab motion
-(icon scale/color transition), header behavior on scroll.
+`src/components/header/AnimatedHeader.tsx` (an `AnimatedHeader.tsx.bak`
+also exists — ignore it, Phase 28 territory) — glass/blur tab bar,
+active-tab motion (icon scale/color transition), header behavior on
+scroll.
 
 ---
 
@@ -533,18 +623,30 @@ instead of bars, swipe-to-remove, glass card treatment.
 ### Phase 20 — Downloads UX pass
 
 **Goal:** `src/services/downloadManager/*`,
-`src/services/DownloadManager.ts` (note: check for duplication between
-`src/services/DownloadManager.ts` and
-`src/services/downloadManager/DownloadManager.ts` found during the
-discovery session — resolve/document which is canonical if both are
-still present by this phase), download queue UI, storage usage bar.
+`src/services/DownloadManager.ts` — confirmed still duplicated as of
+this audit: `src/services/DownloadManager.ts` (single file) vs.
+`src/services/downloadManager/` (a whole folder: `DownloadManager.ts`,
+`DownloadQueue.ts`, `FFmpegConverter.ts`, `HLSDownloader.ts`,
+`MP4Downloader.ts`, `StorageManager.ts`, plus its own
+`CleanupService.ts` and `NetworkMonitor.ts` that also duplicate the
+top-level `src/services/CleanupService.ts` and
+`src/services/NetworkMonitor.ts`). That's three duplicated
+service pairs, not one — resolve/document which set is canonical before
+touching UI. Download queue UI + storage usage bar work should sit on
+top of whichever set wins.
 
 ---
 
 ### Phase 21 — Comments / social features UI pass
 
 **Goal:** `src/components/comments/*`, `src/services/comments/*` —
-modernize UI, ensure consistent theming.
+modernize UI, ensure consistent theming. As of this audit the comments
+feature is minimal: `src/components/comments/CommentItem.tsx` is the
+only component (rendered from `DetailsScreenNew.tsx`, see Phase 9) and
+`src/services/comments/commentService.ts` is the only service file —
+there's no list/thread/composer component yet. This phase may need to
+build those, not just "modernize" existing ones — flag scope with the
+human before assuming it's a pure visual pass.
 
 ---
 
@@ -669,6 +771,45 @@ entries, just add yours with your phase number and date.)*
   (watch-together) systems reportedly exist per earlier project history
   (`listentogether.*` protobuf-based, `together.*` JSON-based) —
   unconfirmed whether both are still present; check in Phase 22.
+- **[2026-08-17, doc-audit session]** The video player is substantially
+  built already, not a stub — see Section 3A for the full correction.
+  Phase 1's real remaining scope is drag-to-seek + volume gesture only;
+  Phase 3's real remaining scope is verification, not construction.
+- **[2026-08-17, doc-audit session]** `DetailsScreen.tsx` does not
+  exist anywhere in this repo — the real file is
+  `src/screens/details/DetailsScreenNew.tsx`. Every mention of
+  `DetailsScreen.tsx` in this doc (Section 3, Phase 3, Phase 9) refers
+  to that file.
+- **[2026-08-17, doc-audit session]** Three parallel state-management
+  systems coexist: `src/store/zustand/*` (what `app/_layout.tsx`,
+  `ThemeContext.tsx`, `useApp.ts`, and the top-level
+  `CleanupService.ts`/`DownloadManager.ts`/`NetworkMonitor.ts` actually
+  import), plus two separate Redux Toolkit stores
+  (`src/store/store.ts` and `src/store/rtk/store.ts`, the latter with
+  `redux-persist` and its own `streamingApi`) that don't appear to be
+  wired into the live app. Needs a decision (keep Zustand, delete the
+  Redux stores, or something else) before Phase 24's dead-code/perf
+  audit — flagged as a candidate for its own phase (30+) rather than
+  silently deleted by a later phase without the human's sign-off.
+- **[2026-08-17, doc-audit session]** `modules/python-scraper/` exists
+  as an empty directory in a fresh clone (not a registered git
+  submodule — no `.gitmodules` file). Worth asking the human whether
+  it's meant to hold something that never got committed, or is dead
+  scaffolding — don't build against it assuming content will appear.
+- **[2026-08-17, doc-audit session]** Root-level clutter for Phase 28 is
+  larger than originally listed: also present are `check.ps1` (~101KB),
+  `rn_complete_structure.txt`, `run_export.bat`, and a **19MB `Demo.mp4`**
+  committed at repo root (worth asking the human if that should move to
+  Git LFS or out of the repo entirely — it bloats every clone). Also
+  `.bak` copies of `LibraryScreen.tsx`, `DownloadsScreen.tsx`,
+  `SettingsScreen.tsx`, and `AnimatedHeader.tsx` sit next to their live
+  versions (screens/components, not just repo root — Phase 28's original
+  scope only mentioned root-level files).
+- **[2026-08-17, doc-audit session]** No remaining `.jsx`/untyped `.js`
+  files were found under `src/` or `app/` in this audit — Phase 29
+  (TypeScript migration) may already be effectively done; next session
+  on that phase should verify and, if so, just confirm/close it rather
+  than hunt for files that aren't there.
 
 ---
 
@@ -676,7 +817,11 @@ entries, just add yours with your phase number and date.)*
 
 - Player hooks: `src/hooks/useStreamExtraction.ts`,
   `useVideoControls.ts`, `useBrightness.ts`, `useSubtitles.tsx`,
-  `useAutoPlay.ts`
+  `useAutoPlay.ts`, and (found in the 2026-08-17 audit, see Section 3A)
+  `useBuffering.ts`, `useSeekBar.ts`, `useGestures.ts`,
+  `useWatchProgress.ts`, `useEpisodeNavigation.ts`
+- Player screen: `src/screens/player/VideoPlayerScreen.tsx` (1,114
+  lines — already wires all the hooks above, see Section 3A)
 - Player components: `src/components/video/*`
 - Theme: `src/contexts/ThemeContext.tsx`
 - Alerts: `src/contexts/AlertContext.tsx` (`useAlert().showAlert(...)`)
@@ -684,11 +829,16 @@ entries, just add yours with your phase number and date.)*
   (`saveWatchProgress`, `saveEpisodeWatchProgress`,
   `getContinueWatchingList`, `getAutoPlaySetting`)
 - Continue watching store: `src/store/zustand/continueWatching.ts`
-  (`useContinueWatching`)
+  (`useContinueWatching`) — Zustand is the store actually wired into the
+  live app; see Known Issues re: two unused parallel Redux stores
+- Details screen: `src/screens/details/DetailsScreenNew.tsx` (**not**
+  `DetailsScreen.tsx` — see Known Issues)
 - TMDB metadata: `src/services/unified/metadata/TMDBMetadata.ts`
 - Subtitles: `src/services/unified/subtitles/UnifiedSubtitles.ts`,
   `OpenSubtitlesProvider.tsx`, `SubdlProvider.ts`
-- Routing: `app/` (expo-router file-based)
+- Routing: `app/` (expo-router file-based) — `app/player/index.tsx`
+  (query-param route) already exists; there's no `app/player/[id].tsx`
+  segment route despite earlier notes in this doc implying one
 - Package manifest: `package.json` (Expo SDK 55 — match version ranges
   for any new Expo package you add, e.g. `~55.0.x`)
 
