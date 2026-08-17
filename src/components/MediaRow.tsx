@@ -1,8 +1,10 @@
-// src/components/MediaRow.tsx - already fine, just ensure no background
+// src/components/MediaRow.tsx
 import React from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Dimensions } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import MediaCard from './MediaCard';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface MediaRowProps {
   title: string;
@@ -13,6 +15,8 @@ interface MediaRowProps {
   isContinueWatching?: boolean;
   isLiveStream?: boolean;
   watchedIds?: Set<number | string>;
+  cardWidth?: number;
+  cardHeight?: number;
 }
 
 const MediaRow: React.FC<MediaRowProps> = ({
@@ -24,12 +28,18 @@ const MediaRow: React.FC<MediaRowProps> = ({
   isContinueWatching = false,
   isLiveStream = false,
   watchedIds,
+  cardWidth: customCardWidth,
+  cardHeight: customCardHeight,
 }) => {
   const { colors, isDark } = useTheme();
 
   if (!data || data.length === 0) {
     return null;
   }
+
+  // Default card sizes (search screen style)
+  const defaultCardWidth = (SCREEN_WIDTH - 16 * 2 - 8 * 3) / 4;
+  const defaultCardHeight = defaultCardWidth * 1.5;
 
   return (
     <View style={styles.container}>
@@ -44,8 +54,8 @@ const MediaRow: React.FC<MediaRowProps> = ({
             onPress={onItemPress}
             onInfoPress={onInfoPress}
             onRemovePress={onRemovePress}
-            width={isContinueWatching ? 140 : isLiveStream ? 240 : 100}
-            height={isContinueWatching ? 210 : isLiveStream ? 135 : 150}
+            width={isContinueWatching ? 140 : (customCardWidth || defaultCardWidth)}
+            height={isContinueWatching ? 210 : (customCardHeight || defaultCardHeight)}
             isContinueWatching={isContinueWatching}
             isLiveStream={isLiveStream}
             hasWatched={watchedIds ? watchedIds.has(item.id) : false}
@@ -61,7 +71,6 @@ const MediaRow: React.FC<MediaRowProps> = ({
 const styles = StyleSheet.create({
   container: {
     marginBottom: 24,
-    // No backgroundColor here - let the gradient show through
   },
   title: {
     fontSize: 18,

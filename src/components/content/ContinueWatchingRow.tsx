@@ -1,28 +1,27 @@
-/**
- * ContinueWatchingRow - Continue watching horizontal scroll row
- * Features: Progress bar overlay, tap to resume, long press to remove
- * Shows poster with progress indicator
- */
-
-import React, { useRef, useState } from 'react';
+// src/components/ContinueWatchingRow.tsx
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Image,
-  ScrollView,
   Dimensions,
-  Animated,
-  Alert,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../../contexts/ThemeContext';
-import { ContinueWatchingItem } from '../../../utils/continueWatching';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../contexts/ThemeContext';
+import { ContinueWatchingItem } from '../../store/zustand/continueWatching';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = 120;
-const CARD_HEIGHT = 170;
+
+// ─── Slimmer Horizontal/Landscape Card ───
+const CARD_WIDTH = SCREEN_WIDTH * 0.45;
+const CARD_HEIGHT = CARD_WIDTH * 0.5625;
+const CARD_SPACING = 8; // matches MediaCard's marginHorizontal:4 * 2 (gap between cards)
+const ITEM_WIDTH = CARD_WIDTH + CARD_SPACING;
+const ROW_PADDING = 6; // matches MediaRow's listContainer paddingHorizontal
 
 interface ContinueWatchingRowProps {
   items: ContinueWatchingItem[];
@@ -30,7 +29,6 @@ interface ContinueWatchingRowProps {
   onRemoveItem?: (id: string) => void;
   loading?: boolean;
   title?: string;
-  maxItems?: number;
 }
 
 export function ContinueWatchingRow({
@@ -39,279 +37,273 @@ export function ContinueWatchingRow({
   onRemoveItem,
   loading = false,
   title = 'Continue Watching',
-  maxItems = 10,
 }: ContinueWatchingRowProps) {
-  const { colors, isDark } = useTheme();
-  const [longPressed, setLongPressed] = useState(false);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const { colors } = useTheme();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {[1, 2, 3, 4].map((_, index) => (
-            <View
-              key={`skeleton-${index}`}
-              style={[styles.skeletonCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]}
-            >
-              <View style={[styles.skeletonPoster, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]} />
-              <View style={[styles.skeletonTitle, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }]} />
-            </View>
-          ))}
-        </ScrollView>
-      </View>
-    );
-  }
+  // Safety net: the row is only ever meant to show up to 8 cards, even if a
+  // caller passes more. Ordering (latest-first) is the caller's job — this
+  // just enforces the cap.
+  const displayItems = items.slice(0, 8);
 
-  if (items.length === 0) {
+  // ─── Get poster URL ───
+  const getPosterUrl = (item: ContinueWatchingItem): string => {
+    if (item.posterPath) {
+      if (item.posterPath.startsWith('http://') || item.posterPath.startsWith('https://')) {
+        return item.posterPath;
+      }
+      if (item.posterPath.startsWith('/')) {
+        return `https://image.tmdb.org/t/p/w500${item.posterPath}`;
+      }
+      return `https://image.tmdb.org/t/p/w500/${item.posterPath}`;
+    }
+    return 'https://via.placeholder.com/400x225/1a1a2e/ffffff?text=No+Image';
+  };
+
+  // ─── Auto-slideshow ───
+  useEffect(() => {
+    if (displayItems.length > 1) {
+      const interval = setInterval(() => {
+        setCurrentIndex((prevIndex) => (prevIndex + 1) % displayItems.length);
+      }, 4000);
+
+      return () => clearInterval(interval);
+    }
+  }, [displayItems.length]);
+
+  // ─── Scroll to current index (smooth slide, not a full-page jump) ───
+  useEffect(() => {
+    if (flatListRef.current && displayItems.length > 0) {
+      // Looping back to the first card snaps instantly (a long animated
+      // scroll backwards would look like a glitch); every other advance
+      // slides smoothly to the next card's offset.
+      flatListRef.current.scrollToOffset({
+        offset: currentIndex * ITEM_WIDTH,
+        animated: currentIndex !== 0,
+      });
+    }
+  }, [currentIndex, displayItems.length]);
+
+  if (loading || displayItems.length === 0) {
     return null;
   }
 
-  const displayItems = items.slice(0, maxItems);
-
-  const handleLongPress = (item: ContinueWatchingItem) => {
-    if (onRemoveItem) {
-      Alert.alert(
-        'Remove from Continue Watching',
-        `Remove "${item.title}" from your continue watching list?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Remove',
-            style: 'destructive',
-            onPress: () => onRemoveItem(item.id),
-          },
-        ]
-      );
-    }
-  };
-
-  const handlePressIn = () => {
-    longPressTimer.current = setTimeout(() => {
-      setLongPressed(true);
-    }, 500);
-  };
-
-  const handlePressOut = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    setLongPressed(false);
-  };
-
-  const renderItem = (item: ContinueWatchingItem) => {
-    const progressPercent = Math.min(item.progress * 100, 100);
+  const renderItem = ({ item }: { item: ContinueWatchingItem }) => {
+    const progressPercent = Math.round(item.progress * 100);
+    const posterUrl = getPosterUrl(item);
 
     return (
       <TouchableOpacity
-        key={item.id}
-        style={styles.card}
+        style={styles.cardContainer}
         onPress={() => onItemPress(item)}
-        onLongPress={() => handleLongPress(item)}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.7}
-        delayLongPress={500}
+        onLongPress={() => onRemoveItem?.(item.id)}
+        activeOpacity={0.9}
       >
-        <View style={styles.posterContainer}>
+        <View style={[styles.card, { backgroundColor: colors.surfaceRaised }]}>
+          {/* ─── Background Image ─── */}
           <Image
-            source={item.poster ? { uri: item.poster } : require('../../../assets/icon.png')}
-            style={styles.poster}
+            source={{ uri: posterUrl }}
+            style={styles.cardThumbnail}
             resizeMode="cover"
           />
-          
-          {/* Play icon overlay on hover/long press */}
-          {longPressed && (
-            <View style={styles.overlay}>
-              <Ionicons name="play-circle" size={40} color="white" />
-            </View>
-          )}
 
-          {/* Progress bar at bottom */}
-          <View style={styles.progressContainer}>
-            <View
-              style={[
-                styles.progressBar,
-                {
-                  width: `${progressPercent}%`,
-                  backgroundColor: colors.gold,
-                },
-              ]}
-            />
-          </View>
+          {/* ─── Gradient Overlay ─── */}
+          <View style={styles.gradientOverlay} />
 
-          {/* Episode/Season badge for TV shows */}
-          {item.type === 'tv' && item.season !== undefined && item.episode !== undefined && (
-            <View style={[styles.episodeBadge, { backgroundColor: 'rgba(0,0,0,0.75)' }]}>
-              <Text style={styles.episodeBadgeText}>
-                S{item.season}:E{item.episode}
+          {/* ─── Content Overlay ─── */}
+          <View style={styles.cardOverlay}>
+            {/* ─── Top Section: Episode Badge (Top Right) & Progress (Top Left, no background) ─── */}
+            <View style={styles.topSection}>
+              {/* ─── Percentage - Top Left, text only, no circle/background ─── */}
+              <Text style={styles.progressText}>
+                {progressPercent}%
               </Text>
-            </View>
-          )}
 
-          {/* Progress percentage text */}
-          <View style={[styles.progressBadge, { backgroundColor: 'rgba(0,0,0,0.75)' }]}>
-            <Text style={styles.progressBadgeText}>
-              {Math.round(progressPercent)}%
-            </Text>
+              {/* ─── Episode Badge - Top Right ─── */}
+              {item.season !== undefined && item.episode !== undefined && (
+                <View style={[styles.episodeBadge, { backgroundColor: 'rgba(0,0,0,0.75)' }]}>
+                  <Text style={styles.episodeBadgeText}>
+                    S{item.season}:E{item.episode}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* ─── Bottom Section: Title, low and blended into the poster like a
+                   lock-screen "now playing" label sitting over artwork ─── */}
+            <View style={styles.bottomTitleSection}>
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.55)']}
+                style={styles.bottomTitleGradient}
+              >
+                <Text style={[styles.cardTitle]} numberOfLines={2}>
+                  {item.title}
+                </Text>
+                {item.episodeTitle && (
+                  <Text style={styles.cardEpisode} numberOfLines={1}>
+                    {item.episodeTitle}
+                  </Text>
+                )}
+              </LinearGradient>
+            </View>
+
+            {/* ─── Transparent Play Icon ─── */}
+            <View style={styles.playIconContainer}>
+              <Ionicons name="play-circle-outline" size={40} color="rgba(255,255,255,0.7)" />
+            </View>
           </View>
         </View>
-
-        <Text style={[styles.titleText, { color: colors.text }]} numberOfLines={1}>
-          {item.title}
-        </Text>
-        {item.episodeTitle && (
-          <Text style={[styles.episodeText, { color: colors.textMuted }]} numberOfLines={1}>
-            {item.episodeTitle}
-          </Text>
-        )}
       </TouchableOpacity>
     );
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        {items.length > maxItems && (
-          <TouchableOpacity onPress={() => {}}>
-            <Text style={[styles.seeAll, { color: colors.textMuted }]}>
-              See All
-            </Text>
-          </TouchableOpacity>
-        )}
+      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+
+      <View style={styles.carouselContainer}>
+        <FlatList
+          ref={flatListRef}
+          data={displayItems}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          scrollEnabled={false}
+          getItemLayout={(data, index) => ({
+            length: ITEM_WIDTH,
+            offset: ITEM_WIDTH * index,
+            index,
+          })}
+          contentContainerStyle={styles.flatListContent}
+        />
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {displayItems.map(renderItem)}
-      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 8,
-    paddingHorizontal: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 10,
+    marginLeft: 16,
   },
-  seeAll: {
-    fontSize: 13,
-    fontWeight: '500',
+  carouselContainer: {
+    width: SCREEN_WIDTH,
+    height: CARD_HEIGHT + 16,
+    justifyContent: 'center',
   },
-  scrollContent: {
-    gap: 10,
-    paddingRight: 16,
+  flatListContent: {
+    paddingHorizontal: ROW_PADDING,
+  },
+  cardContainer: {
+    width: ITEM_WIDTH,
+    paddingRight: CARD_SPACING,
   },
   card: {
     width: CARD_WIDTH,
-  },
-  posterContainer: {
-    position: 'relative',
-    width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 8,
+    borderRadius: 10,
     overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  poster: {
+  cardThumbnail: {
     width: '100%',
     height: '100%',
-    borderRadius: 8,
   },
-  overlay: {
+  gradientOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  progressContainer: {
+  cardOverlay: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    bottom: 0,
+    justifyContent: 'space-between',
+    padding: 10,
   },
-  progressBar: {
-    height: '100%',
-    borderRadius: 2,
+  topSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  // ─── Percentage: plain text, no circle/background, just a soft shadow
+  //      so it stays legible against any poster art ───
+  progressText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   episodeBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 4,
   },
   episodeBadgeText: {
-    color: 'white',
+    color: '#FFFFFF',
     fontSize: 9,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  progressBadge: {
+  // ─── Bottom Section: title sits low on the poster, blended in via a
+  //      dark gradient scrim behind it — dims the text into the artwork
+  //      the way a lock-screen "now playing" label sits over album art ───
+  bottomTitleSection: {
     position: 'absolute',
-    bottom: 8,
-    right: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  progressBadgeText: {
-    color: 'white',
-    fontSize: 9,
-    fontWeight: '600',
+  bottomTitleGradient: {
+    paddingHorizontal: 14,
+    paddingTop: 20,
+    paddingBottom: 10,
+    alignItems: 'center',
   },
-  titleText: {
+  cardTitle: {
+    color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '500',
-    marginTop: 4,
+    fontWeight: '700',
     textAlign: 'center',
+    opacity: 0.85,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+    lineHeight: 16,
   },
-  episodeText: {
+  cardEpisode: {
+    color: 'rgba(255,255,255,0.75)',
     fontSize: 10,
+    fontWeight: '500',
     textAlign: 'center',
-    marginTop: 1,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
+    marginTop: 2,
   },
-  skeletonCard: {
-    width: CARD_WIDTH,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  skeletonPoster: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    borderRadius: 8,
-  },
-  skeletonTitle: {
-    height: 10,
-    borderRadius: 4,
-    marginTop: 6,
-    width: '70%',
-    alignSelf: 'center',
+  playIconContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -20 }, { translateY: -20 }],
   },
 });
 

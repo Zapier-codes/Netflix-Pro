@@ -8,6 +8,10 @@ const CATEGORIES = ['movies', 'tv', 'drama', 'anime', 'comedy', 'action', 'horro
 
 const RECENCY_WINDOW_DAYS = 30;
 
+// Must match GRID_COLUMNS * GRID_ROWS in SearchScreen.tsx (4 * 3) — the
+// "Popular Searches" grid always needs a full page of this many items.
+const TARGET_COUNT = 12;
+
 /**
  * Keep only content released within the last ~30 days.
  * - Sources with a real `releaseDate` (TMDB, MovieBox) are checked precisely.
@@ -50,16 +54,28 @@ export const useSearchPreloader = () => {
         }
 
         await unifiedMediaService.initialize();
-        // Fetch a larger pool than we need, since the recency filter below
-        // will drop anything older than a month before we're left with `limit`.
+        // Fetch a larger pool than we need. The recency filter below is a
+        // preference, not a hard cap — see backfill step.
         const trending = await unifiedMediaService.getTrending(60);
-        const recentWithPosters = trending
-          .filter(item => !!item.poster)
-          .filter(isRecentEnough)
-          .slice(0, 20);
+        const withPosters = trending.filter(item => !!item.poster);
 
-        setTrendingItems(recentWithPosters);
-        await cacheManager.set('trending_search_items', recentWithPosters, 300000);
+        // Recent items first (these are what we actually want to show)...
+        const recent = withPosters.filter(isRecentEnough);
+
+        // ...but if recency alone doesn't add up to a full grid page, backfill
+        // with the next-best trending items (still poster-only, original
+        // popularity order preserved) so the grid is never short/uneven.
+        let finalItems = recent;
+        if (finalItems.length < TARGET_COUNT) {
+          const recentSet = new Set(recent);
+          const backfill = withPosters.filter(item => !recentSet.has(item));
+          finalItems = [...recent, ...backfill].slice(0, TARGET_COUNT);
+        } else {
+          finalItems = finalItems.slice(0, TARGET_COUNT);
+        }
+
+        setTrendingItems(finalItems);
+        await cacheManager.set('trending_search_items', finalItems, 300000);
       } catch (error) {
         console.warn('[useSearchPreloader] Error:', error);
         setTrendingItems([]);

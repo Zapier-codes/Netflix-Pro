@@ -22,9 +22,16 @@
  * mediaType mapping resolves 'show'/'anime'/'all' down to 'movie' or 'tv'
  * before building searchOptions - so narrowing costs nothing at the call
  * sites and satisfies every adapter's implementation.
+ * FIXED: Kuryana results no longer get language/country filtered at the
+ * aggregator level since its database endpoint is already Asian-only.
+ * 
+ * v2.1 - ADDED: TV show season data support
+ * - getById now returns seasons and displaySeasons from adapters
+ * - search and discover pass seasons data through to results
+ * - Added logging for season data in getById
  */
 
-import { IMetadataResult, SearchRequest, DiscoverFilters } from '../../unified/types/MetadataTypes';
+import { IMetadataResult, SearchRequest, DiscoverFilters, ISeason } from '../../unified/types/MetadataTypes';
 import { TMDBMetadataAdapter } from './adapters/TMDBMetadataAdapter';
 import { KuryanaMetadataAdapter } from './adapters/KuryanaMetadataAdapter';
 import { MovieBoxMetadataAdapter } from './adapters/MovieBoxMetadataAdapter';
@@ -139,6 +146,78 @@ interface SearchFilters {
   startYear?: number;
   endYear?: number;
   type?: 'movie' | 'tv' | 'all';
+  // NEW: server-side exclusion filter. Lets a category (e.g. "Cartoons")
+  // request the same genre as another category (e.g. "Anime" - both are
+  // "Animation") while excluding the language that makes it anime, instead
+  // of every consumer having to duplicate that distinction client-side.
+  // This is the single source of truth for "cartoons are not anime".
+  excludeLanguages?: string[];
+}
+
+/**
+ * TMDB genre IDs -> human-readable names.
+ *
+ * FIXED: TMDBMetadataAdapter's list/discover results only ever populate
+ * `item.genres` with stringified numeric genre IDs (e.g. "28"), because
+ * TMDB's /discover and /search endpoints only return `genre_ids`, never
+ * genre-name objects (only the single-item /details endpoint does). Every
+ * other provider (Consumet, Kuryana, MovieBox) puts real names like
+ * "Action" in `item.genres`. The aggregator's own genre filter compares
+ * `item.genres` against filter values that are always human names (e.g.
+ * "Action" from a UI genre chip) - so for TMDB-sourced items the comparison
+ * was silently "28" !== "Action" for every single item, wiping out 100
+ * good, server-side-filtered results down to 0. Normalizing any purely
+ * numeric genre entries through this map before comparing fixes that for
+ * every call site without needing to touch each provider adapter.
+ */
+const TMDB_GENRE_ID_TO_NAME: Record<string, string> = {
+  '28': 'Action', '12': 'Adventure', '16': 'Animation', '35': 'Comedy',
+  '80': 'Crime', '99': 'Documentary', '18': 'Drama', '10751': 'Family',
+  '14': 'Fantasy', '36': 'History', '27': 'Horror', '10402': 'Music',
+  '9648': 'Mystery', '10749': 'Romance', '878': 'Sci-Fi', '10770': 'TV Movie',
+  '53': 'Thriller', '10752': 'War', '37': 'Western',
+  // TV-specific IDs
+  '10759': 'Action & Adventure', '10762': 'Kids', '10763': 'News',
+  '10764': 'Reality', '10765': 'Sci-Fi & Fantasy', '10766': 'Soap',
+  '10767': 'Talk', '10768': 'War & Politics',
+};
+
+function normalizeGenres(genres?: string[]): string[] {
+  if (!genres || genres.length === 0) return [];
+  return genres.map(g => (/^\d+$/.test(g) ? (TMDB_GENRE_ID_TO_NAME[g] || g) : g));
+}
+
+/**
+ * Converts the string-shaped `years` filter (e.g. "2025" or "2020-2024",
+ * as produced by UnifiedMediaService.search()/discover() when it builds a
+ * SearchRequest) into the numeric year/startYear/endYear fields that
+ * DiscoverFilters and every provider's discover()/search() actually read.
+ *
+ * FIXED: `filters as DiscoverFilters` at the empty-query redirect in
+ * search() was a pure type-level cast with no runtime conversion, so
+ * `years: "2025"` never became `year: 2025` and every discover() call
+ * silently ignored whatever year the user picked. `parseInt(filters.years)`
+ * in the non-empty-query path had the same problem for range strings like
+ * "2020-2024" - it truncated to 2020 and dropped endYear entirely.
+ */
+function parseYearsFilter(years?: string): Pick<DiscoverFilters, 'year' | 'startYear' | 'endYear'> {
+  if (!years) return {};
+
+  const range = years.match(/^(\d{4})-(\d{4})$/);
+  if (range) {
+    return { startYear: parseInt(range[1], 10), endYear: parseInt(range[2], 10) };
+  }
+
+  // Handle the open-ended range shapes UnifiedMediaService can produce,
+  // e.g. "2020-" (startYear only) or "-2024" (endYear only).
+  const openStart = years.match(/^(\d{4})-$/);
+  if (openStart) return { startYear: parseInt(openStart[1], 10) };
+
+  const openEnd = years.match(/^-(\d{4})$/);
+  if (openEnd) return { endYear: parseInt(openEnd[1], 10) };
+
+  const single = parseInt(years, 10);
+  return isNaN(single) ? {} : { year: single };
 }
 
 export class MetadataAggregatorNew {
@@ -186,6 +265,8 @@ export class MetadataAggregatorNew {
    * Search for content across ALL metadata providers.
    * Aggregates results from TMDB, Kuryana, MovieBox, Consumet, AND Trakt.
    * 
+   * v2.1 - Now passes seasons and displaySeasons through from providers.
+   * 
    * @param request - Full SearchRequest with filters
    * @returns Array of metadata results from ALL providers
    */
@@ -211,7 +292,50 @@ export class MetadataAggregatorNew {
     // If query is empty, use discover mode
     if (!query || query.trim() === '') {
       console.log('[MetadataAggregator] 🔄 Empty query - using discover mode');
-      return this.discover(filters as DiscoverFilters, limit);
+
+      // FIXED: `type` was destructured out of `request` above and never
+      // merged back into `filters`/`discoverFilters`, so every empty-query
+      // discover() call silently lost whatever media type the caller asked
+      // for (e.g. Anime's "all" or Asian's "tv") and fell back to the
+      // 'movie'-only default inside discover(). Normalize whatever shape
+      // `type` came in as (string, array, 'show' alias) into the
+      // 'movie' | 'tv' | 'all' that DiscoverFilters actually expects, and
+      // pass it through explicitly.
+      const rawType: unknown = type;
+      let resolvedType: DiscoverFilters['type'] | undefined;
+      const firstType = Array.isArray(rawType) ? rawType[0] : rawType;
+      // FIXED: this used to check firstType === 'movie' before checking
+      // whether rawType was actually a multi-element array - so a caller
+      // asking for "every type" via `type: ['movie', 'show']` (e.g.
+      // UnifiedMediaService.search()'s own default, and its old discover()
+      // before it was fixed to call the aggregator's discover() directly)
+      // matched the 'movie' branch on the first element and silently lost
+      // 'show'/'tv' entirely. Checking "is this actually a list of more
+      // than one type" first means a real multi-type request always
+      // resolves to 'all', and the single-value checks only run once we
+      // know there's exactly one type to resolve.
+      if (Array.isArray(rawType) && rawType.length > 1) {
+        resolvedType = 'all';
+      } else if (firstType === 'tv' || firstType === 'show') {
+        resolvedType = 'tv';
+      } else if (firstType === 'movie') {
+        resolvedType = 'movie';
+      } else if (firstType === 'all') {
+        resolvedType = 'all';
+      }
+
+      const discoverFilters: DiscoverFilters = {
+        ...(filters as DiscoverFilters),
+        ...(resolvedType ? { type: resolvedType } : {}),
+        ...parseYearsFilter(filters.years),
+      };
+      console.log('[MetadataAggregator] 📅 Resolved year filter:', {
+        years: filters.years,
+        year: discoverFilters.year,
+        startYear: discoverFilters.startYear,
+        endYear: discoverFilters.endYear,
+      });
+      return this.discover(discoverFilters, limit);
     }
 
     const allResults: IMetadataResult[] = [];
@@ -249,6 +373,18 @@ export class MetadataAggregatorNew {
         // For each type, search separately
         let providerTotalResults = 0;
 
+        // Resolve the years filter once per provider (not per mediaType) -
+        // explicit startDate/endDate win when present, otherwise fall back
+        // to whatever `years` (e.g. "2025" or "2020-2024") resolves to.
+        const yearsFromFilter = parseYearsFilter(filters.years);
+        const resolvedYear = yearsFromFilter.year;
+        const resolvedStartYear = filters.startDate
+          ? new Date(filters.startDate).getFullYear()
+          : yearsFromFilter.startYear;
+        const resolvedEndYear = filters.endDate
+          ? new Date(filters.endDate).getFullYear()
+          : yearsFromFilter.endYear;
+
         for (const mediaType of typeArray) {
           try {
             // Build search options for the provider.
@@ -269,9 +405,9 @@ export class MetadataAggregatorNew {
               certifications: filters.certifications,
               minRating: filters.ratings ? parseFloat(filters.ratings.split(',')[0]) : undefined,
               maxRating: filters.ratings ? parseFloat(filters.ratings.split(',')[1]) : undefined,
-              year: filters.years ? parseInt(filters.years) : undefined,
-              startYear: filters.startDate ? new Date(filters.startDate).getFullYear() : undefined,
-              endYear: filters.endDate ? new Date(filters.endDate).getFullYear() : undefined,
+              year: resolvedYear,
+              startYear: resolvedStartYear,
+              endYear: resolvedEndYear,
               keywords: filters.keywords,
               watchProviders: filters.watchProviders,
               withCast: filters.withCast,
@@ -340,7 +476,10 @@ export class MetadataAggregatorNew {
         title: r.title,
         source: r.source,
         type: r.type,
-        id: r.id
+        id: r.id,
+        // NEW: Log season data for TV shows
+        seasons: r.seasons?.length || 0,
+        displaySeasons: r.displaySeasons?.join(', ') || 'none'
       })));
     } else {
       console.log(`[MetadataAggregator] ⚠️ NO RESULTS FOUND for "${query}"`);
@@ -353,6 +492,8 @@ export class MetadataAggregatorNew {
    * DISCOVER - Category browsing without a keyword.
    * This is how Netflix/MovieBox do category rows.
    * 
+   * v2.1 - Now passes seasons and displaySeasons through from providers.
+   * 
    * @param filters - DiscoverFilters with language, country, region, genres, etc.
    * @param limit - Maximum number of results
    * @returns Array of metadata results matching the filters
@@ -362,15 +503,67 @@ export class MetadataAggregatorNew {
 
     console.log(`[MetadataAggregator] 🔍 Discover started with filters:`, filters);
 
-    const allResults: IMetadataResult[] = [];
+    // FIXED: previously every provider's results were pushed into one flat
+    // `allResults` array, then the WHOLE combined pool was capped to a
+    // single `limit` after one global popularity sort. MovieBox/Consumet/
+    // Kuryana items generally carry popularity: 0 (they have no TMDB-style
+    // popularity score), so they always sorted to the bottom - meaning the
+    // instant TMDB alone returned >= limit results, every other source got
+    // sliced off entirely even though it had returned real data. A
+    // multi-source category (Anime: tmdb+consumet, Asian: kuryana+consumet)
+    // would silently degrade to single-source output. Bucketing per
+    // provider (in discoverProviders' priority order) lets each source keep
+    // its own budget of up to `limit` results, independent of how the other
+    // sources score.
     const providerResults: Record<string, number> = {};
 
     // Determine media types to search
     const mediaTypes: Array<'movie' | 'tv'> =
       filters.type === 'all' ? ['movie', 'tv'] : [(filters.type as 'movie' | 'tv') || 'movie'];
 
-    // Try discover method on ALL providers that support it
-    for (const provider of this.providers) {
+    // FIXED: Kuryana, MovieBox, Consumet, and Trakt were being called on
+    // every single discover() request and never contributing a single
+    // result for category browsing (e.g. "Bollywood"): Kuryana's seasonal
+    // endpoint 500s every time and its country-search fallback returns
+    // dramas that don't match the language/country filters; MovieBox's
+    // discover only has access to unfiltered "hot" lists that filter down
+    // to 0; Consumet's scraping mirrors are down (403/520/network errors);
+    // and TraktMetadataAdapter.discover() is a literal unimplemented stub
+    // that always returns an empty array without even making a request.
+    // That's 4 wasted round-trips (plus a wall of error logs) per category
+    // press for zero results. Only TMDB actually returns anything right
+    // now, so skip the rest here by default. Revisit/remove entries from
+    // this set once a given provider's discover() is actually wired up.
+    //
+    // OVERRIDE: a caller can pass `sources: string[]` on the filters object
+    // (e.g. SearchScreen's CATEGORY_CARDS[i].sources) to explicitly opt a
+    // category into a specific provider mix instead of the default
+    // TMDB-only set - e.g. Anime combining TMDB + Consumet, or the merged
+    // "Asian" category combining Kuryana + Consumet. This is an explicit
+    // request, so it bypasses DISCOVER_DISABLED_PROVIDER_IDS - but note the
+    // underlying reasons those providers were disabled (above) still apply
+    // until KuryanaMetadataAdapter/ConsumetMetadataAdapter's discover()
+    // implementations are actually fixed; opting them back in here won't by
+    // itself make their broken endpoints start returning results.
+    const DISCOVER_DISABLED_PROVIDER_IDS = new Set(['kuryana', 'moviebox', 'consumet', 'trakt']);
+    const requestedSources = (filters as DiscoverFilters & { sources?: string[] }).sources;
+    const discoverProviders = requestedSources && requestedSources.length > 0
+      ? this.providers.filter(p => requestedSources.includes(p.id))
+      : this.providers.filter(p => !DISCOVER_DISABLED_PROVIDER_IDS.has(p.id));
+
+    if (requestedSources && requestedSources.length > 0) {
+      console.log(`[MetadataAggregator] 🔧 Using explicit source override:`, requestedSources);
+    }
+
+    // One bucket per provider (same order as discoverProviders, i.e.
+    // registration/priority order, or the caller's explicit `sources`
+    // order) - this is what makes per-source capping and round-robin
+    // interleaving possible below.
+    const buckets: IMetadataResult[][] = discoverProviders.map(() => []);
+
+    // Try discover method on ALL (enabled) providers that support it
+    for (let providerIdx = 0; providerIdx < discoverProviders.length; providerIdx++) {
+      const provider = discoverProviders[providerIdx];
       for (const mediaType of mediaTypes) {
         try {
           console.log(`[MetadataAggregator] 🔎 Calling ${provider.name}.discover (${mediaType})...`);
@@ -424,7 +617,7 @@ export class MetadataAggregatorNew {
               if (!r.source) r.source = provider.id || provider.name.toLowerCase();
             });
             providerResults[`${provider.name}-${mediaType}`] = results.length;
-            allResults.push(...results);
+            buckets[providerIdx].push(...results);
           }
         } catch (error) {
           console.error(`[MetadataAggregator] ❌ Provider ${provider.name} discover (${mediaType}) failed:`, error);
@@ -434,25 +627,77 @@ export class MetadataAggregatorNew {
     }
 
     console.log(`[MetadataAggregator] 📊 Discover summary:`, providerResults);
-    console.log(`[MetadataAggregator] 📊 Total raw results: ${allResults.length}`);
+    console.log(`[MetadataAggregator] 📊 Total raw results: ${buckets.reduce((n, b) => n + b.length, 0)}`);
 
-    // Post-process results
-    let processed = this.deduplicateResults(allResults);
-    console.log(`[MetadataAggregator] 📊 After deduplication: ${processed.length}`);
+    // FIXED: each source's bucket is now filtered, cross-source-deduped, and
+    // sorted/capped to `limit` INDEPENDENTLY - so e.g. TMDB and Consumet
+    // each get up to `limit` results of their own, instead of one shared
+    // pool where the highest-popularity source ate the entire budget and
+    // the rest got sliced off.
+    //
+    // FIXED: Kuryana's database endpoint is already Asian-only. Applying
+    // language/country filters at the aggregator level would incorrectly
+    // reject valid Kuryana results (e.g. searching for "Korea" returns dramas
+    // with inferred country=KR, but the filter expects originCountry to
+    // include 'KR' which may not be populated on search results). Use a
+    // Kuryana-safe filter that skips language/country filtering.
+    const sortBy = (filters.sortBy as SortOption) || 'popularity.desc';
+    const seenGlobally = new Set<string>(); // cross-source de-dupe, priority order wins ties
+    const processedBuckets = buckets.map((bucket, i) => {
+      const provider = discoverProviders[i];
+      const providerId = provider?.id?.toLowerCase() || '';
 
-    processed = this.applyDiscoverFilters(processed, filters);
-    console.log(`[MetadataAggregator] 📊 After filtering: ${processed.length}`);
+      // ─── FIX: Kuryana's database is already Asian-only ───
+      // Skip language/country filters for Kuryana since its endpoint is
+      // already scoped. Only apply genre, rating, year, keyword, type filters.
+      const isKuryana = providerId === 'kuryana';
 
-    processed = this.sortResults(processed, (filters.sortBy as SortOption) || 'popularity.desc');
-    console.log(`[MetadataAggregator] 📊 After sorting: ${processed.length}`);
+      let b: IMetadataResult[];
+      if (isKuryana) {
+        b = this.applyKuryanaSafeFilters(bucket, filters);
+      } else {
+        b = this.applyDiscoverFilters(bucket, filters);
+      }
 
-    const finalResults = processed.slice(0, limit);
-    console.log(`[MetadataAggregator] 🏁 Final discover results: ${finalResults.length}`);
+      b = b.filter(item => {
+        const key = `${item.type}-${item.id}`;
+        if (seenGlobally.has(key)) return false;
+        seenGlobally.add(key);
+        return true;
+      });
+      b = this.sortResults(b, sortBy);
+      const capped = b.slice(0, limit);
+      console.log(`[MetadataAggregator] 📊 ${provider?.name || 'unknown'} bucket: ${bucket.length} raw -> ${capped.length} after filter/dedupe/cap (limit ${limit})`);
+      return capped;
+    });
+
+    // Round-robin interleave: 1st result from source A, 1st from source B,
+    // ..., 2nd from source A, 2nd from source B, ... - so every requested
+    // source is actually visible near the top of the list, in the same
+    // relative order the caller/registration gave the sources, instead of
+    // being crowded out entirely by whichever source sorts highest once
+    // everything is merged into one pool.
+    const finalResults: IMetadataResult[] = [];
+    const maxBucketLen = processedBuckets.reduce((max, b) => Math.max(max, b.length), 0);
+    for (let i = 0; i < maxBucketLen; i++) {
+      for (const bucket of processedBuckets) {
+        if (bucket[i]) finalResults.push(bucket[i]);
+      }
+    }
+
+    console.log(`[MetadataAggregator] 🏁 Final discover results: ${finalResults.length} (interleaved across ${discoverProviders.length} source(s), up to ${limit} each)`);
     return finalResults;
   }
 
   /**
    * Get metadata by ID from any provider.
+   * 
+   * v2.1 - ENHANCED: Now returns seasons and displaySeasons from the provider.
+   * For TV shows, this includes the full seasons array and filtered display seasons.
+   * 
+   * @param id - The media ID (TMDB ID or other provider ID)
+   * @param type - The media type ('movie' or 'tv')
+   * @returns Complete metadata including seasons for TV shows
    */
   async getById(id: string, type: 'movie' | 'tv'): Promise<IMetadataResult | null> {
     await this.initialize();
@@ -465,6 +710,15 @@ export class MetadataAggregatorNew {
         const result = await provider.getById(id, type);
         if (result) {
           console.log(`[MetadataAggregator] ✅ Found in ${provider.name}`);
+          
+          // Log season data if TV show
+          if (type === 'tv' && result.seasons) {
+            console.log(`[MetadataAggregator] 📊 Seasons: ${result.seasons.length}`);
+            console.log(`[MetadataAggregator] 📊 Display seasons: ${result.displaySeasons?.join(', ') || 'none'}`);
+            console.log(`[MetadataAggregator] 📊 Total seasons: ${result.numberOfSeasons || 0}`);
+            console.log(`[MetadataAggregator] 📊 Total episodes: ${result.numberOfEpisodes || 0}`);
+          }
+          
           return result;
         }
       } catch (error) {
@@ -577,6 +831,8 @@ export class MetadataAggregatorNew {
 
   /**
    * Apply filters to results (client-side fallback).
+   * 
+   * v2.1 - Preserves seasons and displaySeasons through filtering.
    */
   private applyFilters(results: IMetadataResult[], filters: any): IMetadataResult[] {
     let filtered = [...results];
@@ -589,11 +845,29 @@ export class MetadataAggregatorNew {
       );
     }
 
+    // Filter OUT specific languages (e.g. "Cartoons" = Animation genre minus
+    // Japanese, so it never overlaps with "Anime"). Single server-side rule
+    // instead of every screen re-deriving "not anime" on its own.
+    if (filters.excludeLanguages && filters.excludeLanguages.length > 0) {
+      const excluded = filters.excludeLanguages;
+      filtered = filtered.filter(item =>
+        !item.originalLanguage || !excluded.includes(item.originalLanguage)
+      );
+    }
+
     // Filter by country
+    // NOTE: Movie objects from TMDB (and most scraping-based movie providers)
+    // never populate originCountry — that data only exists reliably on TV
+    // objects. Rejecting movies for missing originCountry would wipe out
+    // every movie result even though providers already scoped the request
+    // server-side (e.g. TMDB's with_origin_country). Only enforce this
+    // filter when we actually have country data to check against.
     if (filters.countries && filters.countries.length > 0) {
       const ctrys = filters.countries;
       filtered = filtered.filter(item => 
-        item.originCountry !== undefined && item.originCountry.some(c => ctrys.includes(c))
+        !item.originCountry || item.originCountry.length === 0
+          ? item.type === 'movie'
+          : item.originCountry.some(c => ctrys.includes(c))
       );
     }
 
@@ -606,11 +880,14 @@ export class MetadataAggregatorNew {
     }
 
     // Filter by genre
+    // FIXED: normalize both sides (TMDB numeric genre IDs -> names) before
+    // comparing - see normalizeGenres() doc comment above.
     if (filters.genres && filters.genres.length > 0) {
-      const gens = filters.genres;
-      filtered = filtered.filter(item => 
-        item.genres !== undefined && item.genres.some(g => gens.includes(g))
-      );
+      const gens = filters.genres.map((g: string) => g.toLowerCase());
+      filtered = filtered.filter(item => {
+        const itemGenres = normalizeGenres(item.genres).map(g => g.toLowerCase());
+        return itemGenres.length > 0 && itemGenres.some(g => gens.includes(g));
+      });
     }
 
     // Filter by min rating
@@ -653,8 +930,18 @@ export class MetadataAggregatorNew {
 
   /**
    * Apply Discover filters.
+   * 
+   * v2.1 - Preserves seasons and displaySeasons through filtering.
    */
-  private applyDiscoverFilters(results: IMetadataResult[], filters: DiscoverFilters): IMetadataResult[] {
+  private applyDiscoverFilters(
+    results: IMetadataResult[],
+    filtersIn: DiscoverFilters
+  ): IMetadataResult[] {
+    // NOTE: `excludeLanguages` is a local-only extension (see SearchFilters
+    // doc comment above) - it isn't declared on the shared DiscoverFilters
+    // type, so it's read through this widened alias rather than editing
+    // MetadataTypes.ts.
+    const filters = filtersIn as DiscoverFilters & { excludeLanguages?: string[] };
     let filtered = [...results];
 
     // Filter by language
@@ -665,11 +952,30 @@ export class MetadataAggregatorNew {
       );
     }
 
+    // Filter OUT specific languages. Used by the "Cartoons" category so it
+    // can share the "Animation" genre with "Anime" while still excluding
+    // Japanese-language titles - the server is the single place that decides
+    // what counts as "not anime", so every screen gets the same answer.
+    if (filters.excludeLanguages && filters.excludeLanguages.length > 0) {
+      const excluded = filters.excludeLanguages;
+      filtered = filtered.filter(item =>
+        !item.originalLanguage || !excluded.includes(item.originalLanguage)
+      );
+    }
+
     // Filter by country
+    // NOTE: Movie objects from TMDB (and most scraping-based movie providers)
+    // never populate originCountry — that data only exists reliably on TV
+    // objects. Rejecting movies for missing originCountry would wipe out
+    // every movie result even though providers already scoped the request
+    // server-side (e.g. TMDB's with_origin_country). Only enforce this
+    // filter when we actually have country data to check against.
     if (filters.countries && filters.countries.length > 0) {
       const ctrys = filters.countries;
       filtered = filtered.filter(item => 
-        item.originCountry !== undefined && item.originCountry.some(c => ctrys.includes(c))
+        !item.originCountry || item.originCountry.length === 0
+          ? item.type === 'movie'
+          : item.originCountry.some(c => ctrys.includes(c))
       );
     }
 
@@ -682,11 +988,19 @@ export class MetadataAggregatorNew {
     }
 
     // Filter by genre
+    // FIXED: this is the block responsible for "After filtering: 0" in the
+    // logs whenever a genre chip was active. TMDB discover/list results
+    // carry item.genres as numeric ID strings (e.g. "28"), not names, so
+    // comparing directly against filters.genres (human names like "Action")
+    // always failed even though TMDB itself had already correctly scoped
+    // results server-side via with_genres. normalizeGenres() resolves both
+    // sides to names before comparing.
     if (filters.genres && filters.genres.length > 0) {
-      const gens = filters.genres;
-      filtered = filtered.filter(item => 
-        item.genres !== undefined && item.genres.some(g => gens.includes(g))
-      );
+      const gens = filters.genres.map((g: string) => g.toLowerCase());
+      filtered = filtered.filter(item => {
+        const itemGenres = normalizeGenres(item.genres).map(g => g.toLowerCase());
+        return itemGenres.length > 0 && itemGenres.some(g => gens.includes(g));
+      });
     }
 
     // Filter by rating range
@@ -718,6 +1032,67 @@ export class MetadataAggregatorNew {
     }
 
     // Filter by type
+    if (filters.type && filters.type !== 'all') {
+      filtered = filtered.filter(item => item.type === filters.type);
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Apply discover filters EXCEPT language/country — used for Kuryana
+   * since its database endpoint is already Asian-only. Prevents valid
+   * Kuryana results from being incorrectly rejected by aggregator-level
+   * language/country filtering.
+   * 
+   * v2.1 - Preserves seasons and displaySeasons through filtering.
+   */
+  private applyKuryanaSafeFilters(
+    results: IMetadataResult[],
+    filtersIn: DiscoverFilters
+  ): IMetadataResult[] {
+    const filters = filtersIn as DiscoverFilters & { excludeLanguages?: string[] };
+    let filtered = [...results];
+
+    // ─── SKIP: languages, countries, region, excludeLanguages ───
+    // Kuryana's database is already Asian-only. Filtering by these would
+    // incorrectly reject valid results since Kuryana search results may
+    // not populate originalLanguage/originCountry consistently.
+
+    // Genre filtering
+    if (filters.genres && filters.genres.length > 0) {
+      const gens = filters.genres.map((g: string) => g.toLowerCase());
+      filtered = filtered.filter(item => {
+        const itemGenres = normalizeGenres(item.genres).map(g => g.toLowerCase());
+        return itemGenres.length > 0 && itemGenres.some(g => gens.includes(g));
+      });
+    }
+
+    // Rating range
+    if (filters.minRating !== undefined) {
+      filtered = filtered.filter(item => (item.rating ?? 0) >= filters.minRating!);
+    }
+    if (filters.maxRating !== undefined) {
+      filtered = filtered.filter(item => (item.rating ?? 0) <= filters.maxRating!);
+    }
+
+    // Year range
+    if (filters.startYear !== undefined) {
+      filtered = filtered.filter(item => (item.year ?? 0) >= filters.startYear!);
+    }
+    if (filters.endYear !== undefined) {
+      filtered = filtered.filter(item => (item.year ?? 0) <= filters.endYear!);
+    }
+
+    // Keywords
+    if (filters.keywords && filters.keywords.length > 0) {
+      const kw = filters.keywords;
+      filtered = filtered.filter(item => 
+        item.keywords !== undefined && item.keywords.some(k => kw.includes(k))
+      );
+    }
+
+    // Type filter
     if (filters.type && filters.type !== 'all') {
       filtered = filtered.filter(item => item.type === filters.type);
     }

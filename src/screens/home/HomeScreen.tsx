@@ -41,6 +41,7 @@ import {
 // Components
 import { AnimatedHeader } from '../../components/header/AnimatedHeader';
 import MediaRow from '../../components/MediaRow';
+import ContinueWatchingRow from '../../components/content/ContinueWatchingRow';
 import ThrillerGrid from '../../components/thriller/ThrillerGrid';
 import FeaturedContent from '../../components/FeaturedContent';
 import ContinueWatchingPanel from '../../components/ContinueWatchingPanel';
@@ -80,12 +81,16 @@ const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 
 const HEADER_HEIGHT = Platform.OS === 'android' ? 64 : 72;
 
+// ─── Search Screen Card Sizes (4-column grid) ───
+const GRID_GAP = 8;
+const GRID_CARD_WIDTH = (SCREEN_WIDTH - 16 * 2 - GRID_GAP * 3) / 4;
+const GRID_CARD_HEIGHT = GRID_CARD_WIDTH * 1.5;
+const GRID_ROW_HEIGHT = GRID_CARD_HEIGHT + 18 + 12 + 24;
+
 // ─── Layout Estimates ───
-const CARD_WIDTH = (SCREEN_WIDTH - 48) / 3.5;
-const CARD_HEIGHT = CARD_WIDTH * 1.5;
-const MEDIA_ROW_ESTIMATED_HEIGHT = CARD_HEIGHT + 18 + 12 + 24;
 const FEATURED_ESTIMATED_HEIGHT = SCREEN_WIDTH * 1.4;
 const THRILLER_GRID_ESTIMATED_HEIGHT = SCREEN_WIDTH * 0.95;
+const CONTINUE_WATCHING_ROW_HEIGHT = SCREEN_WIDTH * 0.45 * 0.5625 + 80;
 
 // ─── Edge-Swipe Width ───
 const EDGE_WIDTH = 28;
@@ -300,11 +305,21 @@ const HomeScreen = () => {
     const rowData: RowData[] = [];
 
     if (continueWatching.length > 0) {
+      // Newest-first, capped to 8. The store's field for "last watched" isn't
+      // visible from this file, so this checks the common candidate names —
+      // if your store uses a different field, swap it in here.
+      const getWatchTimestamp = (item: any): number =>
+        item.lastWatchedAt ?? item.updatedAt ?? item.timestamp ?? item.watchedAt ?? 0;
+
+      const sortedContinueWatching = [...continueWatching]
+        .sort((a, b) => getWatchTimestamp(b) - getWatchTimestamp(a))
+        .slice(0, 8);
+
       rowData.push({
         id: 'continue-watching',
         title: 'Continue Watching',
         type: 'continue_watching',
-        data: continueWatching,
+        data: sortedContinueWatching,
       });
     }
 
@@ -548,6 +563,8 @@ const HomeScreen = () => {
           }),
         });
       } else {
+        // ─── Enriched params so DetailsScreenNew has real metadata to show,
+        // matching the shape SearchScreen's handleItemPress already sends. ───
         router.push({
           pathname: `/movie/${mediaId}`,
           params: cleanParams({
@@ -555,6 +572,22 @@ const HomeScreen = () => {
             mediaType,
             title,
             poster_path: item.poster_path,
+            rating: item.rating ?? item.vote_average ?? 0,
+            year:
+              item.year ||
+              item.release_date?.split('-')[0] ||
+              item.first_air_date?.split('-')[0] ||
+              '',
+            overview: item.overview || '',
+            genres: JSON.stringify(item.genres || []),
+            backdrop: item.backdrop || item.backdrop_path || '',
+            vote_count: item.vote_count ?? item.voteCount ?? 0,
+            runtime: item.runtime || '',
+            certification: item.certification || '',
+            tagline: item.tagline || '',
+            status: item.status || '',
+            release_date: item.releaseDate || item.release_date || item.first_air_date || '',
+            popularity: item.popularity ?? 0,
           }),
         });
       }
@@ -572,6 +605,7 @@ const HomeScreen = () => {
           mediaId: item.mediaId,
           mediaType: item.mediaType,
           title: item.title,
+          poster_path: item.posterPath || item.poster_path,
         }),
       });
     },
@@ -605,13 +639,10 @@ const HomeScreen = () => {
     (row: RowData) => {
       if (row.type === 'continue_watching') {
         return (
-          <MediaRow
-            title={row.title}
-            data={row.data}
-            onItemPress={(movieItem) => handleMediaPress(movieItem, true)}
-            isContinueWatching={true}
-            onInfoPress={handleInfoPress}
-            onRemovePress={handleRemovePress}
+          <ContinueWatchingRow
+            items={row.data}
+            onItemPress={(item) => handleMediaPress(item, true)}
+            onRemoveItem={removeContinueWatching}
           />
         );
       }
@@ -622,10 +653,13 @@ const HomeScreen = () => {
           data={row.data}
           onItemPress={handleMediaPress}
           watchedIds={BADGE_SORTABLE_ROW_IDS.has(row.id) ? watchedIds : undefined}
+          // Use search screen card sizes
+          cardWidth={GRID_CARD_WIDTH}
+          cardHeight={GRID_CARD_HEIGHT}
         />
       );
     },
-    [handleMediaPress, handleInfoPress, handleRemovePress, watchedIds]
+    [handleMediaPress, removeContinueWatching, watchedIds]
   );
 
   // ─── Content Opacity ───
@@ -647,7 +681,11 @@ const HomeScreen = () => {
         <View style={[styles.skeletonTitle, { backgroundColor: isDark ? colors.surfaceRaised : 'rgba(0,0,0,0.06)' }]} />
         <View style={styles.skeletonCards}>
           {[...Array(4)].map((_, i) => (
-            <View key={i} style={[styles.skeletonCard, { backgroundColor: isDark ? colors.surfaceRaised : 'rgba(0,0,0,0.04)' }]} />
+            <View key={i} style={[styles.skeletonCard, { 
+              backgroundColor: isDark ? colors.surfaceRaised : 'rgba(0,0,0,0.04)',
+              width: GRID_CARD_WIDTH,
+              height: GRID_CARD_HEIGHT,
+            }]} />
           ))}
         </View>
       </View>
@@ -682,7 +720,7 @@ const HomeScreen = () => {
   const getItemLayout = useCallback(
     (_data: ArrayLike<HomeListItem> | null | undefined, index: number) => {
       const item = _data?.[index];
-      let height = MEDIA_ROW_ESTIMATED_HEIGHT;
+      let height = GRID_ROW_HEIGHT;
       if (item) {
         switch (item.kind) {
           case 'featured':
@@ -692,8 +730,14 @@ const HomeScreen = () => {
             height = THRILLER_GRID_ESTIMATED_HEIGHT;
             break;
           case 'skeleton':
+            height = GRID_ROW_HEIGHT;
+            break;
           case 'row':
-            height = MEDIA_ROW_ESTIMATED_HEIGHT;
+            if (item.row.type === 'continue_watching') {
+              height = CONTINUE_WATCHING_ROW_HEIGHT;
+            } else {
+              height = GRID_ROW_HEIGHT;
+            }
             break;
         }
       }
@@ -914,11 +958,9 @@ const styles = StyleSheet.create({
   },
   skeletonCards: {
     flexDirection: 'row',
-    gap: 8,
+    gap: GRID_GAP,
   },
   skeletonCard: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
     borderRadius: 8,
   },
 });

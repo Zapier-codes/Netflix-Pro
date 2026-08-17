@@ -364,9 +364,25 @@ export class TraktService {
 
   constructor(clientId: string) {
     if (!clientId) {
-      throw new Error('TraktService requires a clientId');
+      console.warn('[TraktService] ⚠️ No clientId provided. Trakt features will not work.');
     }
-    this.clientId = clientId;
+    this.clientId = clientId || '';
+  }
+
+  /**
+   * Check if the service is properly configured
+   */
+  private isConfigured(): boolean {
+    return !!this.clientId && this.clientId.length > 0;
+  }
+
+  /**
+   * Ensure the service is configured before making requests
+   */
+  private ensureConfigured(): void {
+    if (!this.isConfigured()) {
+      throw new Error('[TraktService] ❌ Client ID not configured. Set EXPO_PUBLIC_TRAKT_CLIENT_ID in your .env file.');
+    }
   }
 
   // ==================== MOVIES ====================
@@ -386,6 +402,7 @@ export class TraktService {
     votes?: string;
     certifications?: string;
   }): Promise<TraktTrendingMovie[]> {
+    this.ensureConfigured();
     return traktFetch('/movies/trending', this.clientId, params);
   }
 
@@ -404,6 +421,7 @@ export class TraktService {
     votes?: string;
     certifications?: string;
   }): Promise<TraktMovie[]> {
+    this.ensureConfigured();
     return traktFetch('/movies/popular', this.clientId, params);
   }
 
@@ -425,6 +443,7 @@ export class TraktService {
       certifications?: string;
     }
   ): Promise<TraktPlayedItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/played/${period}`, this.clientId, params);
   }
 
@@ -446,6 +465,7 @@ export class TraktService {
       certifications?: string;
     }
   ): Promise<TraktPlayedItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/watched/${period}`, this.clientId, params);
   }
 
@@ -467,6 +487,7 @@ export class TraktService {
       certifications?: string;
     }
   ): Promise<TraktPlayedItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/collected/${period}`, this.clientId, params);
   }
 
@@ -485,37 +506,44 @@ export class TraktService {
     votes?: string;
     certifications?: string;
   }): Promise<TraktAnticipatedItem[]> {
+    this.ensureConfigured();
     return traktFetch('/movies/anticipated', this.clientId, params);
   }
 
   /** Get top 10 US box office movies from last weekend */
   async getBoxOffice(params?: { extended?: string }): Promise<TraktBoxOfficeItem[]> {
+    this.ensureConfigured();
     return traktFetch('/movies/boxoffice', this.clientId, params);
   }
 
   /** Get movies updated since a date (ISO 8601) */
   async getMovieUpdates(startDate: string, params?: { page?: number; limit?: number; extended?: string }): Promise<TraktMovie[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/updates/${startDate}`, this.clientId, params);
   }
 
   /** Get single movie summary */
   async getMovie(id: string | number, params?: { extended?: string }): Promise<TraktMovieExtended> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}`, this.clientId, params);
   }
 
   /** Get movie aliases */
   async getMovieAliases(id: string | number): Promise<TraktAlias[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/aliases`, this.clientId);
   }
 
   /** Get movie releases by country */
   async getMovieReleases(id: string | number, country?: string): Promise<TraktRelease[]> {
+    this.ensureConfigured();
     const endpoint = country ? `/movies/${id}/releases/${country}` : `/movies/${id}/releases`;
     return traktFetch(endpoint, this.clientId);
   }
 
   /** Get movie translations */
   async getMovieTranslations(id: string | number, language?: string): Promise<TraktTranslation[]> {
+    this.ensureConfigured();
     const endpoint = language ? `/movies/${id}/translations/${language}` : `/movies/${id}/translations`;
     return traktFetch(endpoint, this.clientId);
   }
@@ -526,6 +554,7 @@ export class TraktService {
     sort: SortType = 'newest',
     params?: { page?: number; limit?: number }
   ): Promise<TraktComment[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/comments/${sort}`, this.clientId, params);
   }
 
@@ -536,31 +565,37 @@ export class TraktService {
     sort: ListSort = 'popular',
     params?: { page?: number; limit?: number }
   ): Promise<TraktList[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/lists/${type}/${sort}`, this.clientId, params);
   }
 
   /** Get movie cast and crew */
   async getMoviePeople(id: string | number, params?: { extended?: string }): Promise<TraktPeople> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/people`, this.clientId, params);
   }
 
   /** Get movie ratings */
   async getMovieRatings(id: string | number): Promise<TraktRating> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/ratings`, this.clientId);
   }
 
   /** Get related movies */
   async getRelatedMovies(id: string | number, params?: { page?: number; limit?: number; extended?: string }): Promise<TraktMovie[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/related`, this.clientId, params);
   }
 
   /** Get movie stats */
   async getMovieStats(id: string | number): Promise<TraktStats> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/stats`, this.clientId);
   }
 
   /** Get users currently watching this movie */
   async getMovieWatching(id: string | number, params?: { extended?: string }): Promise<TraktUser[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/watching`, this.clientId, params);
   }
 
@@ -583,6 +618,7 @@ export class TraktService {
     network_ids?: string;
     status?: string;
   }): Promise<TraktTrendingShow[]> {
+    this.ensureConfigured();
     return traktFetch('/shows/trending', this.clientId, params);
   }
 
@@ -603,6 +639,7 @@ export class TraktService {
     network_ids?: string;
     status?: string;
   }): Promise<TraktShow[]> {
+    this.ensureConfigured();
     return traktFetch('/shows/popular', this.clientId, params);
   }
 
@@ -626,6 +663,7 @@ export class TraktService {
       status?: string;
     }
   ): Promise<TraktPlayedItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/played/${period}`, this.clientId, params);
   }
 
@@ -649,6 +687,7 @@ export class TraktService {
       status?: string;
     }
   ): Promise<TraktPlayedItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/watched/${period}`, this.clientId, params);
   }
 
@@ -672,6 +711,7 @@ export class TraktService {
       status?: string;
     }
   ): Promise<TraktPlayedItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/collected/${period}`, this.clientId, params);
   }
 
@@ -692,26 +732,31 @@ export class TraktService {
     network_ids?: string;
     status?: string;
   }): Promise<TraktAnticipatedItem[]> {
+    this.ensureConfigured();
     return traktFetch('/shows/anticipated', this.clientId, params);
   }
 
   /** Get shows updated since a date */
   async getShowUpdates(startDate: string, params?: { page?: number; limit?: number; extended?: string }): Promise<TraktShow[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/updates/${startDate}`, this.clientId, params);
   }
 
   /** Get single show summary */
   async getShow(id: string | number, params?: { extended?: string }): Promise<TraktShowExtended> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}`, this.clientId, params);
   }
 
   /** Get show aliases */
   async getShowAliases(id: string | number): Promise<TraktAlias[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/aliases`, this.clientId);
   }
 
   /** Get show translations */
   async getShowTranslations(id: string | number, language?: string): Promise<TraktTranslation[]> {
+    this.ensureConfigured();
     const endpoint = language ? `/shows/${id}/translations/${language}` : `/shows/${id}/translations`;
     return traktFetch(endpoint, this.clientId);
   }
@@ -722,6 +767,7 @@ export class TraktService {
     sort: SortType = 'newest',
     params?: { page?: number; limit?: number }
   ): Promise<TraktComment[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/comments/${sort}`, this.clientId, params);
   }
 
@@ -732,41 +778,49 @@ export class TraktService {
     sort: ListSort = 'popular',
     params?: { page?: number; limit?: number }
   ): Promise<TraktList[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/lists/${type}/${sort}`, this.clientId, params);
   }
 
   /** Get show cast and crew */
   async getShowPeople(id: string | number, params?: { extended?: string }): Promise<TraktPeople> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/people`, this.clientId, params);
   }
 
   /** Get show ratings */
   async getShowRatings(id: string | number): Promise<TraktRating> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/ratings`, this.clientId);
   }
 
   /** Get related shows */
   async getRelatedShows(id: string | number, params?: { page?: number; limit?: number; extended?: string }): Promise<TraktShow[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/related`, this.clientId, params);
   }
 
   /** Get show stats */
   async getShowStats(id: string | number): Promise<TraktStats> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/stats`, this.clientId);
   }
 
   /** Get users currently watching this show */
   async getShowWatching(id: string | number, params?: { extended?: string }): Promise<TraktUser[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/watching`, this.clientId, params);
   }
 
   /** Get next scheduled episode */
   async getShowNextEpisode(id: string | number, params?: { extended?: string }): Promise<TraktEpisodeExtended | null> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/next_episode`, this.clientId, params);
   }
 
   /** Get most recently aired episode */
   async getShowLastEpisode(id: string | number, params?: { extended?: string }): Promise<TraktEpisodeExtended | null> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/last_episode`, this.clientId, params);
   }
 
@@ -774,6 +828,7 @@ export class TraktService {
 
   /** Get all seasons for a show */
   async getSeasons(id: string | number, params?: { extended?: string }): Promise<TraktSeasonExtended[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons`, this.clientId, params);
   }
 
@@ -783,6 +838,7 @@ export class TraktService {
     season: number,
     params?: { extended?: string }
   ): Promise<TraktEpisodeExtended[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}`, this.clientId, params);
   }
 
@@ -794,21 +850,25 @@ export class TraktService {
     sort: ListSort = 'popular',
     params?: { page?: number; limit?: number }
   ): Promise<TraktList[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/lists/${type}/${sort}`, this.clientId, params);
   }
 
   /** Get season ratings */
   async getSeasonRatings(id: string | number, season: number): Promise<TraktRating> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/ratings`, this.clientId);
   }
 
   /** Get season stats */
   async getSeasonStats(id: string | number, season: number): Promise<TraktStats> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/stats`, this.clientId);
   }
 
   /** Get users currently watching this season */
   async getSeasonWatching(id: string | number, season: number, params?: { extended?: string }): Promise<TraktUser[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/watching`, this.clientId, params);
   }
 
@@ -821,6 +881,7 @@ export class TraktService {
     episode: number,
     params?: { extended?: string }
   ): Promise<TraktEpisodeExtended> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/episodes/${episode}`, this.clientId, params);
   }
 
@@ -831,6 +892,7 @@ export class TraktService {
     episode: number,
     language?: string
   ): Promise<TraktTranslation[]> {
+    this.ensureConfigured();
     const endpoint = language
       ? `/shows/${id}/seasons/${season}/episodes/${episode}/translations/${language}`
       : `/shows/${id}/seasons/${season}/episodes/${episode}/translations`;
@@ -845,6 +907,7 @@ export class TraktService {
     sort: SortType = 'newest',
     params?: { page?: number; limit?: number }
   ): Promise<TraktComment[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/episodes/${episode}/comments/${sort}`, this.clientId, params);
   }
 
@@ -857,6 +920,7 @@ export class TraktService {
     sort: ListSort = 'popular',
     params?: { page?: number; limit?: number }
   ): Promise<TraktList[]> {
+    this.ensureConfigured();
     return traktFetch(
       `/shows/${id}/seasons/${season}/episodes/${episode}/lists/${type}/${sort}`,
       this.clientId,
@@ -866,11 +930,13 @@ export class TraktService {
 
   /** Get episode ratings */
   async getEpisodeRatings(id: string | number, season: number, episode: number): Promise<TraktRating> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/episodes/${episode}/ratings`, this.clientId);
   }
 
   /** Get episode stats */
   async getEpisodeStats(id: string | number, season: number, episode: number): Promise<TraktStats> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/episodes/${episode}/stats`, this.clientId);
   }
 
@@ -881,6 +947,7 @@ export class TraktService {
     episode: number,
     params?: { extended?: string }
   ): Promise<TraktUser[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/episodes/${episode}/watching`, this.clientId, params);
   }
 
@@ -888,16 +955,19 @@ export class TraktService {
 
   /** Get single person */
   async getPerson(id: string | number, params?: { extended?: string }): Promise<TraktPersonExtended> {
+    this.ensureConfigured();
     return traktFetch(`/people/${id}`, this.clientId, params);
   }
 
   /** Get person's movie credits */
   async getPersonMovies(id: string | number, params?: { extended?: string }): Promise<TraktPeople> {
+    this.ensureConfigured();
     return traktFetch(`/people/${id}/movies`, this.clientId, params);
   }
 
   /** Get person's show credits */
   async getPersonShows(id: string | number, params?: { extended?: string }): Promise<TraktPeople> {
+    this.ensureConfigured();
     return traktFetch(`/people/${id}/shows`, this.clientId, params);
   }
 
@@ -908,6 +978,7 @@ export class TraktService {
     sort: ListSort = 'popular',
     params?: { page?: number; limit?: number }
   ): Promise<TraktList[]> {
+    this.ensureConfigured();
     return traktFetch(`/people/${id}/lists/${type}/${sort}`, this.clientId, params);
   }
 
@@ -932,6 +1003,7 @@ export class TraktService {
       certifications?: string;
     }
   ): Promise<TraktSearchResult[]> {
+    this.ensureConfigured();
     const endpoint = type ? `/search/${type}` : '/search';
     return traktFetch(endpoint, this.clientId, { ...params, query });
   }
@@ -946,6 +1018,7 @@ export class TraktService {
       extended?: string;
     }
   ): Promise<TraktSearchResult[]> {
+    this.ensureConfigured();
     return traktFetch(`/search/id/${idType}/${id}`, this.clientId, params);
   }
 
@@ -953,26 +1026,31 @@ export class TraktService {
 
   /** All shows airing during time period */
   async getCalendarAllShows(startDate: string, days: number, params?: { extended?: string }): Promise<TraktCalendarItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/calendars/all/shows/${startDate}/${days}`, this.clientId, params);
   }
 
   /** All new show premieres (S1E1) */
   async getCalendarAllNewShows(startDate: string, days: number, params?: { extended?: string }): Promise<TraktCalendarItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/calendars/all/shows/new/${startDate}/${days}`, this.clientId, params);
   }
 
   /** All season premieres */
   async getCalendarAllPremieres(startDate: string, days: number, params?: { extended?: string }): Promise<TraktCalendarItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/calendars/all/shows/premieres/${startDate}/${days}`, this.clientId, params);
   }
 
   /** All movies with theatrical release */
   async getCalendarAllMovies(startDate: string, days: number, params?: { extended?: string }): Promise<TraktCalendarItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/calendars/all/movies/${startDate}/${days}`, this.clientId, params);
   }
 
   /** All movies with DVD release */
   async getCalendarAllDvd(startDate: string, days: number, params?: { extended?: string }): Promise<TraktCalendarItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/calendars/all/dvd/${startDate}/${days}`, this.clientId, params);
   }
 
@@ -980,31 +1058,37 @@ export class TraktService {
 
   /** Get single comment */
   async getComment(id: number): Promise<TraktComment> {
+    this.ensureConfigured();
     return traktFetch(`/comments/${id}`, this.clientId);
   }
 
   /** Get comment replies */
   async getCommentReplies(id: number, params?: { page?: number; limit?: number }): Promise<TraktComment[]> {
+    this.ensureConfigured();
     return traktFetch(`/comments/${id}/replies`, this.clientId, params);
   }
 
   /** Get item this comment is on */
   async getCommentItem(id: number): Promise<TraktSearchResult> {
+    this.ensureConfigured();
     return traktFetch(`/comments/${id}/item`, this.clientId);
   }
 
   /** Get trending comments */
   async getTrendingComments(params?: { page?: number; limit?: number }): Promise<TraktComment[]> {
+    this.ensureConfigured();
     return traktFetch('/comments/trending', this.clientId, params);
   }
 
   /** Get recent comments */
   async getRecentComments(params?: { page?: number; limit?: number }): Promise<TraktComment[]> {
+    this.ensureConfigured();
     return traktFetch('/comments/recent', this.clientId, params);
   }
 
   /** Get recently updated comments */
   async getUpdatedComments(params?: { page?: number; limit?: number }): Promise<TraktComment[]> {
+    this.ensureConfigured();
     return traktFetch('/comments/updates', this.clientId, params);
   }
 
@@ -1012,6 +1096,7 @@ export class TraktService {
 
   /** Get single official list */
   async getList(id: number): Promise<TraktList> {
+    this.ensureConfigured();
     return traktFetch(`/lists/${id}`, this.clientId);
   }
 
@@ -1021,6 +1106,7 @@ export class TraktService {
     type?: MediaType,
     params?: { page?: number; limit?: number; extended?: string }
   ): Promise<TraktSearchResult[]> {
+    this.ensureConfigured();
     const endpoint = type ? `/lists/${id}/items/${type}` : `/lists/${id}/items`;
     return traktFetch(endpoint, this.clientId, params);
   }
@@ -1029,16 +1115,19 @@ export class TraktService {
 
   /** Get all certifications (movies + shows) */
   async getCertifications(): Promise<{ us: TraktCertification[] }> {
+    this.ensureConfigured();
     return traktFetch('/certifications', this.clientId);
   }
 
   /** Get movie certifications */
   async getMovieCertifications(): Promise<{ us: TraktCertification[] }> {
+    this.ensureConfigured();
     return traktFetch('/certifications/movies', this.clientId);
   }
 
   /** Get show certifications */
   async getShowCertifications(): Promise<{ us: TraktCertification[] }> {
+    this.ensureConfigured();
     return traktFetch('/certifications/shows', this.clientId);
   }
 
@@ -1046,11 +1135,13 @@ export class TraktService {
 
   /** Get all movie genres */
   async getMovieGenres(): Promise<TraktGenre[]> {
+    this.ensureConfigured();
     return traktFetch('/genres/movies', this.clientId);
   }
 
   /** Get all show genres */
   async getShowGenres(): Promise<TraktGenre[]> {
+    this.ensureConfigured();
     return traktFetch('/genres/shows', this.clientId);
   }
 
@@ -1058,6 +1149,7 @@ export class TraktService {
 
   /** Get all TV networks */
   async getNetworks(): Promise<TraktNetwork[]> {
+    this.ensureConfigured();
     return traktFetch('/networks', this.clientId);
   }
 
@@ -1065,11 +1157,13 @@ export class TraktService {
 
   /** Get all movie countries */
   async getMovieCountries(): Promise<TraktCountry[]> {
+    this.ensureConfigured();
     return traktFetch('/countries/movies', this.clientId);
   }
 
   /** Get all show countries */
   async getShowCountries(): Promise<TraktCountry[]> {
+    this.ensureConfigured();
     return traktFetch('/countries/shows', this.clientId);
   }
 
@@ -1077,11 +1171,13 @@ export class TraktService {
 
   /** Get all movie languages */
   async getMovieLanguages(): Promise<TraktLanguage[]> {
+    this.ensureConfigured();
     return traktFetch('/languages/movies', this.clientId);
   }
 
   /** Get all show languages */
   async getShowLanguages(): Promise<TraktLanguage[]> {
+    this.ensureConfigured();
     return traktFetch('/languages/shows', this.clientId);
   }
 
@@ -1089,11 +1185,13 @@ export class TraktService {
 
   /** Get where to watch a movie */
   async getMovieWatchNow(id: string | number, country: string): Promise<TraktWatchNowItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/movies/${id}/watchnow/${country}`, this.clientId);
   }
 
   /** Get where to watch a show */
   async getShowWatchNow(id: string | number, country: string): Promise<TraktWatchNowItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/watchnow/${country}`, this.clientId);
   }
 
@@ -1104,17 +1202,42 @@ export class TraktService {
     episode: number,
     country: string
   ): Promise<TraktWatchNowItem[]> {
+    this.ensureConfigured();
     return traktFetch(`/shows/${id}/seasons/${season}/episodes/${episode}/watchnow/${country}`, this.clientId);
   }
 }
 
-// Singleton export
+// ==================== SINGLETON EXPORT ====================
+
 let _traktService: TraktService | null = null;
 
-export function getTraktService(clientId: string): TraktService {
-  if (!_traktService) {
-    _traktService = new TraktService(clientId);
+/**
+ * Get or create a TraktService instance
+ * Uses EXPO_PUBLIC_TRAKT_CLIENT_ID from environment if available
+ */
+export function getTraktService(clientId?: string): TraktService {
+  // If a clientId is provided, use it
+  if (clientId) {
+    if (!_traktService || _traktService['clientId'] !== clientId) {
+      _traktService = new TraktService(clientId);
+    }
+    return _traktService;
   }
+
+  // Otherwise try to get from environment
+  const envClientId = process.env.EXPO_PUBLIC_TRAKT_CLIENT_ID || process.env.TRAKT_CLIENT_ID || '';
+  
+  if (!_traktService) {
+    if (envClientId) {
+      console.log('[TraktService] ✅ Using client ID from environment');
+      _traktService = new TraktService(envClientId);
+    } else {
+      console.warn('[TraktService] ⚠️ No client ID found. Trakt features will not work.');
+      console.warn('[TraktService] 💡 Set EXPO_PUBLIC_TRAKT_CLIENT_ID in your .env file');
+      _traktService = new TraktService('');
+    }
+  }
+  
   return _traktService;
 }
 

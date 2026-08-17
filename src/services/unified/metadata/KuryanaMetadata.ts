@@ -4,19 +4,29 @@ import axios from 'axios';
 const KURYANA_BASE_URL = 'https://kuryana.tbdh.app';
 
 export interface KuryanaDrama {
-  id: string;
+  // Confirmed fields returned by GET /search/q/{query}
   slug: string;
+  thumb?: string;              // full, ready-to-use MyDramaList CDN poster URL
+  mdl_id?: string;
   title: string;
-  synopsis: string;
-  poster: string;
-  backdrop: string;
-  rating: number;
-  genres: string[];
-  country: string;
-  year: number;
-  totalEpisodes: number;
-  duration: string;
-  cast: KuryanaCast[];
+  ranking?: string | null;
+  type?: string;                // e.g. "Korean Drama", "Japanese Movie"
+  year?: number | null;
+  series?: string | false;      // e.g. "20 episodes", or false for movies
+  rating?: number;
+
+  // Fields that may appear on GET /id/{slug} (detail endpoint). Not
+  // guaranteed present on search results — kept optional and used as
+  // best-effort fallbacks only.
+  id?: string;
+  synopsis?: string;
+  poster?: string;
+  backdrop?: string;
+  genres?: string[];
+  country?: string;
+  totalEpisodes?: number;
+  duration?: string;
+  cast?: KuryanaCast[];
 }
 
 export interface KuryanaCast {

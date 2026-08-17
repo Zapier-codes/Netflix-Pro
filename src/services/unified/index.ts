@@ -75,7 +75,7 @@ export type { SocialErrorCode } from './types/SocialTypes'
 // ============================================================================
 
 export { UnifiedMediaService } from './UnifiedMediaService'
-export { MetadataAggregatorNew } from './MetadataAggregatorNew'
+export { MetadataAggregatorNew } from './metadata/MetadataAggregatorNew'
 export { ProviderFactory } from './ProviderFactory'
 export { ProviderRegistry } from './ProviderRegistry'
 export { StreamNormalizer } from './StreamNormalizer'

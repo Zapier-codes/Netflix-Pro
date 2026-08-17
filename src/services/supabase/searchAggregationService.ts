@@ -12,6 +12,25 @@ export interface SearchCategoryRow {
   search_count: number;
 }
 
+// Supabase's PostgrestError (and most thrown errors here) don't print anything
+// useful through `console.error('label', error)` on Hermes/React Native — the
+// object's message/code/details/hint aren't picked up by the default formatter,
+// so you end up with just the label and nothing after it. Log the actual fields.
+function logSupabaseError(label: string, error: unknown): void {
+  if (error && typeof error === 'object') {
+    const err = error as { message?: string; code?: string; details?: string; hint?: string };
+    console.error(label, {
+      message: err.message ?? '(no message)',
+      code: err.code ?? '(no code)',
+      details: err.details ?? '(no details)',
+      hint: err.hint ?? '(no hint)',
+      raw: JSON.stringify(error),
+    });
+  } else {
+    console.error(label, String(error));
+  }
+}
+
 export class SearchAggregationService {
   private static instance: SearchAggregationService;
 
@@ -32,6 +51,11 @@ export class SearchAggregationService {
 
       const device = await deviceManager.initialize();
 
+      if (!device?.id) {
+        console.error('[SearchAggregationService] Record error: device.id is missing — deviceManager.initialize() did not return a usable device id, skipping insert', device);
+        return false;
+      }
+
       const { error } = await supabase.from('search_queries').insert({
         query: trimmed,
         category: category || null,
@@ -39,13 +63,13 @@ export class SearchAggregationService {
       });
 
       if (error) {
-        console.error('[SearchAggregationService] Record error:', error);
+        logSupabaseError('[SearchAggregationService] Record error:', error);
         return false;
       }
 
       return true;
     } catch (error) {
-      console.error('[SearchAggregationService] Error:', error);
+      logSupabaseError('[SearchAggregationService] Error:', error);
       return false;
     }
   }
@@ -61,13 +85,13 @@ export class SearchAggregationService {
       });
 
       if (error) {
-        console.error('[SearchAggregationService] Trending error:', error);
+        logSupabaseError('[SearchAggregationService] Trending error:', error);
         return [];
       }
 
       return ((data as TrendingSearchRow[]) || []).map((row) => row.query);
     } catch (error) {
-      console.error('[SearchAggregationService] Error:', error);
+      logSupabaseError('[SearchAggregationService] Error:', error);
       return [];
     }
   }
@@ -80,13 +104,13 @@ export class SearchAggregationService {
       const { data, error } = await supabase.rpc('get_search_categories');
 
       if (error) {
-        console.error('[SearchAggregationService] Categories error:', error);
+        logSupabaseError('[SearchAggregationService] Categories error:', error);
         return [];
       }
 
       return ((data as SearchCategoryRow[]) || []).map((row) => row.category);
     } catch (error) {
-      console.error('[SearchAggregationService] Error:', error);
+      logSupabaseError('[SearchAggregationService] Error:', error);
       return [];
     }
   }

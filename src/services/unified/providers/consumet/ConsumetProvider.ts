@@ -261,7 +261,12 @@ export class ConsumetApiService {
   // ─────────────────────────────────────────────────────────────────────────
 
   getMovieProviderNames(): string[] {
-    return ['MultiMovies', 'NetflixMirror', 'HiMovies', 'YFlix', 'MultiStream'];
+    // Ordered by observed reliability: MultiStream and NetflixMirror
+    // currently succeed; MultiMovies/HiMovies/YFlix currently fail on
+    // most queries (403 / 520 / network errors from the upstream sites).
+    // Trying the reliable ones first means most searches resolve without
+    // ever touching a broken mirror.
+    return ['MultiStream', 'NetflixMirror', 'MultiMovies', 'HiMovies', 'YFlix'];
   }
 
   getAnimeProviderNames(): string[] {
@@ -301,6 +306,7 @@ export class ConsumetApiService {
     mapFn: (item: any) => T
   ): Promise<T[]> {
     const results: T[] = [];
+    let anySucceeded = false;
 
     for (let i = 0; i < providers.length; i++) {
       try {
@@ -311,11 +317,18 @@ export class ConsumetApiService {
         if (mapped.length > 0) {
           console.log(`[ConsumetApiService] ${providerNames[i]} returned ${mapped.length} results`);
           results.push(...mapped);
+          anySucceeded = true;
           if (results.length >= 20) break;
         }
       } catch (error: any) {
-        console.warn(`[ConsumetApiService] ${providerNames[i]} failed:`, error.message || error);
+        // A single mirror failing is expected — that's what the fallback
+        // chain is for. Only escalate to a warning if nothing recovers.
+        console.log(`[ConsumetApiService] ${providerNames[i]} unavailable:`, error.message || error);
       }
+    }
+
+    if (!anySucceeded) {
+      console.warn('[ConsumetApiService] All movie/TV mirrors failed for this query');
     }
 
     return results.slice(0, 20);
@@ -327,11 +340,11 @@ export class ConsumetApiService {
 
   async searchMoviesAllProviders(query: string, page: number = 1): Promise<ConsumetMovie[]> {
     const providers = [
-      this.multiMoviesProvider,
+      this.multiStreamProvider,
       this.netflixMirrorProvider,
+      this.multiMoviesProvider,
       this.hiMoviesProvider,
       this.yFlixProvider,
-      this.multiStreamProvider,
     ];
     const names = this.getMovieProviderNames();
 
@@ -356,12 +369,15 @@ export class ConsumetApiService {
 
   async searchMovies(query: string, page: number = 1): Promise<ConsumetMovie[]> {
     try {
-      if (!this.hiMoviesProvider) {
-        console.error('[ConsumetApiService] HiMovies provider not initialized');
+      // MultiStream is the current reliable mirror (HiMovies has been
+      // returning 520s); try it directly before falling back to the
+      // full multi-provider sweep.
+      if (!this.multiStreamProvider) {
+        console.error('[ConsumetApiService] MultiStream provider not initialized');
         return this.searchMoviesAllProviders(query, page);
       }
 
-      const result = await this.hiMoviesProvider.search(query, page);
+      const result = await this.multiStreamProvider.search(query, page);
       return (result.results || []).map((item: any) => ({
         id: item.id,
         title: item.title,
@@ -382,11 +398,11 @@ export class ConsumetApiService {
 
   async getMovieInfo(id: string): Promise<ConsumetMovie | null> {
     const providers = [
-      { name: 'MultiMovies', provider: this.multiMoviesProvider },
+      { name: 'MultiStream', provider: this.multiStreamProvider },
       { name: 'NetflixMirror', provider: this.netflixMirrorProvider },
+      { name: 'MultiMovies', provider: this.multiMoviesProvider },
       { name: 'HiMovies', provider: this.hiMoviesProvider },
       { name: 'YFlix', provider: this.yFlixProvider },
-      { name: 'MultiStream', provider: this.multiStreamProvider },
     ];
 
     for (const { name, provider } of providers) {
@@ -409,7 +425,7 @@ export class ConsumetApiService {
           };
         }
       } catch (error: any) {
-        console.warn(`[ConsumetApiService] ${name} movie info failed:`, error.message || error);
+        console.log(`[ConsumetApiService] ${name} movie info unavailable:`, error.message || error);
       }
     }
     return null;
@@ -417,11 +433,11 @@ export class ConsumetApiService {
 
   async getMovieSources(id: string): Promise<ConsumetStream[]> {
     const providers = [
-      { name: 'MultiMovies', provider: this.multiMoviesProvider },
+      { name: 'MultiStream', provider: this.multiStreamProvider },
       { name: 'NetflixMirror', provider: this.netflixMirrorProvider },
+      { name: 'MultiMovies', provider: this.multiMoviesProvider },
       { name: 'HiMovies', provider: this.hiMoviesProvider },
       { name: 'YFlix', provider: this.yFlixProvider },
-      { name: 'MultiStream', provider: this.multiStreamProvider },
     ];
 
     for (const { name, provider } of providers) {
@@ -439,7 +455,7 @@ export class ConsumetApiService {
           }));
         }
       } catch (error: any) {
-        console.warn(`[ConsumetApiService] ${name} movie sources failed:`, error.message || error);
+        console.log(`[ConsumetApiService] ${name} movie sources unavailable:`, error.message || error);
       }
     }
     return [];
@@ -451,11 +467,11 @@ export class ConsumetApiService {
 
   async searchTVAllProviders(query: string, page: number = 1): Promise<ConsumetTVShow[]> {
     const providers = [
-      this.multiMoviesProvider,
+      this.multiStreamProvider,
       this.netflixMirrorProvider,
+      this.multiMoviesProvider,
       this.hiMoviesProvider,
       this.yFlixProvider,
-      this.multiStreamProvider,
     ];
     const names = this.getMovieProviderNames();
 
@@ -481,12 +497,15 @@ export class ConsumetApiService {
 
   async searchTVShows(query: string, page: number = 1): Promise<ConsumetTVShow[]> {
     try {
-      if (!this.hiMoviesProvider) {
-        console.error('[ConsumetApiService] HiMovies provider not initialized');
+      // MultiStream is the current reliable mirror (HiMovies has been
+      // returning 520s); try it directly before falling back to the
+      // full multi-provider sweep.
+      if (!this.multiStreamProvider) {
+        console.error('[ConsumetApiService] MultiStream provider not initialized');
         return this.searchTVAllProviders(query, page);
       }
 
-      const result = await this.hiMoviesProvider.search(query, page);
+      const result = await this.multiStreamProvider.search(query, page);
       return (result.results || []).map((item: any) => ({
         id: item.id,
         title: item.title,
@@ -508,11 +527,11 @@ export class ConsumetApiService {
 
   async getTVInfo(id: string): Promise<ConsumetTVShow | null> {
     const providers = [
-      { name: 'MultiMovies', provider: this.multiMoviesProvider },
+      { name: 'MultiStream', provider: this.multiStreamProvider },
       { name: 'NetflixMirror', provider: this.netflixMirrorProvider },
+      { name: 'MultiMovies', provider: this.multiMoviesProvider },
       { name: 'HiMovies', provider: this.hiMoviesProvider },
       { name: 'YFlix', provider: this.yFlixProvider },
-      { name: 'MultiStream', provider: this.multiStreamProvider },
     ];
 
     for (const { name, provider } of providers) {
@@ -536,7 +555,7 @@ export class ConsumetApiService {
           };
         }
       } catch (error: any) {
-        console.warn(`[ConsumetApiService] ${name} TV info failed:`, error.message || error);
+        console.log(`[ConsumetApiService] ${name} TV info unavailable:`, error.message || error);
       }
     }
     return null;
@@ -544,11 +563,11 @@ export class ConsumetApiService {
 
   async getTVSources(id: string, season: number, episode: number): Promise<ConsumetStream[]> {
     const providers = [
-      { name: 'MultiMovies', provider: this.multiMoviesProvider },
+      { name: 'MultiStream', provider: this.multiStreamProvider },
       { name: 'NetflixMirror', provider: this.netflixMirrorProvider },
+      { name: 'MultiMovies', provider: this.multiMoviesProvider },
       { name: 'HiMovies', provider: this.hiMoviesProvider },
       { name: 'YFlix', provider: this.yFlixProvider },
-      { name: 'MultiStream', provider: this.multiStreamProvider },
     ];
 
     for (const { name, provider } of providers) {
@@ -566,7 +585,7 @@ export class ConsumetApiService {
           }));
         }
       } catch (error: any) {
-        console.warn(`[ConsumetApiService] ${name} TV sources failed:`, error.message || error);
+        console.log(`[ConsumetApiService] ${name} TV sources unavailable:`, error.message || error);
       }
     }
     return [];
@@ -1138,11 +1157,11 @@ export class ConsumetApiService {
   getProviderStatus(): Record<string, string> {
     const status: Record<string, string> = {};
     const providers: { name: string; provider: any }[] = [
-      { name: 'MultiMovies', provider: this.multiMoviesProvider },
+      { name: 'MultiStream', provider: this.multiStreamProvider },
       { name: 'NetflixMirror', provider: this.netflixMirrorProvider },
+      { name: 'MultiMovies', provider: this.multiMoviesProvider },
       { name: 'HiMovies', provider: this.hiMoviesProvider },
       { name: 'YFlix', provider: this.yFlixProvider },
-      { name: 'MultiStream', provider: this.multiStreamProvider },
       { name: 'AnimePahe', provider: this.animePaheProvider },
       { name: 'Zoro', provider: this.zoroProvider },
       { name: 'AnimeDrive', provider: this.animeDriveProvider },
@@ -1180,11 +1199,11 @@ export class ConsumetApiService {
 
   getHealthyProviders(): Promise<ProviderStatus[]> {
     const providers: { name: string; provider: any; type: ProviderStatus['type'] }[] = [
-      { name: 'MultiMovies', provider: this.multiMoviesProvider, type: 'movie' },
+      { name: 'MultiStream', provider: this.multiStreamProvider, type: 'movie' },
       { name: 'NetflixMirror', provider: this.netflixMirrorProvider, type: 'movie' },
+      { name: 'MultiMovies', provider: this.multiMoviesProvider, type: 'movie' },
       { name: 'HiMovies', provider: this.hiMoviesProvider, type: 'movie' },
       { name: 'YFlix', provider: this.yFlixProvider, type: 'movie' },
-      { name: 'MultiStream', provider: this.multiStreamProvider, type: 'movie' },
       { name: 'AnimePahe', provider: this.animePaheProvider, type: 'anime' },
       { name: 'Zoro', provider: this.zoroProvider, type: 'anime' },
       { name: 'AnimeDrive', provider: this.animeDriveProvider, type: 'anime' },

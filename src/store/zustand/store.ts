@@ -157,10 +157,6 @@ export const useAppStore = create<AppState>()(
     {
       name: 'app-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // Bumping version + migrate forces any device that already persisted
-      // the old hardcoded 'dark' default to fall back to 'system' once.
-      // Without this, changing defaultSettings.theme above only affects
-      // brand-new installs — existing AsyncStorage data would still win.
       version: 2,
       migrate: (persistedState: any, fromVersion) => {
         if (fromVersion < 2 && persistedState?.theme === 'dark') {
@@ -190,6 +186,13 @@ export const useAppStore = create<AppState>()(
   )
 );
 
+// ─── ─────────────────────────────────────────────────── ───
+// ─── SELECTOR HOOKS ───
+// ─── ─────────────────────────────────────────────────── ───
+
+/**
+ * Get all settings from the app store
+ */
 export const useSettings = () => {
   const state = useAppStore();
   return {
@@ -209,6 +212,9 @@ export const useSettings = () => {
   };
 };
 
+/**
+ * Get all player state from the app store
+ */
 export const usePlayer = () => {
   const state = useAppStore();
   return {
@@ -222,6 +228,40 @@ export const usePlayer = () => {
     pictureInPicture: state.pictureInPicture,
     fullscreen: state.fullscreen,
   };
+};
+
+/**
+ * Get all UI state from the app store
+ */
+export const useUI = () => {
+  const state = useAppStore();
+  return {
+    isLoading: state.isLoading,
+    isInitialized: state.isInitialized,
+    hasCachedData: state.hasCachedData,
+    networkStatus: state.networkStatus,
+  };
+};
+
+/**
+ * Get network status specifically
+ */
+export const useNetworkStatus = () => {
+  return useAppStore((state) => state.networkStatus);
+};
+
+/**
+ * Get loading state specifically
+ */
+export const useAppLoading = () => {
+  return useAppStore((state) => state.isLoading);
+};
+
+/**
+ * Get initialized state specifically
+ */
+export const useAppInitialized = () => {
+  return useAppStore((state) => state.isInitialized);
 };
 
 export default useAppStore;

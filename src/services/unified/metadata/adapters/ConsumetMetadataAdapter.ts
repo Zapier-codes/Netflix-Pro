@@ -6,6 +6,14 @@
  *   adapter -> local metadata wrapper (../ConsumetMetadata) -> raw provider
  *
  * Covers: movie, tv, and anime search/discover via Consumet providers.
+ *
+ * FIXED: discover() now uses proper search terms instead of empty strings
+ * since Consumet's movie/TV providers (MultiMovies, HiMovies, YFlix, etc.)
+ * reject empty search queries with 403/520/network errors. Uses "movie",
+ * "film", "show", "series" as fallback search terms to get discover results.
+ * FIXED: genre filtering now correctly resolves human labels to numeric IDs
+ * for TMDB-sourced items (since Consumet's META providers return numeric
+ * genre IDs, not human names).
  */
 
 import { IMetadataResult, DiscoverFilters } from '../../types/MetadataTypes';
@@ -34,6 +42,21 @@ const CONSUMET_GENRE_MAP: Record<string, string[]> = {
   'Bollywood': ['Bollywood', 'Indian'],
   'Hollywood': ['Hollywood', 'American'],
   'Nollywood': ['Nollywood', 'Nigerian'],
+};
+
+// ─── FIX: TMDB genre ID -> human name mapping ───
+// Consumet's META providers (Anilist, TMDB) return numeric genre IDs on
+// search/list results, not human names. This maps them to the same names
+// the aggregator and other providers use so genre filtering works consistently.
+const TMDB_GENRE_ID_TO_NAME: Record<string, string> = {
+  '28': 'Action', '12': 'Adventure', '16': 'Animation', '35': 'Comedy',
+  '80': 'Crime', '99': 'Documentary', '18': 'Drama', '10751': 'Family',
+  '14': 'Fantasy', '36': 'History', '27': 'Horror', '10402': 'Music',
+  '9648': 'Mystery', '10749': 'Romance', '878': 'Sci-Fi', '10770': 'TV Movie',
+  '53': 'Thriller', '10752': 'War', '37': 'Western',
+  '10759': 'Action & Adventure', '10762': 'Kids', '10763': 'News',
+  '10764': 'Reality', '10765': 'Sci-Fi & Fantasy', '10766': 'Soap',
+  '10767': 'Talk', '10768': 'War & Politics',
 };
 
 // Literal union pulled straight from IMetadataResult['status'] so this file
@@ -130,7 +153,6 @@ export class ConsumetMetadataAdapter {
       sortBy,
     } = options;
 
-    // FIXED: Use literal type instead of string default
     const effectiveSortBy = sortBy || 'popularity.desc';
 
     if (!query || query.trim() === '') {
@@ -180,16 +202,30 @@ export class ConsumetMetadataAdapter {
   }
 
   async discover(filters: DiscoverFilters, limit: number = 20): Promise<IMetadataResult[]> {
-    // FIXED: Use literal type instead of string default
     const sortBy = filters.sortBy || 'popularity.desc';
 
     try {
+      // ─── FIX: Consumet's movie/TV providers reject empty search queries ───
+      // The underlying .search('') calls return 403/520/network errors because
+      // the scraped sites (HiMovies, MultiMovies, YFlix, etc.) don't support
+      // empty searches. Instead of passing an empty string, build a sensible
+      // search term based on the filters provided.
+      let searchTerm = this.buildDiscoverSearchTerm(filters);
+      
+      console.log(`[ConsumetMetadataAdapter] Discover using search term: "${searchTerm}"`);
+
       const type: 'movie' | 'tv' | 'anime' | 'all' =
         filters.type === 'movie' || filters.type === 'tv' || (filters.type as any) === 'anime'
           ? (filters.type as 'movie' | 'tv' | 'anime')
           : 'all';
 
-      const results = await consumetMetadataService.getRecent(type, Math.min(limit * 3, 60));
+      // ─── Use searchContent with the built search term instead of getRecent ───
+      const results = await consumetMetadataService.searchContent(
+        searchTerm,
+        type,
+        Math.min(limit * 3, 60)
+      );
+      
       let mapped = results.map((item: ConsumetContent) => this.mapConsumetContent(item));
 
       mapped = this.applyFilters(mapped, {
@@ -214,10 +250,177 @@ export class ConsumetMetadataAdapter {
       });
 
       mapped = this.sortResults(mapped, sortBy);
+      
+      // ─── If we got few or no results, try a broader search term ───
+      if (mapped.length < 5) {
+        const fallbackTerm = this.getFallbackSearchTerm(filters);
+        if (fallbackTerm !== searchTerm) {
+          console.log(`[ConsumetMetadataAdapter] Trying fallback search term: "${fallbackTerm}"`);
+          const fallbackResults = await consumetMetadataService.searchContent(
+            fallbackTerm,
+            type,
+            Math.min(limit * 2, 40)
+          );
+          let fallbackMapped = fallbackResults.map((item: ConsumetContent) => this.mapConsumetContent(item));
+          fallbackMapped = this.applyFilters(fallbackMapped, {
+            languages: filters.languages,
+            countries: filters.countries,
+            region: filters.region,
+            genres: filters.genres,
+            minRating: filters.minRating,
+            maxRating: filters.maxRating,
+            year: filters.year,
+            startYear: filters.startYear,
+            endYear: filters.endYear,
+            keywords: filters.keywords,
+            includeAdult: filters.includeAdult,
+          });
+          // Deduplicate against existing results
+          const existingIds = new Set(mapped.map(item => item.id));
+          const newItems = fallbackMapped.filter(item => !existingIds.has(item.id));
+          mapped.push(...newItems);
+          mapped = this.sortResults(mapped, sortBy);
+        }
+      }
+
       return mapped.slice(0, limit);
     } catch (error) {
       console.error('[ConsumetMetadataAdapter] Discover failed:', error);
       return [];
+    }
+  }
+
+  /**
+   * ─── FIX: Build a sensible search term from filters ───
+   * Instead of passing an empty string (which providers reject), build
+   * a search term based on what the user is looking for.
+   */
+  private buildDiscoverSearchTerm(filters: DiscoverFilters): string {
+    const terms: string[] = [];
+
+    // Use genres if available
+    if (filters.genres && filters.genres.length > 0) {
+      const primaryGenre = filters.genres[0];
+      // Map genre to common search terms
+      const genreTerms: Record<string, string[]> = {
+        'Action': ['action', 'adventure'],
+        'Comedy': ['comedy', 'funny'],
+        'Drama': ['drama', 'series'],
+        'Romance': ['romance', 'love'],
+        'Horror': ['horror', 'scary'],
+        'Sci-Fi': ['sci-fi', 'science fiction', 'space'],
+        'Thriller': ['thriller', 'suspense'],
+        'Animation': ['animation', 'animated'],
+        'Anime': ['anime', 'japanese animation'],
+        'Documentary': ['documentary', 'real life'],
+        'Fantasy': ['fantasy', 'magic'],
+        'Mystery': ['mystery', 'detective'],
+        'War': ['war', 'military'],
+        'Western': ['western', 'cowboy'],
+        'Korean': ['korean drama', 'k-drama'],
+        'K-Drama': ['korean drama', 'k-drama'],
+        'Bollywood': ['bollywood', 'indian movie'],
+        'Hollywood': ['hollywood', 'american movie'],
+        'Nollywood': ['nollywood', 'nigerian movie'],
+        'Chinese': ['chinese drama', 'c-drama'],
+        'C-Drama': ['chinese drama', 'c-drama'],
+        'Japanese': ['japanese drama', 'j-drama'],
+        'J-Drama': ['japanese drama', 'j-drama'],
+        'Thai': ['thai drama', 'thai series'],
+        'Taiwanese': ['taiwanese drama', 't-drama'],
+        'Turkish': ['turkish drama', 'turkish series'],
+      };
+
+      const matched = genreTerms[primaryGenre];
+      if (matched) {
+        terms.push(...matched);
+      } else {
+        terms.push(primaryGenre.toLowerCase());
+      }
+    }
+
+    // Use country/language to refine
+    if (filters.countries && filters.countries.length > 0) {
+      const countryNames: Record<string, string> = {
+        'KR': 'korean',
+        'JP': 'japanese',
+        'CN': 'chinese',
+        'TW': 'taiwanese',
+        'HK': 'hong kong',
+        'IN': 'indian',
+        'NG': 'nigerian',
+        'US': 'american',
+        'GB': 'british',
+        'FR': 'french',
+        'DE': 'german',
+        'ES': 'spanish',
+        'IT': 'italian',
+        'BR': 'brazilian',
+        'MX': 'mexican',
+        'RU': 'russian',
+        'TH': 'thai',
+        'VN': 'vietnamese',
+        'PH': 'filipino',
+        'MY': 'malaysian',
+        'SG': 'singaporean',
+        'ID': 'indonesian',
+      };
+      const countryTerm = countryNames[filters.countries[0].toUpperCase()];
+      if (countryTerm) {
+        terms.push(countryTerm);
+      }
+    }
+
+    // Use language
+    if (filters.languages && filters.languages.length > 0) {
+      const langNames: Record<string, string> = {
+        'ko': 'korean',
+        'ja': 'japanese',
+        'zh': 'chinese',
+        'hi': 'hindi',
+        'en': 'english',
+        'fr': 'french',
+        'es': 'spanish',
+        'de': 'german',
+        'it': 'italian',
+        'pt': 'portuguese',
+        'ru': 'russian',
+        'ar': 'arabic',
+        'tr': 'turkish',
+        'th': 'thai',
+        'vi': 'vietnamese',
+      };
+      const langTerm = langNames[filters.languages[0]];
+      if (langTerm && !terms.some(t => t.includes(langTerm))) {
+        terms.push(langTerm);
+      }
+    }
+
+    // Default terms based on media type
+    if (terms.length === 0) {
+      if (filters.type === 'movie') {
+        terms.push('movie', 'film');
+      } else if (filters.type === 'tv') {
+        terms.push('tv series', 'show');
+      } else {
+        terms.push('movie', 'tv series');
+      }
+    }
+
+    // Join with spaces, keep it simple
+    return terms.join(' ');
+  }
+
+  /**
+   * ─── FIX: Get a fallback search term when the primary returns few results ───
+   */
+  private getFallbackSearchTerm(filters: DiscoverFilters): string {
+    if (filters.type === 'movie') {
+      return 'popular movies 2024';
+    } else if (filters.type === 'tv') {
+      return 'popular tv series';
+    } else {
+      return 'popular movies and tv shows';
     }
   }
 
@@ -271,16 +474,29 @@ export class ConsumetMetadataAdapter {
       );
     }
 
+    // ─── FIX: Genre filtering with TMDB numeric ID -> name resolution ───
     if (filters.genres && filters.genres.length > 0) {
+      // Build a set of normalized genre names from the filter
+      const filterGenres: string[] = [];
+      for (const g of filters.genres) {
+        const mapped = CONSUMET_GENRE_MAP[g] || [g];
+        filterGenres.push(...mapped);
+      }
+      const normalizedFilterGenres = filterGenres.map(g => g.toLowerCase());
+
       filtered = filtered.filter((item: IMetadataResult) => {
-        const genres = item.genres || [];
-        const mappedGenres: string[] = [];
-        for (const g of filters.genres) {
-          const mapped = CONSUMET_GENRE_MAP[g] || [g];
-          mappedGenres.push(...mapped);
-        }
-        return genres.some((g: string) =>
-          mappedGenres.some((mg: string) => g.toLowerCase().includes(mg.toLowerCase()))
+        const itemGenres = item.genres || [];
+        // ─── FIX: Convert numeric TMDB genre IDs to human names ───
+        const normalizedItemGenres = itemGenres.map((g: string) => {
+          // If it's a numeric ID (TMDB), convert to name
+          if (/^\d+$/.test(g) && TMDB_GENRE_ID_TO_NAME[g]) {
+            return TMDB_GENRE_ID_TO_NAME[g].toLowerCase();
+          }
+          return g.toLowerCase();
+        });
+
+        return normalizedItemGenres.some((ig: string) =>
+          normalizedFilterGenres.some((fg: string) => ig.includes(fg) || fg.includes(ig))
         );
       });
     }

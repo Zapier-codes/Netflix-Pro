@@ -1,22 +1,14 @@
 import React from 'react';
 import { StyleSheet, Image, TouchableOpacity, View, Text } from 'react-native';
-import { SPORT_LOGO_MAP } from '../api/streameastApi';
+import { SPORT_LOGO_MAP } from '../api/ApiService';
 
 const SportCard = ({ sportToken, sportName, liveCount, totalCount, onPress }) => {
   const logoUrl = SPORT_LOGO_MAP[sportToken] || SPORT_LOGO_MAP['DEFAULT'];
-  
+
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
+    <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.imageContainer}>
-        <Image
-          source={{ uri: logoUrl }}
-          style={styles.image}
-          resizeMode="contain"
-        />
+        <Image source={{ uri: logoUrl }} style={styles.image} resizeMode="contain" />
       </View>
       <View style={styles.infoContainer}>
         <Text style={styles.sportName} numberOfLines={1}>
@@ -71,4 +63,3 @@ const styles = StyleSheet.create({
 });
 
 export default SportCard;
-

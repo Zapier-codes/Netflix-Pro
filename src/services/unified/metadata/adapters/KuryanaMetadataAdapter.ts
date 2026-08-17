@@ -6,6 +6,19 @@
  *   /id/{slug}/cast
  *   /id/{slug}/episodes
  *   /seasonal/{year}/{quarter}
+ *
+ * FIXED: Seasonal endpoint returns 500 errors consistently. Instead of
+ * making 8 sequential failed requests, discover() now uses search by
+ * country/language directly as the primary strategy.
+ * FIXED: Kuryana is exclusively Asian content - SKIP language/country
+ * filtering entirely since all results are already Asian dramas.
+ * FIXED: mapKuryanaDrama() now properly populates originalLanguage and
+ * originCountry for ALL results so they pass the aggregator's filters.
+ * FIXED: applyFiltersForKuryana() now skips strict genre filtering too.
+ * FIXED: discover() now searches ALL provided countries, not just the first
+ * one. When "Asian" category sends ['KR','CN','TW','HK'], Kuryana searches
+ * each country and merges results so the user gets Korean, Chinese,
+ * Taiwanese, and Hong Kong dramas all together.
  */
 
 import { IMetadataResult, DiscoverFilters } from '../../types/MetadataTypes';
@@ -101,6 +114,31 @@ const COUNTRY_REGION_MAP: Record<string, string> = {
   'AR': 'Argentina', 'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru',
 };
 
+const COUNTRY_TO_LANGUAGE: Record<string, string> = {
+  'KR': 'ko', 'JP': 'ja', 'CN': 'zh', 'TW': 'zh', 'HK': 'zh',
+  'TH': 'th', 'IN': 'hi', 'NG': 'en', 'US': 'en', 'GB': 'en',
+  'FR': 'fr', 'DE': 'de', 'ES': 'es', 'IT': 'it', 'PT': 'pt',
+  'RU': 'ru', 'AR': 'ar', 'TR': 'tr', 'VN': 'vi', 'PH': 'tl',
+  'MY': 'ms', 'ID': 'id', 'SG': 'en', 'NZ': 'en', 'AU': 'en',
+  'CA': 'en', 'ZA': 'en', 'NL': 'nl', 'BE': 'nl', 'CH': 'de',
+  'AT': 'de', 'SE': 'sv', 'NO': 'no', 'DK': 'da', 'FI': 'fi',
+  'BR': 'pt', 'MX': 'es', 'AR': 'es', 'CL': 'es', 'CO': 'es',
+  'PE': 'es', 'PK': 'ur', 'BD': 'bn', 'LK': 'si', 'NP': 'ne',
+  'BT': 'dz', 'MV': 'dv', 'MO': 'zh', 'MM': 'my', 'KH': 'km',
+  'LA': 'lo', 'BN': 'ms', 'TL': 'pt', 'IL': 'he', 'SA': 'ar',
+  'AE': 'ar', 'EG': 'ar', 'MA': 'ar', 'DZ': 'ar', 'TN': 'ar',
+  'LY': 'ar', 'SD': 'ar', 'JO': 'ar', 'LB': 'ar', 'KW': 'ar',
+  'QA': 'ar', 'BH': 'ar', 'OM': 'ar', 'YE': 'ar', 'SY': 'ar',
+  'IR': 'fa', 'IQ': 'ar', 'AF': 'ps', 'AZ': 'az', 'GE': 'ka',
+  'AM': 'hy', 'AL': 'sq', 'BA': 'bs', 'BG': 'bg', 'HR': 'hr',
+  'CZ': 'cs', 'DK': 'da', 'EE': 'et', 'HU': 'hu', 'IS': 'is',
+  'IE': 'en', 'LV': 'lv', 'LT': 'lt', 'LU': 'lb', 'MT': 'mt',
+  'PL': 'pl', 'RO': 'ro', 'SK': 'sk', 'SI': 'sl', 'UA': 'uk',
+  'BY': 'be', 'MD': 'ro', 'GE': 'ka', 'AM': 'hy', 'AZ': 'az',
+  'KZ': 'kk', 'UZ': 'uz', 'TM': 'tk', 'KG': 'ky', 'TJ': 'tg',
+  'MN': 'mn', 'KP': 'ko',
+};
+
 export class KuryanaMetadataAdapter {
   readonly name = 'Kuryana';
   readonly id = 'kuryana';
@@ -144,7 +182,6 @@ export class KuryanaMetadataAdapter {
       sortBy,
     } = options;
 
-    // FIXED: Use literal type instead of string default
     const effectiveSortBy = sortBy || 'popularity.desc';
 
     if (!query || query.trim() === '') {
@@ -192,50 +229,142 @@ export class KuryanaMetadataAdapter {
   }
 
   async discover(filters: DiscoverFilters, limit: number = 20): Promise<IMetadataResult[]> {
-    // FIXED: Use literal type instead of string default
     const sortBy = filters.sortBy || 'popularity.desc';
 
     try {
-      const results: IMetadataResult[] = [];
-      const currentYear = new Date().getFullYear();
+      const allResults: IMetadataResult[] = [];
 
-      for (const year of [currentYear, currentYear - 1]) {
-        for (const quarter of [1, 2, 3, 4]) {
+      // ─── FIX: Skip seasonal entirely - it consistently returns 500 ───
+      console.log('[KuryanaMetadataAdapter] Discover: skipping seasonal (known 500), using search by country/language');
+
+      // ─── PRIMARY: Search by ALL provided countries (not just the first) ───
+      // When "Asian" category sends ['KR','CN','TW','HK'], we search each
+      // country and merge so user gets Korean, Chinese, Taiwanese, and
+      // Hong Kong dramas all together.
+      if (filters.countries && filters.countries.length > 0) {
+        console.log(`[KuryanaMetadataAdapter] Searching by countries: ${JSON.stringify(filters.countries)}`);
+        
+        for (const countryCode of filters.countries) {
+          const countryName = COUNTRY_REGION_MAP[countryCode.toUpperCase()] || countryCode;
+          console.log(`[KuryanaMetadataAdapter] Searching by country: "${countryName}"`);
+          
           try {
-            const seasonal = await kuryanaApiService.getSeasonalDramas(year, quarter);
-            const mapped = seasonal.slice(0, 10).map((item: KuryanaDrama) =>
-              this.mapKuryanaDrama(item)
-            );
-            results.push(...mapped);
-          } catch {
-            // Silently continue
+            const searchResults = await kuryanaApiService.searchDramas(countryName);
+            if (searchResults && searchResults.length > 0) {
+              const mapped = searchResults.map((item: KuryanaDrama) =>
+                this.mapKuryanaDrama(item)
+              );
+              allResults.push(...mapped);
+              console.log(`[KuryanaMetadataAdapter] Found ${mapped.length} results for "${countryName}"`);
+            }
+          } catch (error) {
+            console.log(`[KuryanaMetadataAdapter] Search by country "${countryName}" failed:`, error);
           }
         }
       }
 
-      let filtered = this.applyFilters(results, {
-        languages: filters.languages,
-        countries: filters.countries,
-        region: filters.region,
-        genres: filters.genres,
-        minRating: filters.minRating,
-        maxRating: filters.maxRating,
-        year: filters.year,
-        startYear: filters.startYear,
-        endYear: filters.endYear,
-        keywords: filters.keywords,
-        includeAdult: filters.includeAdult,
-      });
+      // ─── SECONDARY: Search by ALL provided languages ───
+      if (allResults.length === 0 && filters.languages && filters.languages.length > 0) {
+        console.log(`[KuryanaMetadataAdapter] Searching by languages: ${JSON.stringify(filters.languages)}`);
+        
+        for (const lang of filters.languages) {
+          const langNames: Record<string, string> = {
+            'hi': 'Hindi', 'bn': 'Bengali', 'te': 'Telugu', 'ta': 'Tamil',
+            'ml': 'Malayalam', 'ko': 'Korean', 'ja': 'Japanese', 'zh': 'Chinese',
+            'en': 'English', 'fr': 'French', 'es': 'Spanish', 'de': 'German',
+            'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian', 'ar': 'Arabic',
+            'tr': 'Turkish', 'th': 'Thai', 'vi': 'Vietnamese', 'tl': 'Filipino',
+            'ms': 'Malay', 'id': 'Indonesian', 'ur': 'Urdu', 'fa': 'Persian',
+            'he': 'Hebrew', 'nl': 'Dutch', 'sv': 'Swedish', 'no': 'Norwegian',
+            'da': 'Danish', 'fi': 'Finnish', 'pl': 'Polish', 'uk': 'Ukrainian',
+            'ro': 'Romanian', 'bg': 'Bulgarian', 'cs': 'Czech', 'el': 'Greek',
+            'hu': 'Hungarian', 'sk': 'Slovak', 'sl': 'Slovenian', 'et': 'Estonian',
+            'lv': 'Latvian', 'lt': 'Lithuanian', 'is': 'Icelandic', 'mt': 'Maltese',
+            'sq': 'Albanian', 'bs': 'Bosnian', 'hr': 'Croatian', 'sr': 'Serbian',
+            'mk': 'Macedonian', 'ka': 'Georgian', 'hy': 'Armenian', 'az': 'Azerbaijani',
+            'kk': 'Kazakh', 'uz': 'Uzbek', 'tg': 'Tajik', 'ky': 'Kyrgyz',
+            'mn': 'Mongolian', 'km': 'Khmer', 'lo': 'Lao', 'my': 'Burmese',
+            'ne': 'Nepali', 'si': 'Sinhala', 'dv': 'Dhivehi', 'dz': 'Dzongkha',
+            'ps': 'Pashto', 'sd': 'Sindhi', 'pa': 'Punjabi', 'gu': 'Gujarati',
+            'kn': 'Kannada', 'or': 'Odia', 'as': 'Assamese', 'mai': 'Maithili',
+            'sat': 'Santali', 'ks': 'Kashmiri', 'doi': 'Dogri', 'mni': 'Manipuri',
+            'bodo': 'Bodo', 'kok': 'Konkani',
+          };
+          
+          const langName = langNames[lang] || lang;
+          console.log(`[KuryanaMetadataAdapter] Searching by language: "${langName}"`);
+          
+          try {
+            const searchResults = await kuryanaApiService.searchDramas(langName);
+            if (searchResults && searchResults.length > 0) {
+              const mapped = searchResults.map((item: KuryanaDrama) =>
+                this.mapKuryanaDrama(item)
+              );
+              allResults.push(...mapped);
+              console.log(`[KuryanaMetadataAdapter] Found ${mapped.length} results for "${langName}"`);
+            }
+          } catch (error) {
+            console.log(`[KuryanaMetadataAdapter] Search by language "${langName}" failed:`, error);
+          }
+        }
+      }
 
+      // ─── TERTIARY: Search by genre ───
+      if (allResults.length === 0 && filters.genres && filters.genres.length > 0) {
+        for (const genre of filters.genres) {
+          console.log(`[KuryanaMetadataAdapter] Searching by genre: "${genre}"`);
+          
+          try {
+            const searchResults = await kuryanaApiService.searchDramas(genre);
+            if (searchResults && searchResults.length > 0) {
+              const mapped = searchResults.map((item: KuryanaDrama) =>
+                this.mapKuryanaDrama(item)
+              );
+              allResults.push(...mapped);
+              console.log(`[KuryanaMetadataAdapter] Found ${mapped.length} results for "${genre}"`);
+            }
+          } catch (error) {
+            console.log(`[KuryanaMetadataAdapter] Search by genre "${genre}" failed:`, error);
+          }
+        }
+      }
+
+      // ─── FALLBACK: General search for popular content ───
+      if (allResults.length === 0) {
+        const fallbackTerms = ['popular', 'trending', 'new', 'best'];
+        for (const term of fallbackTerms) {
+          try {
+            console.log(`[KuryanaMetadataAdapter] Fallback search: "${term}"`);
+            const searchResults = await kuryanaApiService.searchDramas(term);
+            if (searchResults && searchResults.length > 0) {
+              const mapped = searchResults.map((item: KuryanaDrama) =>
+                this.mapKuryanaDrama(item)
+              );
+              allResults.push(...mapped);
+              console.log(`[KuryanaMetadataAdapter] Found ${mapped.length} results for "${term}"`);
+              break;
+            }
+          } catch (error) {
+            console.log(`[KuryanaMetadataAdapter] Fallback search "${term}" failed:`, error);
+          }
+        }
+      }
+
+      // ─── FIX: Kuryana is exclusively Asian content - SKIP ALL strict filtering ───
+      // The search endpoint is already scoped by country/language/genre query.
+      // Only deduplicate, sort, and cap.
       const seen = new Set<string>();
-      filtered = filtered.filter(item => {
+      const deduped = allResults.filter(item => {
         if (seen.has(item.id)) return false;
         seen.add(item.id);
         return true;
       });
 
-      filtered = this.sortResults(filtered, sortBy);
-      return filtered.slice(0, limit);
+      const sorted = this.sortResults(deduped, sortBy);
+      const finalResults = sorted.slice(0, limit);
+      
+      console.log(`[KuryanaMetadataAdapter] Discover returning ${finalResults.length} results (from ${allResults.length} raw)`);
+      return finalResults;
     } catch (error) {
       console.error('[KuryanaMetadataAdapter] Discover failed:', error);
       return [];
@@ -295,35 +424,118 @@ export class KuryanaMetadataAdapter {
     }
   }
 
+  /**
+   * ─── DEPRECATED: Replaced by direct dedupe/sort/cap in discover() ───
+   * Keeping for backward compatibility with search() path only.
+   */
+  private applyFiltersForKuryana(results: IMetadataResult[], filters: any): IMetadataResult[] {
+    let filtered = [...results];
+
+    // ─── SKIP language, country, AND genre filters for Kuryana ───
+    // All Kuryana content is already Asian dramas. Genre filtering is too
+    // brittle because Kuryana uses free-text genre labels ("Korean Drama",
+    // "Romance") not canonical names. The search query itself already scopes
+    // results appropriately.
+
+    // Rating filters
+    if (filters.minRating !== undefined) {
+      filtered = filtered.filter(item => (item.rating || 0) >= filters.minRating);
+    }
+    if (filters.maxRating !== undefined) {
+      filtered = filtered.filter(item => (item.rating || 0) <= filters.maxRating);
+    }
+
+    // Year filters
+    if (filters.year) {
+      filtered = filtered.filter(item => item.year === filters.year);
+    }
+    if (filters.startYear !== undefined) {
+      filtered = filtered.filter(item => (item.year || 0) >= filters.startYear);
+    }
+    if (filters.endYear !== undefined) {
+      filtered = filtered.filter(item => (item.year || 0) <= filters.endYear);
+    }
+
+    // Keyword filtering
+    if (filters.keywords && filters.keywords.length > 0) {
+      filtered = filtered.filter(item => {
+        const title = item.title || '';
+        const overview = item.overview || '';
+        const keywords = (item as any).keywords || [];
+        const searchText = `${title} ${overview} ${keywords.join(' ')}`.toLowerCase();
+        return filters.keywords.some((k: string) => searchText.includes(k.toLowerCase()));
+      });
+    }
+
+    // Adult content filter
+    if (filters.includeAdult === false) {
+      filtered = filtered.filter(item => !(item as any).adult);
+    }
+
+    return filtered;
+  }
+
   private applyFilters(results: IMetadataResult[], filters: any): IMetadataResult[] {
     let filtered = [...results];
 
+    // ─── FIX: Kuryana is exclusively Asian content - skip language/country filters ───
+    // Check if results are from Kuryana
+    const isKuryanaSource = results.length > 0 && results[0].source === 'kuryana';
+    
+    if (isKuryanaSource) {
+      // Use the Kuryana-specific filter that skips language/country/genre
+      return this.applyFiltersForKuryana(results, filters);
+    }
+
+    // ─── For non-Kuryana sources, apply all filters ───
+    // Flexible language filtering
     if (filters.languages && filters.languages.length > 0) {
-      filtered = filtered.filter(item =>
-        item.originalLanguage && filters.languages.includes(item.originalLanguage)
-      );
+      const langs = filters.languages.map((l: string) => l.toLowerCase());
+      filtered = filtered.filter(item => {
+        if (!item.originalLanguage) return false;
+        const itemLang = item.originalLanguage.toLowerCase();
+        return langs.some((l: string) => 
+          itemLang.includes(l) || l.includes(itemLang)
+        );
+      });
     }
 
+    // Flexible country filtering
     if (filters.countries && filters.countries.length > 0) {
-      filtered = filtered.filter(item =>
-        item.originCountry && item.originCountry.some((c: string) => filters.countries.includes(c))
-      );
+      const ctrys = filters.countries.map((c: string) => c.toUpperCase());
+      filtered = filtered.filter(item => {
+        if (!item.originCountry || item.originCountry.length === 0) return false;
+        return item.originCountry.some((c: string) => {
+          const countryCode = c.toUpperCase();
+          return ctrys.some((filterCountry: string) => 
+            countryCode.includes(filterCountry) || filterCountry.includes(countryCode)
+          );
+        });
+      });
     }
 
+    // Region filtering
     if (filters.region) {
       const regionName = COUNTRY_REGION_MAP[filters.region.toUpperCase()] || filters.region;
       filtered = filtered.filter(item => {
         const country = (item as any).countryName || '';
-        return country.toLowerCase().includes(regionName.toLowerCase());
+        const originCountry = item.originCountry?.join(', ') || '';
+        const searchText = `${country} ${originCountry}`.toLowerCase();
+        return searchText.includes(regionName.toLowerCase());
       });
     }
 
+    // Certification filtering
     if (filters.certifications && filters.certifications.length > 0) {
+      const certs = filters.certifications.map((c: string) => c.toUpperCase());
       filtered = filtered.filter(item =>
-        item.certification && filters.certifications.includes(item.certification)
+        item.certification && certs.some((c: string) => 
+          item.certification?.toUpperCase().includes(c) || c.includes(item.certification?.toUpperCase() || '')
+        )
       );
     }
 
+    // Genre filtering
     if (filters.genres && filters.genres.length > 0) {
       filtered = filtered.filter(item => {
         const genres = item.genres || [];
@@ -338,26 +550,26 @@ export class KuryanaMetadataAdapter {
       });
     }
 
+    // Rating filters
     if (filters.minRating !== undefined) {
       filtered = filtered.filter(item => (item.rating || 0) >= filters.minRating);
     }
-
     if (filters.maxRating !== undefined) {
       filtered = filtered.filter(item => (item.rating || 0) <= filters.maxRating);
     }
 
+    // Year filters
     if (filters.year) {
       filtered = filtered.filter(item => item.year === filters.year);
     }
-
     if (filters.startYear !== undefined) {
       filtered = filtered.filter(item => (item.year || 0) >= filters.startYear);
     }
-
     if (filters.endYear !== undefined) {
       filtered = filtered.filter(item => (item.year || 0) <= filters.endYear);
     }
 
+    // Keyword filtering
     if (filters.keywords && filters.keywords.length > 0) {
       filtered = filtered.filter(item => {
         const title = item.title || '';
@@ -368,6 +580,7 @@ export class KuryanaMetadataAdapter {
       });
     }
 
+    // Adult content filter
     if (filters.includeAdult === false) {
       filtered = filtered.filter(item => !(item as any).adult);
     }
@@ -408,21 +621,125 @@ export class KuryanaMetadataAdapter {
     }
   }
 
+  /**
+   * Map Kuryana drama to IMetadataResult with proper poster handling
+   *
+   * GET /search/q/{query} returns the poster as `thumb` — a full, ready-to-use
+   * MyDramaList CDN URL. There is NO `/images/{slug}.jpg` endpoint on
+   * kuryana.tbdh.app (confirmed 404) — never construct a poster URL from slug.
+   * GET /id/{slug} (detail endpoint) may use a different field name, so a few
+   * plausible fallbacks are kept for that path, but none of them fabricate a URL.
+   *
+   * ─── FIX: Populate originalLanguage and originCountry for ALL results ───
+   * Previously these were only set when the drama had a `country` field.
+   * Now we extract country and language from the `type` field as well,
+   * so fallback search results (which may not have country populated) still
+   * pass the aggregator's language/country filters.
+   */
   private mapKuryanaDrama(item: KuryanaDrama): IMetadataResult {
+    const posterUrl =
+      item.thumb ||
+      item.poster ||
+      (item as any).cover ||
+      (item as any).image ||
+      (item as any).poster_url ||
+      undefined;
+
+    // `series` distinguishes movie vs show on /search results:
+    // a string like "20 episodes" means it's a show; `false` means a movie.
+    const isMovie = item.series === false;
+
+    // ─── FIX: Extract country from multiple sources ───
+    let country = item.country || '';
+    
+    // If country is empty, try to extract from type
+    if (!country && item.type) {
+      const typeLower = item.type.toLowerCase();
+      if (typeLower.includes('korean')) country = 'KR';
+      else if (typeLower.includes('japanese')) country = 'JP';
+      else if (typeLower.includes('chinese')) country = 'CN';
+      else if (typeLower.includes('taiwanese')) country = 'TW';
+      else if (typeLower.includes('thai')) country = 'TH';
+      else if (typeLower.includes('indian') || typeLower.includes('bollywood')) country = 'IN';
+      else if (typeLower.includes('nigeria') || typeLower.includes('nollywood')) country = 'NG';
+      else if (typeLower.includes('filipino') || typeLower.includes('pinoy')) country = 'PH';
+      else if (typeLower.includes('malaysian') || typeLower.includes('melayu')) country = 'MY';
+      else if (typeLower.includes('indonesian')) country = 'ID';
+      else if (typeLower.includes('vietnamese')) country = 'VN';
+      else if (typeLower.includes('turkish')) country = 'TR';
+      else if (typeLower.includes('spanish')) country = 'ES';
+      else if (typeLower.includes('french')) country = 'FR';
+      else if (typeLower.includes('german')) country = 'DE';
+      else if (typeLower.includes('italian')) country = 'IT';
+      else if (typeLower.includes('portuguese')) country = 'PT';
+      else if (typeLower.includes('russian')) country = 'RU';
+      else if (typeLower.includes('arabic') || typeLower.includes('egyptian')) country = 'EG';
+      else if (typeLower.includes('persian') || typeLower.includes('iranian')) country = 'IR';
+      else if (typeLower.includes('hebrew') || typeLower.includes('israeli')) country = 'IL';
+      else if (typeLower.includes('greek')) country = 'GR';
+      else if (typeLower.includes('polish')) country = 'PL';
+      else if (typeLower.includes('czech')) country = 'CZ';
+      else if (typeLower.includes('hungarian')) country = 'HU';
+      else if (typeLower.includes('swedish')) country = 'SE';
+      else if (typeLower.includes('norwegian')) country = 'NO';
+      else if (typeLower.includes('danish')) country = 'DK';
+      else if (typeLower.includes('finnish')) country = 'FI';
+    }
+
+    // ─── FIX: Determine language from country ───
+    let language = undefined;
+    if (country) {
+      language = COUNTRY_TO_LANGUAGE[country.toUpperCase()] || undefined;
+    }
+    
+    // If still no language, try to infer from type
+    if (!language && item.type) {
+      const typeLower = item.type.toLowerCase();
+      if (typeLower.includes('korean')) language = 'ko';
+      else if (typeLower.includes('japanese')) language = 'ja';
+      else if (typeLower.includes('chinese') || typeLower.includes('mandarin')) language = 'zh';
+      else if (typeLower.includes('taiwanese')) language = 'zh';
+      else if (typeLower.includes('thai')) language = 'th';
+      else if (typeLower.includes('indian') || typeLower.includes('bollywood')) language = 'hi';
+      else if (typeLower.includes('nigerian') || typeLower.includes('nollywood')) language = 'en';
+      else if (typeLower.includes('filipino') || typeLower.includes('pinoy')) language = 'tl';
+      else if (typeLower.includes('malaysian')) language = 'ms';
+      else if (typeLower.includes('indonesian')) language = 'id';
+      else if (typeLower.includes('vietnamese')) language = 'vi';
+      else if (typeLower.includes('turkish')) language = 'tr';
+      else if (typeLower.includes('spanish')) language = 'es';
+      else if (typeLower.includes('french')) language = 'fr';
+      else if (typeLower.includes('german')) language = 'de';
+      else if (typeLower.includes('italian')) language = 'it';
+      else if (typeLower.includes('portuguese')) language = 'pt';
+      else if (typeLower.includes('russian')) language = 'ru';
+      else if (typeLower.includes('arabic')) language = 'ar';
+      else if (typeLower.includes('persian')) language = 'fa';
+      else if (typeLower.includes('hebrew')) language = 'he';
+      else if (typeLower.includes('greek')) language = 'el';
+      else if (typeLower.includes('polish')) language = 'pl';
+      else if (typeLower.includes('czech')) language = 'cs';
+      else if (typeLower.includes('hungarian')) language = 'hu';
+      else if (typeLower.includes('swedish')) language = 'sv';
+      else if (typeLower.includes('norwegian')) language = 'no';
+      else if (typeLower.includes('danish')) language = 'da';
+      else if (typeLower.includes('finnish')) language = 'fi';
+    }
+
     return {
-      id: item.id?.toString() || item.slug || '',
+      id: item.slug || item.id || item.mdl_id || '',
       title: item.title || '',
-      type: 'tv',
+      type: isMovie ? 'movie' : 'tv',
       year: item.year || undefined,
-      poster: item.poster || undefined,
+      poster: posterUrl,
       backdrop: item.backdrop || undefined,
       overview: item.synopsis || '',
       rating: item.rating || 0,
       genres: item.genres || [],
       runtime: item.duration ? parseInt(item.duration) : undefined,
       source: 'kuryana',
-      originalLanguage: undefined,
-      originCountry: item.country ? [item.country] : [],
+      originalLanguage: language,
+      originCountry: country ? [country] : [],
       originalTitle: item.title || '',
       popularity: 0,
       voteCount: 0,
@@ -442,15 +759,17 @@ export class KuryanaMetadataAdapter {
       budget: undefined,
       revenue: undefined,
       networks: undefined,
-      spokenLanguages: undefined,
+      spokenLanguages: language ? [{ englishName: language, iso639_1: language, name: language }] : undefined,
       productionCompanies: undefined,
-      productionCountries: item.country ? [{ iso3166_1: item.country, name: item.country }] : [],
+      productionCountries: country ? [{ iso3166_1: country, name: country }] : [],
       numberOfSeasons: undefined,
       numberOfEpisodes: item.totalEpisodes || undefined,
       lastAirDate: undefined,
       inProduction: false,
       providerData: {
         slug: item.slug,
+        mdlId: item.mdl_id,
+        ranking: item.ranking,
         totalEpisodes: item.totalEpisodes,
         cast: item.cast,
       },
