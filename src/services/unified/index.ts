@@ -74,11 +74,7 @@ export type { SocialErrorCode } from './types/SocialTypes'
 // CORE SERVICES
 // ============================================================================
 
-export { UnifiedMediaService } from './UnifiedMediaService'
 export { MetadataAggregatorNew } from './metadata/MetadataAggregatorNew'
-export { ProviderFactory } from './ProviderFactory'
-export { ProviderRegistry } from './ProviderRegistry'
-export { StreamNormalizer } from './StreamNormalizer'
 
 // ============================================================================
 // METADATA PROVIDERS - COMPLETE LIST (5 providers)
@@ -92,11 +88,13 @@ export { KuryanaMetadataAdapter } from './metadata/adapters/KuryanaMetadataAdapt
 export { TraktMetadataAdapter } from './metadata/adapters/TraktMetadataAdapter'
 
 // ============================================================================
-// STREAMING PROVIDERS
+// STREAMING
 // ============================================================================
 // Phase 1 removed all piracy-scraping providers (VidSrc, Consumet, MovieBox,
-// Xyra) and their stream adapters. There is currently NO playback provider
-// wired in — see handover.md "Phase 2" for what a licensed replacement needs.
+// Xyra) and their stream adapters, along with the orchestrator
+// (UnifiedMediaService/ProviderFactory/ProviderRegistry) that cascaded
+// between them. Phase 2 wires playback to a licensed backend instead — see
+// src/services/licensedPlayback/LicensedPlaybackService.ts.
 
 // ============================================================================
 // SUBTITLE PROVIDERS

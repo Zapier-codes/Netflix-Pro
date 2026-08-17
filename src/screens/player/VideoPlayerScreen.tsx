@@ -7,7 +7,6 @@ import {
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { WebView } from 'react-native-webview';
 import { StatusBar } from 'expo-status-bar';
 import { useEventListener } from 'expo';
 import { GestureHandlerRootView, GestureDetector } from 'react-native-gesture-handler';
@@ -25,9 +24,8 @@ import { useWatchProgress } from '../../hooks/useWatchProgress';
 import { useSubtitles } from '../../hooks/useSubtitles';
 import { useAutoPlay } from '../../hooks/useAutoPlay';
 import { useEpisodeNavigation } from '../../hooks/useEpisodeNavigation';
-import { useStreamExtraction } from '../../hooks/useStreamExtraction';
+import { useLicensedPlaybackSource } from '../../hooks/useLicensedPlaybackSource';
 
-import SourceSelectionModal from '../../components/SourceSelectionModal';
 import SubtitlesModal from '../../components/SubtitlesModal';
 import {
   SubtitleOverlay, SeekIndicators, LoadingOverlay, ErrorOverlay,
@@ -45,28 +43,17 @@ const logWarn = (message: string, data?: any) => { console.warn(`${LOG_TAG} ⚠�
 const logInfo = (message: string, data?: any) => { console.log(`${LOG_TAG} ℹ️ ${message}`, data || ''); };
 const logDebug = (message: string, data?: any) => { console.log(`${LOG_TAG} 🐞 ${message}`, data || ''); };
 
-type PlayerMode = 'native' | 'embed' | 'torrent' | 'offline';
+// Licensed sources are either played natively (HLS/DASH/MP4 via expo-video)
+// or, for downloaded content, from a local file. There's no embed/iframe
+// or torrent mode anymore — those only existed to route around piracy
+// sources that returned an embed page or a magnet/webtor.io link instead
+// of a direct file.
+type PlayerMode = 'native' | 'offline';
 
 const classifyPlayerMode = (
-  url: string | null, isTorrentParam: string, isOfflineParam: string,
-  offlinePath: string, streamTypeParam?: string
+  isOfflineParam: string, offlinePath: string
 ): PlayerMode => {
   if (isOfflineParam === 'true' && offlinePath) return 'offline';
-  if (isTorrentParam === 'true') return 'torrent';
-  if (streamTypeParam === 'torrent') return 'torrent';
-  if (streamTypeParam === 'embed') return 'embed';
-  if (!url) return 'native';
-  const lower = url.toLowerCase();
-  if (lower.includes('webtor.io') || lower.startsWith('magnet:') || lower.endsWith('.torrent')) return 'torrent';
-  const embedPatterns = [
-    '/embed/', '/iframe/', '/player/', 'streamtape.com', 'dood.', 'vidoza.net',
-    'ok.ru/videoembed', 'filemoon.sx', 'streamhub.icu', 'multiembed.mov',
-    'embedrise.com', 'guccihide.com', 'superembed.xyz', '2embed.ru',
-    'vidsrc.me/embed', 'youtube.com/embed', 'player.vimeo.com',
-    'streamlink.to', 'vidcloud.co', 'mixdrop.co/e/', 'userload.co/embed',
-    'mp4upload.com/embed', 'dood.ws', 'dood.sh', 'dood.to',
-  ];
-  if (embedPatterns.some(p => lower.includes(p))) return 'embed';
   return 'native';
 };
 
@@ -179,9 +166,7 @@ const VideoPlayerScreen = () => {
 
   const {
     mediaId, mediaType, title, episodeTitle, poster_path, season, episode,
-    air_date: currentEpisodeAirDateFromParams, isLive, streameastUrl,
-    isOffline, offlineFilePath, isTorrent = 'false', streamUrl,
-    streamType: streamTypeParam, isEmbed: isEmbedParam, subtitles: subtitlesParam,
+    isLive, isOffline, offlineFilePath, streamUrl, subtitles: subtitlesParam,
   } = params;
 
   const directStreamUrl = useMemo(() => {
@@ -191,16 +176,11 @@ const VideoPlayerScreen = () => {
   }, [streamUrl]);
 
   const playerMode = useMemo(() => {
-    const mode = classifyPlayerMode(
-      directStreamUrl, String(isTorrent || 'false'), String(isOffline || 'false'),
-      String(offlineFilePath || ''), String(streamTypeParam || '')
-    );
+    const mode = classifyPlayerMode(String(isOffline || 'false'), String(offlineFilePath || ''));
     logInfo('Player mode determined', { mode, hasUrl: !!directStreamUrl });
     return mode;
-  }, [directStreamUrl, isTorrent, isOffline, offlineFilePath, streamTypeParam]);
+  }, [directStreamUrl, isOffline, offlineFilePath]);
 
-  const isTorrentMode = playerMode === 'torrent';
-  const isEmbedMode = playerMode === 'embed';
   const isNativeMode = playerMode === 'native';
   const isOfflineMode = playerMode === 'offline';
 
@@ -242,7 +222,6 @@ const VideoPlayerScreen = () => {
   const [isAtLiveEdge, setIsAtLiveEdge] = useState(true);
   const [showSubtitlesModal, setShowSubtitlesModal] = useState(false);
   const [retryAttempts, setRetryAttempts] = useState(0);
-  const [showSourceSelectionModal, setShowSourceSelectionModal] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [isLoadingStream, setIsLoadingStream] = useState(false);
   const [subtitleTracks, setSubtitleTracks] = useState<any[]>([]);
@@ -356,7 +335,6 @@ const VideoPlayerScreen = () => {
     setError(null);
     setLoading(true);
     setIsInitialLoading(true);
-    streamExtraction.reset();
     setResumeTime(0); setPosition(0); setDuration(0);
     lastPositionRef.current = 0; lastPositionTimeRef.current = 0;
     manualFinishTriggeredRef.current = false; pendingPlayRef.current = false;
@@ -419,24 +397,19 @@ const VideoPlayerScreen = () => {
     loadAutoPlaySetting, findNextEpisode, playNextEpisode,
   } = autoPlay;
 
-  const streamExtraction = useStreamExtraction({
+  const playback = useLicensedPlaybackSource({
     mediaId: String(mediaId || ''), mediaType: String(mediaType || 'movie'),
     season: season ? Number(season) : undefined, episode: episode ? Number(episode) : undefined,
-    episodeTitle: String(episodeTitle || ''), title: String(title || ''),
-    currentEpisodeAirDate: currentEpisodeAirDateFromParams ? String(currentEpisodeAirDateFromParams) : undefined,
-    isLive: isLive === 'true', streameastUrl: String(streameastUrl || ''),
     isOffline: isOffline === 'true', offlineFilePath: String(offlineFilePath || ''),
-    player: activePlayer, contentId, onError: setError, onFindSubtitles: findSubtitles,
-    setAutoPlayEnabled, loadAutoPlaySetting, loadSubtitlePreference, checkSavedProgress,
     directStreamUrl: isNativeMode ? directStreamUrl : null,
   });
-  const {
-    videoUrl, streamExtractionComplete, currentWebViewConfig, currentSourceAttemptKey,
-    currentAttemptingSource, currentPlayingSourceName, manualWebViewVisible, captchaUrl,
-    isChangingSource, isLiveStream, availableSourcesList, sourceAttemptStatus,
-    setManualWebViewVisible, setCaptchaUrl, openChangeSourceModal,
-    handleSelectSourceFromModal, closeSourceModal,
-  } = streamExtraction;
+  const { videoUrl, isResolved: streamExtractionComplete, isLoading: isChangingSource, error: playbackError } = playback;
+  const currentPlayingSourceName = 'licensed';
+  const isLiveStream = false;
+
+  useEffect(() => {
+    if (playbackError) setError({ message: playbackError });
+  }, [playbackError]);
 
   const seekBar = useSeekBar({
     player: activePlayer, duration, position, isPlaying, showControls,
@@ -544,7 +517,8 @@ const VideoPlayerScreen = () => {
   // escalates through header strategies until one actually plays.
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!isNativeMode || !directStreamUrl) return;
+    const activeStreamUrl = directStreamUrl || videoUrl;
+    if (!isNativeMode || !activeStreamUrl) return;
     if (!activePlayer) { logWarn('Player not available for stream loading'); return; }
 
     const loadStream = async () => {
@@ -570,9 +544,9 @@ const VideoPlayerScreen = () => {
           setPlayerReady(false);
           playerReadyRef.current = false;
 
-          const headers = getStreamHeaders(directStreamUrl, attempt);
+          const headers = getStreamHeaders(activeStreamUrl, attempt);
           await activePlayer.replaceAsync({
-            uri: directStreamUrl,
+            uri: activeStreamUrl,
             headers: Object.keys(headers).length > 0 ? headers : undefined,
           });
 
@@ -630,7 +604,7 @@ const VideoPlayerScreen = () => {
     };
 
     loadStream();
-  }, [isNativeMode, directStreamUrl, activePlayer]);
+  }, [isNativeMode, directStreamUrl, videoUrl, activePlayer]);
 
   useEffect(() => {
     if (!isNativeMode || !playerReadyRef.current) return;
@@ -671,15 +645,14 @@ const VideoPlayerScreen = () => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch((e) => logError('Failed to lock orientation', e));
 
     if (isNativeMode) {
-      if (!directStreamUrl && !offlineFilePath) {
-        logDebug('Initializing stream extraction...');
-        streamExtraction.initializePlayer(isMountedRef);
-      } else {
+      if (directStreamUrl || offlineFilePath) {
         logDebug('Using direct stream, skipping extraction');
         setLoading(false); setIsInitialLoading(false);
+      } else {
+        logDebug('Resolving licensed playback source...');
       }
     } else {
-      if (directStreamUrl || videoUrl) { logDebug('WebView mode, setting loading false'); setLoading(false); setIsInitialLoading(false); }
+      if (directStreamUrl || videoUrl) { logDebug('Offline mode, setting loading false'); setLoading(false); setIsInitialLoading(false); }
     }
     setShowControls(true);
 
@@ -774,99 +747,6 @@ const VideoPlayerScreen = () => {
     setShowControls(true);
   };
 
-  const injectedJavaScript = `(function() { window.alert = function() {}; })();`;
-
-  const renderEmbedPlayer = () => {
-    const embedUrl = directStreamUrl || videoUrl || '';
-    logDebug('Rendering Embed Player', { url: embedUrl.substring(0, 80) });
-    if (!embedUrl) {
-      return (
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={64} color="#ff4444" />
-          <Text style={styles.errorText}>No embed URL available</Text>
-          <TouchableOpacity style={styles.backButtonTorrent} onPress={() => handleGoBack()}>
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.embedContainer}>
-        <WebView
-          source={{ uri: embedUrl }} style={styles.webview}
-          javaScriptEnabled={true} domStorageEnabled={true}
-          allowsInlineMediaPlayback={true} mediaPlaybackRequiresUserAction={false}
-          thirdPartyCookiesEnabled={true} sharedCookiesEnabled={true}
-          originWhitelist={['*']} mixedContentMode="compatibility"
-          userAgent={BROWSER_UA}
-          startInLoadingState={true}
-          renderLoading={() => (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#e8a838" />
-              <Text style={styles.loadingText}>Loading video player...</Text>
-            </View>
-          )}
-          onError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            logError('Embed WebView error', nativeEvent);
-            setError({ message: 'Failed to load video player. The source may be unavailable or blocked.' });
-          }}
-          onHttpError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            logError('Embed WebView HTTP error', null, { status: nativeEvent.statusCode });
-            if (nativeEvent.statusCode >= 400) setError({ message: `Player load failed (HTTP ${nativeEvent.statusCode})` });
-          }}
-        />
-        <TouchableOpacity style={styles.embedBackButton} onPress={() => handleGoBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderTorrentPlayer = () => {
-    const webtorUrl = directStreamUrl || videoUrl || '';
-    logDebug('Rendering Torrent Player', { url: webtorUrl.substring(0, 80) });
-    if (!webtorUrl || !webtorUrl.includes('webtor.io/embed')) {
-      return (
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={64} color="#ff4444" />
-          <Text style={styles.errorText}>No torrent stream available</Text>
-          <TouchableOpacity style={styles.backButtonTorrent} onPress={() => handleGoBack()}>
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.torrentContainer}>
-        <WebView
-          source={{ uri: webtorUrl }} style={styles.webview}
-          javaScriptEnabled={true} domStorageEnabled={true}
-          allowsInlineMediaPlayback={true} mediaPlaybackRequiresUserAction={false}
-          thirdPartyCookiesEnabled={true} sharedCookiesEnabled={true}
-          originWhitelist={['*']} mixedContentMode="compatibility"
-          userAgent={BROWSER_UA}
-          startInLoadingState={true}
-          renderLoading={() => (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#e8a838" />
-              <Text style={styles.loadingText}>Loading torrent stream...</Text>
-            </View>
-          )}
-          onError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            logError('Webtor WebView error', nativeEvent);
-            setError({ message: 'Failed to load torrent stream' });
-          }}
-        />
-        <TouchableOpacity style={styles.torrentBackButton} onPress={() => handleGoBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
   const renderNativePlayer = () => {
     const hasSource = !!(videoUrl || directStreamUrl || offlineFilePath);
     logDebug('Rendering Native Player', { hasSource, playerReady: playerReadyRef.current, url: directStreamUrl?.substring(0, 80), isPlaying });
@@ -909,43 +789,19 @@ const VideoPlayerScreen = () => {
       <View style={styles.container} onLayout={onLayoutRootView}>
         <StatusBar hidden />
 
-        {isNativeMode && currentWebViewConfig && !streamExtractionComplete && (
-          <View style={manualWebViewVisible || __DEV__ ? styles.visibleWebViewForCaptcha : styles.hiddenWebView}>
-            <WebView
-              key={currentSourceAttemptKey}
-              source={manualWebViewVisible && captchaUrl ? { uri: captchaUrl, headers: currentWebViewConfig.source.headers } : currentWebViewConfig.source}
-              injectedJavaScript={currentWebViewConfig.injectedJavaScript}
-              onMessage={currentWebViewConfig.onMessage}
-              onError={currentWebViewConfig.onError}
-              onHttpError={currentWebViewConfig.onHttpError}
-              userAgent={currentWebViewConfig.userAgent}
-              javaScriptEnabled={true} domStorageEnabled={true}
-              allowsInlineMediaPlayback={true} mediaPlaybackRequiresUserAction={false}
-              originWhitelist={['*']} mixedContentMode="compatibility"
-              incognito={false} thirdPartyCookiesEnabled={true} sharedCookiesEnabled={true}
-              injectedJavaScriptForMainFrameOnly={false}
-              injectedJavaScriptBeforeContentLoadedForMainFrameOnly={false}
-              onShouldStartLoadWithRequest={() => true}
-              injectedJavaScriptBeforeContentLoaded={currentWebViewConfig.injectedJavaScriptBeforeContentLoaded || injectedJavaScript}
-            />
-          </View>
-        )}
-
         {isNativeMode && (
           <LoadingOverlay
             isInitialLoading={isInitialLoading || isLoadingStream}
-            manualWebViewVisible={manualWebViewVisible}
+            manualWebViewVisible={false}
             streamExtractionComplete={streamExtractionComplete && playerReadyRef.current}
-            currentAttemptingSource={currentAttemptingSource}
+            currentAttemptingSource={currentPlayingSourceName}
             onGoBack={() => handleGoBack()}
-            onCaptchaDone={() => setManualWebViewVisible(false)}
+            onCaptchaDone={() => {}}
           />
         )}
 
         <ErrorOverlay error={error} onRetry={handleReload} onGoBack={() => handleGoBack()} />
 
-        {isTorrentMode && renderTorrentPlayer()}
-        {isEmbedMode && renderEmbedPlayer()}
         {isNativeMode && renderNativePlayer()}
         {isOfflineMode && renderNativePlayer()}
 
@@ -973,7 +829,6 @@ const VideoPlayerScreen = () => {
               onGoBack={() => handleGoBack()}
               onTogglePlayPause={() => { if (isPlaying) activePlayer.pause(); else activePlayer.play(); }}
               onToggleMute={toggleMute} onSeekBackward={seekBackward} onSeekForward={seekForward}
-              onOpenSourceModal={() => openChangeSourceModal(isInitialLoading)}
               onToggleEpisodes={toggleEpisodesModal} onToggleSubtitles={toggleSubtitlesModal}
               subtitlesEnabled={true} selectedLanguage={selectedLanguage || 'en'}
               isChangingSource={isChangingSource} isInitialLoading={isInitialLoading}
@@ -1012,10 +867,6 @@ const VideoPlayerScreen = () => {
                     season: String(episodeDetails.season || season || 1),
                     episode: String(episodeDetails.episode || episode || 1),
                     episodeTitle: encodeURIComponent(episodeDetails.episodeTitle || `Episode ${episodeDetails.episode || episode || 1}`),
-                    streamUrl: encodeURIComponent(String(directStreamUrl || videoUrl || '')),
-                    isTorrent: isTorrentMode ? 'true' : 'false',
-                    streamType: streamTypeParam || 'hls',
-                    isEmbed: isEmbedMode ? 'true' : 'false',
                     subtitles: encodeURIComponent(JSON.stringify(subtitleTracks)),
                   });
                   routerRef.current?.push(`/player?${queryParams.toString()}`);
@@ -1027,14 +878,6 @@ const VideoPlayerScreen = () => {
             <BufferingAlertModal
               visible={showBufferingAlert} onKeepBuffering={handleKeepBuffering}
               onRetryExtraction={handleRetryExtraction}
-            />
-            <SourceSelectionModal
-              visible={showSourceSelectionModal}
-              onClose={() => closeSourceModal(isUnmounting)}
-              sources={availableSourcesList}
-              onSelectSource={(source) => handleSelectSourceFromModal(source, position, isUnmounting, setShowControls)}
-              currentAttemptStatus={sourceAttemptStatus}
-              currentPlayingSourceName={currentPlayingSourceName}
             />
             <SubtitlesModal
               visible={showSubtitlesModal}

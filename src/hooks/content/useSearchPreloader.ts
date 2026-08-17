@@ -1,8 +1,10 @@
 // src/hooks/content/useSearchPreloader.ts
 import { useState, useEffect } from 'react';
 import { cacheManager } from '../../services/cache/CacheManager';
-import { unifiedMediaService } from '../../services/unified/UnifiedMediaService';
+import { MetadataAggregatorNew } from '../../services/unified/metadata/MetadataAggregatorNew';
 import { IMetadataResult } from '../../services/unified/types/MetadataTypes';
+
+const metadataAggregator = new MetadataAggregatorNew();
 
 const CATEGORIES = ['movies', 'tv', 'drama', 'anime', 'comedy', 'action', 'horror', 'sci-fi'];
 
@@ -53,10 +55,10 @@ export const useSearchPreloader = () => {
           return;
         }
 
-        await unifiedMediaService.initialize();
+        await metadataAggregator.initialize();
         // Fetch a larger pool than we need. The recency filter below is a
         // preference, not a hard cap — see backfill step.
-        const trending = await unifiedMediaService.getTrending(60);
+        const trending = await metadataAggregator.getTrending(60);
         const withPosters = trending.filter(item => !!item.poster);
 
         // Recent items first (these are what we actually want to show)...

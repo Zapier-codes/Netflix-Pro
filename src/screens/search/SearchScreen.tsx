@@ -31,11 +31,11 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
 // ─── Unified multi-source search engine ───
-import { unifiedMediaService } from '../../services/unified/UnifiedMediaService';
+import { metadataService } from '../../services/unified/MetadataService';
 import { IMetadataResult, DiscoverFilters } from '../../services/unified/types/MetadataTypes';
 
-// ─── MavinEngine for search suggestions ───
-import MavinEngine from '../../../modules/mavin-engine';
+// ─── Search suggestions (TMDB-backed) ───
+import { searchMedia } from '../../services/unified/metadata/TMDBMetadata';
 
 // Utils
 import { saveSearchQuery, getSearchHistory, removeSearchQuery, clearSearchHistory } from '../../utils/storage';
@@ -129,7 +129,7 @@ interface SearchFilters {
   type: 'all' | 'movie' | 'tv';
   year: string;
   minRating: number;
-  source: 'all' | 'tmdb' | 'kuryana' | 'moviebox' | 'consumet';
+  source: 'all' | 'tmdb' | 'kuryana';
   genres: string[];
   languages: string[];
   certifications: string[];
@@ -164,7 +164,7 @@ const CATEGORY_CARDS: {
     label: 'Anime', 
     icon: 'sparkles-outline',
     filters: { languages: ['ja'], countries: ['JP'], genres: ['Animation', 'Anime'] },
-    sources: ['tmdb', 'consumet'],
+    sources: ['tmdb'],
   },
   {
     label: 'Cartoons',
@@ -181,7 +181,7 @@ const CATEGORY_CARDS: {
       genres: ['Drama'],
       type: 'tv',
     },
-    sources: ['kuryana', 'consumet', 'tmdb'],
+    sources: ['kuryana', 'tmdb'],
   },
 ];
 
@@ -324,7 +324,6 @@ const filterDisplaySeasons = (seasons: any[]): number[] => {
 
 // ─── Number of TV shows to preload details for ───
 const PRELOAD_TV_DETAILS_COUNT = 20;
-const PRELOAD_STREAMS_COUNT = 10;
 
 const SearchScreen = () => {
   const { colors, isDark } = useTheme();
@@ -348,14 +347,11 @@ const SearchScreen = () => {
     setLastFetchedAt,
     // ─── NEW: Preloaded data actions ───
     setPreloadedTVDetails,
-    setPreloadedStreams,
     setPreloadedSeason,
     batchPreloadTVDetails,
-    batchPreloadStreams,
     batchPreloadSeasons,
     hasPreloadedTVDetails,
     hasPreloadedStreams,
-    setLastStreamPreloadAt,
   } = usePreloadedMediaStore();
 
   const { recordSearch: recordSearchToSupabase } = useSearchAggregation();
@@ -456,20 +452,20 @@ const SearchScreen = () => {
       setPreloadLoading(true);
       
       try {
-        await unifiedMediaService.initialize();
+        await metadataService.initialize();
         
         // ─── Step 1: Fetch all categories in parallel ───
         const [trending, popular, topRated, anime, movies, tvShows] = await Promise.all([
-          unifiedMediaService.getTrending(30),
-          unifiedMediaService.discover({ sortBy: 'popularity.desc', type: 'movie' }, 30),
-          unifiedMediaService.discover({ sortBy: 'vote_average.desc', type: 'movie' }, 30),
-          unifiedMediaService.discover({ 
+          metadataService.getTrending(30),
+          metadataService.discover({ sortBy: 'popularity.desc', type: 'movie' }, 30),
+          metadataService.discover({ sortBy: 'vote_average.desc', type: 'movie' }, 30),
+          metadataService.discover({ 
             genres: ['Animation', 'Anime'], 
             languages: ['ja'], 
             type: 'tv' 
           }, 30),
-          unifiedMediaService.discover({ type: 'movie' }, 30),
-          unifiedMediaService.discover({ type: 'tv' }, 30),
+          metadataService.discover({ type: 'movie' }, 30),
+          metadataService.discover({ type: 'tv' }, 30),
         ]);
         
         // Combine all items for the main pool
@@ -501,7 +497,7 @@ const SearchScreen = () => {
         
         const tvDetailsPromises = tvItemsToPreload.map(async (item: any) => {
           try {
-            const details = await unifiedMediaService.getById(item.id, 'tv');
+            const details = await metadataService.getById(item.id, 'tv');
             if (details) {
               const displaySeasons = details.displaySeasons || filterDisplaySeasons(details.seasons || []);
               return {
@@ -537,7 +533,7 @@ const SearchScreen = () => {
             try {
               if (detail.displaySeasons && detail.displaySeasons.length > 0) {
                 const seasonNum = detail.displaySeasons[0];
-                const seasonData = await unifiedMediaService.getSeasonDetails?.(parseInt(detail.id), seasonNum);
+                const seasonData = await metadataService.getSeasonDetails?.(parseInt(detail.id), seasonNum);
                 if (seasonData && seasonData.episodes) {
                   return {
                     tvId: detail.id,
@@ -564,51 +560,6 @@ const SearchScreen = () => {
             batchPreloadSeasons(validSeasons);
             console.log(`[Preloader] ✅ Preloaded ${validSeasons.length} season 1 data`);
           }
-        }
-        
-        // ─── Step 4: Pre-extract streams for popular content ───
-        console.log('[Preloader] ⚡ Pre-extracting streams...');
-        const allPopularItems = [...trending, ...popular, ...movies, ...tvShows];
-        const itemsToPreloadStreams = allPopularItems.slice(0, PRELOAD_STREAMS_COUNT);
-        
-        const streamPromises = itemsToPreloadStreams.map(async (item: any) => {
-          try {
-            const isTV = item.type === 'tv' || item.media_type === 'tv';
-            const streams = await unifiedMediaService.preloadStreams?.(
-              item.id,
-              isTV ? 'tv' : 'movie',
-              isTV ? 1 : undefined,
-              isTV ? 1 : undefined
-            );
-            
-            if (streams && streams.length > 0) {
-              const qualities = streams.map(s => s.quality).filter(Boolean) as string[];
-              const uniqueQualities = Array.from(new Set(qualities));
-              
-              return {
-                id: item.id,
-                type: isTV ? 'tv' : 'movie',
-                season: isTV ? 1 : undefined,
-                episode: isTV ? 1 : undefined,
-                streams: streams,
-                qualities: uniqueQualities,
-                extractedAt: new Date().toISOString(),
-              };
-            }
-            return null;
-          } catch (error) {
-            console.warn(`[Preloader] ⚠️ Failed to preload streams for ${item.id}:`, error);
-            return null;
-          }
-        });
-        
-        const streamResults = await Promise.all(streamPromises);
-        const validStreams = streamResults.filter((s): s is any => s !== null);
-        
-        if (validStreams.length > 0) {
-          batchPreloadStreams(validStreams);
-          setLastStreamPreloadAt(new Date().toISOString());
-          console.log(`[Preloader] ✅ Pre-extracted streams for ${validStreams.length} items`);
         }
         
         setPreloadInitialized(true);
@@ -665,7 +616,7 @@ const SearchScreen = () => {
 
   useEffect(() => {
     if (!engineInitialized.current) {
-      unifiedMediaService.initialize().catch((err) =>
+      metadataService.initialize().catch((err) =>
         console.error('[Search] Failed to initialize unified media service:', err)
       );
       engineInitialized.current = true;
@@ -719,7 +670,7 @@ const SearchScreen = () => {
 
     try {
       console.log('[Discover] 🔧 Ensuring UnifiedMediaService is initialized...');
-      await unifiedMediaService.initialize();
+      await metadataService.initialize();
       console.log('[Discover] ✅ UnifiedMediaService is ready');
 
       const activeUIFilters = filtersRef.current;
@@ -749,9 +700,9 @@ const SearchScreen = () => {
           : {}),
       };
 
-      console.log(`[Discover] 🔄 Calling unifiedMediaService.discover() with filters:`, JSON.stringify(discoverFilters, null, 2));
+      console.log(`[Discover] 🔄 Calling metadataService.discover() with filters:`, JSON.stringify(discoverFilters, null, 2));
       
-      const searchResults = await unifiedMediaService.discover(discoverFilters);
+      const searchResults = await metadataService.discover(discoverFilters);
 
       console.log(`[Discover] 📥 Received ${searchResults.length} results from discover`);
 
@@ -849,7 +800,7 @@ const SearchScreen = () => {
 
     try {
       console.log('[Search] 🔧 Ensuring UnifiedMediaService is initialized...');
-      await unifiedMediaService.initialize();
+      await metadataService.initialize();
       console.log('[Search] ✅ UnifiedMediaService is ready');
 
       const currentFilters = filtersRef.current;
@@ -900,9 +851,9 @@ const SearchScreen = () => {
         );
       }
 
-      console.log(`[Search] 📤 Calling unifiedMediaService.search() with options:`, JSON.stringify(searchOptions, null, 2));
+      console.log(`[Search] 📤 Calling metadataService.search() with options:`, JSON.stringify(searchOptions, null, 2));
 
-      const searchResults = await unifiedMediaService.search(searchOptions);
+      const searchResults = await metadataService.search(searchOptions);
 
       console.log(`[Search] 📥 Received ${searchResults.length} results from search`);
 
@@ -963,7 +914,7 @@ const SearchScreen = () => {
     }
   }, [loadSearchHistory, recordSearchToSupabase, showToast, resetToDiscover]);
 
-  // ─── Debounced search suggestions using MavinEngine ───
+  // ─── Debounced search suggestions (TMDB multi-search) ───
   useEffect(() => {
     if (skipQueryEffectRef.current) {
       skipQueryEffectRef.current = false;
@@ -984,12 +935,15 @@ const SearchScreen = () => {
     suggestionsTimeout.current = setTimeout(async () => {
       try {
         console.log(`[Suggestions] 🔍 Fetching suggestions for: "${query}"`);
-        const result = await MavinEngine.getSearchSuggestions(query, 0);
-        if (result && result.suggestions) {
-          const suggestionList = result.suggestions.slice(0, 6);
+        const results = await searchMedia(query);
+        const titles = results
+          .map((item: any) => item.title || item.name)
+          .filter((title: string | undefined): title is string => Boolean(title));
+        const suggestionList = Array.from(new Set(titles)).slice(0, 6);
+        if (suggestionList.length > 0) {
           console.log(`[Suggestions] ✅ Received ${suggestionList.length} suggestions:`, suggestionList);
           setSuggestions(suggestionList);
-          setShowSuggestions(suggestionList.length > 0);
+          setShowSuggestions(true);
         } else {
           console.log('[Suggestions] ⚠️ No suggestions returned');
           setSuggestions([]);
@@ -1201,7 +1155,7 @@ const SearchScreen = () => {
         // Fallback: fetch on demand
         try {
           console.log(`[Search] 📡 Fetching TV details for: "${item.title}"`);
-          const tvDetails = await unifiedMediaService.getById(item.id, 'tv');
+          const tvDetails = await metadataService.getById(item.id, 'tv');
           
           if (tvDetails) {
             numberOfSeasons = tvDetails.numberOfSeasons || 0;
@@ -1975,7 +1929,7 @@ const SearchScreen = () => {
         Search Movies & TV Shows
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-        Find content from TMDB, Kuryana, MovieBox, and Consumet
+        Find content from TMDB and Kuryana
       </Text>
       {renderTrendingSuggestionChips()}
     </View>

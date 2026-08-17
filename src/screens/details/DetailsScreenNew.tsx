@@ -29,7 +29,7 @@ import {
 } from '../../services/unified/metadata/TMDBMetadata';
 import { getDownloadSettings } from '../../utils/downloadStorage';
 import { buildFFmpegHeaders } from '../../utils/streamHeaders';
-import { apiService } from '../../api/ApiService';
+import { getPlaybackSource, LicensedPlaybackSource } from '../../services/licensedPlayback/LicensedPlaybackService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -97,11 +97,6 @@ type EpisodeViewMode = 'grid' | 'list';
 interface SupabaseAdBanner {
   id: string; image_url: string; link_url: string; cpm: number; click_count: number; is_active: boolean;
 }
-interface ApiStreamResponse {
-  status: number; info?: string; provider?: string;
-  sources?: Array<{ name: string; data: { stream: string; subtitle: string[]; quality: string; title: string; imdb_id: string; thumbnails: string; is_torrent?: boolean; magnet?: string; }; }>;
-  stream_url?: string; meta?: any;
-}
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -135,7 +130,6 @@ async function trackAdBannerClick(bannerId: string, currentClickCount: number): 
   }
 }
 
-const QUALITY_ORDER = ['1080p', '720p', '480p'];
 const MAX_RECOMMENDATIONS = 12;
 const WATCHLIST_KEY = 'search_screen_watchlist_ids';
 
@@ -170,33 +164,6 @@ const chunkEpisodesIntoPages = <T,>(items: T[], pageSize: number): T[][] => {
   const pages: T[][] = [];
   for (let i = 0; i < items.length; i += pageSize) pages.push(items.slice(i, i + pageSize));
   return pages;
-};
-
-const extractQuality = (source: any): string => {
-  if (source.data?.quality) {
-    const q = source.data.quality.toLowerCase();
-    if (q.includes('1080')) return '1080p';
-    if (q.includes('720')) return '720p';
-    if (q.includes('480')) return '480p';
-    return q;
-  }
-  return '720p';
-};
-
-const getBestStream = (sources: any[]): { url: string; quality: string; isTorrent: boolean } => {
-  if (!sources || sources.length === 0) return { url: '', quality: '720p', isTorrent: false };
-  const sorted = [...sources].sort((a, b) => {
-    const qA = extractQuality(a); const qB = extractQuality(b);
-    const idxA = QUALITY_ORDER.indexOf(qA); const idxB = QUALITY_ORDER.indexOf(qB);
-    if (idxA === -1 && idxB === -1) return 0;
-    if (idxA === -1) return 1;
-    if (idxB === -1) return -1;
-    return idxA - idxB;
-  });
-  const bestSource = sorted[0];
-  const url = bestSource.data?.stream || bestSource.data?.url || '';
-  const isTorrent = bestSource.data?.is_torrent === true || (url && url.includes('webtor.io/embed'));
-  return { url, quality: extractQuality(bestSource), isTorrent };
 };
 
 const isTorrentUrl = (url: string): boolean => {
@@ -463,85 +430,36 @@ const DetailsScreenNew: React.FC = () => {
     try {
       const seasonToUse = seasonNum || selectedSeason || 1;
       const episodeToUse = episodeNum || 1;
-      console.log(`[Details] 🔍 Fetching stream from API for TMDB ID: ${tmdbId}, S${seasonToUse}E${episodeToUse}`);
+      console.log(`[Details] 🔍 Fetching licensed playback source for TMDB ID: ${tmdbId}, S${seasonToUse}E${episodeToUse}`);
 
-      // Check preloaded streams
-      const preloadedStreams = usePreloadedMediaStore.getState().getPreloadedStreams(String(mediaId));
-      if (preloadedStreams && preloadedStreams.streams.length > 0) {
-        console.log('[Details] ⚡ Using preloaded stream');
-        const stream = preloadedStreams.streams[0];
-        const isTorrent = stream.url && stream.url.includes('webtor.io/embed');
-        const result = { url: stream.url, quality: '720p', isTorrent, allSources: preloadedStreams.streams.map((s: any) => ({ data: { stream: s.url, quality: '720p' } })), provider: 'preloaded' };
-        setStreamData(result);
-        setSelectedStreamUrl(result.url);
-        setSelectedProvider('preloaded');
-        setIsTorrentStream(result.isTorrent);
-        const qualities: DownloadQuality[] = preloadedStreams.qualities.map(q => ({ label: q, resolution: q, size: 'Unknown', sizeBytes: 0, url: result.url, provider: 'preloaded', isRecommended: q === '480p' }));
-        setDownloadQualities(qualities);
-        if (!isTVShow && qualities.length > 0) setPendingQuality(qualities[0]);
-        setIsExtractingStream(false);
-        return result;
-      }
+      const source: LicensedPlaybackSource = await getPlaybackSource({
+        tmdbId,
+        mediaType: isTVShow ? 'tv' : 'movie',
+        season: isTVShow ? seasonToUse : undefined,
+        episode: isTVShow ? episodeToUse : undefined,
+      });
 
-      // Fetch from API
-      let apiUrl = '';
-      if (isTVShow) {
-        apiUrl = `${apiService.baseUrl}/stream/${tmdbId}?s=${seasonToUse}&e=${episodeToUse}&title=${encodeURIComponent(displayTitle)}`;
-      } else {
-        apiUrl = `${apiService.baseUrl}/stream/${tmdbId}?title=${encodeURIComponent(displayTitle)}`;
-      }
-      console.log(`[Details] 📡 Calling API: ${apiUrl}`);
+      console.log(`[Details] ✅ Playback source: ${source.url} (${source.type})`);
 
-      const response = await fetch(apiUrl, { method: 'GET', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' } });
-      if (!response.ok) throw new Error(`API returned ${response.status}: ${response.statusText}`);
-
-      const responseData: ApiStreamResponse = await response.json();
-      console.log(`[Details] ✅ API Response received`);
-
-      let streamUrl = ''; let isTorrent = false; let quality = '720p'; let allSources: any[] = []; let provider = responseData.provider || 'api';
-
-      if (responseData && responseData.sources && responseData.sources.length > 0) {
-        allSources = responseData.sources;
-        const best = getBestStream(responseData.sources);
-        streamUrl = best.url; quality = best.quality; isTorrent = best.isTorrent;
-        if (!isTorrent) isTorrent = responseData.sources.some((s: any) => s.data?.is_torrent === true || (s.data?.stream && s.data.stream.includes('webtor.io/embed')));
-        console.log(`[Details] ✅ Stream URL: ${streamUrl}, Quality: ${quality}, Torrent: ${isTorrent}`);
-      } else if (responseData && responseData.stream_url) {
-        streamUrl = responseData.stream_url;
-        isTorrent = streamUrl && streamUrl.includes('webtor.io/embed');
-        quality = '720p';
-        allSources = [{ data: { stream: streamUrl, quality: '720p' } }];
-        provider = responseData.provider || 'api';
-        console.log(`[Details] ✅ Using stream_url: ${streamUrl}, Torrent: ${isTorrent}`);
-      } else {
-        console.warn('[Details] ❌ No sources in API response');
-        setIsExtractingStream(false);
-        return null;
-      }
-
-      if (!streamUrl) { setIsExtractingStream(false); return null; }
-
-      const result = { url: streamUrl, quality, isTorrent, allSources, provider };
+      const result = { url: source.url, quality: 'HD', isTorrent: false, allSources: [source], provider: 'licensed' };
       setStreamData(result);
-      setSelectedStreamUrl(streamUrl);
-      setSelectedProvider(provider);
-      setIsTorrentStream(isTorrent);
+      setSelectedStreamUrl(result.url);
+      setSelectedProvider('licensed');
+      setIsTorrentStream(false);
 
-      const qualities: DownloadQuality[] = allSources.map((source, index) => ({
-        label: extractQuality(source), resolution: extractQuality(source), size: 'Unknown', sizeBytes: 0,
-        url: source.data?.stream || source.data?.url || streamUrl, provider, isRecommended: index === 0,
-      }));
-      const uniqueQualities = qualities.filter((q, index, self) => index === self.findIndex(t => t.label === q.label));
-      setDownloadQualities(uniqueQualities);
-      if (!isTVShow && uniqueQualities.length > 0) setPendingQuality(uniqueQualities[0]);
+      const qualities: DownloadQuality[] = [
+        { label: 'HD', resolution: 'HD', size: 'Unknown', sizeBytes: 0, url: result.url, provider: 'licensed', isRecommended: true },
+      ];
+      setDownloadQualities(qualities);
+      if (!isTVShow) setPendingQuality(qualities[0]);
       setIsExtractingStream(false);
       return result;
     } catch (error) {
-      console.error('[Details] ❌ API stream extraction failed:', error);
+      console.warn('[Details] Licensed playback source unavailable:', error);
       setIsExtractingStream(false);
       return null;
     }
-  }, [tmdbId, mediaId, isTVShow, selectedSeason, displayTitle]);
+  }, [tmdbId, isTVShow, selectedSeason]);
 
   useEffect(() => { extractStreamFromAPI(); }, [extractStreamFromAPI]);
 
@@ -703,32 +621,29 @@ const DetailsScreenNew: React.FC = () => {
           const outputPath = `${downloadsDir}/${id}_${quality.label}.mp4`;
           try {
             let epStreamUrl = streamData.url;
+            let epReferer: string | undefined;
             try {
-              const apiUrl = `${apiService.baseUrl}/stream/${tmdbId}?s=${ep.seasonNumber}&e=${ep.episodeNumber}&title=${encodeURIComponent(displayTitle)}`;
-              const response = await fetch(apiUrl);
-              if (response.ok) {
-                const data: ApiStreamResponse = await response.json();
-                if (data && data.sources && data.sources.length > 0) {
-                  const best = getBestStream(data.sources);
-                  if (best.url) { if (best.isTorrent) throw new Error('Torrent streams cannot be downloaded'); epStreamUrl = best.url; }
-                } else if (data && data.stream_url) {
-                  const url = data.stream_url;
-                  if (url && url.includes('webtor.io/embed')) throw new Error('Torrent streams cannot be downloaded');
-                  epStreamUrl = url;
-                }
+              const epSource = await getPlaybackSource({
+                tmdbId,
+                mediaType: 'tv',
+                season: ep.seasonNumber,
+                episode: ep.episodeNumber,
+              });
+              if (epSource.url) {
+                epStreamUrl = epSource.url;
+                epReferer = epSource.headers?.Referer;
               }
             } catch (extractError) {
-              console.warn(`[Download] Per-episode API extraction failed for S${ep.seasonNumber}E${ep.episodeNumber}:`, extractError);
+              console.warn(`[Download] Per-episode licensed source lookup failed for S${ep.seasonNumber}E${ep.episodeNumber}:`, extractError);
               throw new Error('Failed to fetch episode stream');
             }
             if (!epStreamUrl) throw new Error('No stream URL available for this episode');
-            addDownload({ id, title, mediaType: 'tv', tmdbId: String(mediaId), posterPath: displayPoster, quality: quality.label, size: quality.size, sizeBytes: quality.sizeBytes, provider: quality.provider || 'api', season: ep.seasonNumber, episode: ep.episodeNumber, episodeTitle: ep.title, filePath: outputPath });
-            const referer = `https://netflix-tf79.onrender.com/`;
+            addDownload({ id, title, mediaType: 'tv', tmdbId: String(mediaId), posterPath: displayPoster, quality: quality.label, size: quality.size, sizeBytes: quality.sizeBytes, provider: quality.provider || 'licensed', season: ep.seasonNumber, episode: ep.episodeNumber, episodeTitle: ep.title, filePath: outputPath });
             const { sessionId, result } = await startFFmpegDownload(epStreamUrl, outputPath, (percent) => {
               const totalProgress = ((completedCount + percent / 100) / total) * 100;
               setDownloadProgress(totalProgress);
               setDownloadStatusText(`Downloading ${completedCount + 1}/${total} episodes`);
-            }, referer);
+            }, epReferer);
             episodeFfmpegSessionIdsRef.current.set(id, sessionId);
             const outcome = await result;
             episodeFfmpegSessionIdsRef.current.delete(id);
@@ -756,14 +671,14 @@ const DetailsScreenNew: React.FC = () => {
 
       const outputPath = `${downloadsDir}/${mediaType}_${mediaId}_${quality.label}.mp4`;
       ffmpegSessionIdRef.current = null;
-      const referer = `https://netflix-tf79.onrender.com/`;
+      const referer = (streamData.allSources?.[0] as LicensedPlaybackSource | undefined)?.headers?.Referer;
       const { sessionId, result } = await startFFmpegDownload(streamData.url, outputPath, (percent) => setDownloadProgress(percent), referer);
       ffmpegSessionIdRef.current = sessionId;
       const outcome = await result;
       ffmpegSessionIdRef.current = null;
       if (outcome.success) {
         setIsDownloading(false); setDownloadProgress(0); setDownloadStatusText('Download Now'); setPendingQuality(null); setIsDownloadDropdownOpen(false);
-        addDownload({ id: `${mediaType}_${mediaId}`, title: displayTitle, mediaType: mediaType as 'movie' | 'tv', tmdbId: String(mediaId), posterPath: displayPoster, quality: quality.label, size: quality.size, sizeBytes: quality.sizeBytes, provider: quality.provider || 'api', filePath: outputPath });
+        addDownload({ id: `${mediaType}_${mediaId}`, title: displayTitle, mediaType: mediaType as 'movie' | 'tv', tmdbId: String(mediaId), posterPath: displayPoster, quality: quality.label, size: quality.size, sizeBytes: quality.sizeBytes, provider: quality.provider || 'licensed', filePath: outputPath });
       } else if (outcome.cancelled) {
         setIsDownloading(false); setDownloadProgress(0); setDownloadStatusText('Download Now');
       } else {

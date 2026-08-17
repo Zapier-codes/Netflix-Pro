@@ -2,10 +2,9 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, Text, Platform } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider as ReduxProvider } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -35,22 +34,8 @@ import { networkService } from '../src/services/networkService';
 // Download Manager
 import downloadManager from '../src/services/downloadManager/DownloadManager';
 
-// Stream Sources
-import { initializeStreamSources } from '../src/services/unified/providers/vidsrc/VidSrcProvider';
-
-// UNIFIED MEDIA SERVICE - The main orchestrator
-// This is the singleton instance exported from UnifiedMediaService.ts
-import { unifiedMediaService } from '../src/services/unified/UnifiedMediaService';
-
 // Thriller Preloader
 import { thrillerPreloader } from '../src/services/preloader/ThrillerPreloader';
-
-// Pawns consent + SDK
-import { EarningsConsentGate, CONSENT_STORAGE_KEY, checkAndShowConsent } from '../src/components/EarningsConsentGate';
-import { initialize as initializePawns } from '../modules/pawns';
-
-// BoxOffice Engine
-import { boxOffice } from '../modules/boxoffice';
 
 // App Update Checker
 import { checkForUpdates, getCheckForUpdatesSetting } from '../src/utils/updateChecker';
@@ -58,9 +43,6 @@ import { checkForUpdates, getCheckForUpdatesSetting } from '../src/utils/updateC
 // ─── TMDB API ───
 // Import from the correct location: src/services/unified/metadata/TMDBMetadata.ts
 import tmdbApi from '../src/services/unified/metadata/TMDBMetadata';
-
-// Environment
-const PAWNS_API_KEY = process.env.EXPO_PUBLIC_PAWNS_API_KEY ?? '';
 
 // ─── ───────────────────────────────────────────────────────────── ───
 // ─── SINGLE VIDEO PLAYER INITIALIZATION ───
@@ -169,38 +151,6 @@ async function initializeAllServices(): Promise<void> {
         // Non-fatal: player will be created lazily
       }
 
-      // ─── STEP 1: Initialize BoxOffice Engine ───
-      try {
-        console.log('[BoxOffice] Initializing engine...');
-        const configResult = await boxOffice.configure({
-          apiVersion: 'v2',
-          downloadDir: '',
-          captionLanguage: 'English',
-          quality: 'best',
-        });
-        if (!configResult.success) {
-          console.warn('[BoxOffice] Config warning:', configResult.error);
-        }
-        const startResult = await boxOffice.start();
-        if (startResult.success) {
-          console.log('[BoxOffice] Engine running');
-        } else {
-          console.warn('[BoxOffice] Start failed:', startResult.error);
-        }
-      } catch (err) {
-        console.error('[BoxOffice] Init error:', err);
-        // Non-fatal: app works without boxoffice
-      }
-
-      // ─── STEP 2: Initialize Unified Media Service ───
-      try {
-        console.log('[App] Initializing Unified Media Service...');
-        await unifiedMediaService.initialize();
-        console.log('[App] Unified Media Service initialized');
-      } catch (err) {
-        console.error('[App] Unified Media Service failed:', err);
-      }
-
       // ─── STEP 3: Initialize Network Service ───
       try {
         await networkService.initialize();
@@ -215,14 +165,6 @@ async function initializeAllServices(): Promise<void> {
         console.log('[App] Download manager initialized');
       } catch (err) {
         console.error('[App] Download manager failed:', err);
-      }
-
-      // ─── STEP 5: Initialize Stream Sources ───
-      try {
-        const sources = await initializeStreamSources();
-        console.log('[App] Stream sources initialized:', sources?.length || 0, 'sources');
-      } catch (err) {
-        console.error('[App] Stream sources failed:', err);
       }
 
       moduleInitComplete = true;
@@ -327,7 +269,6 @@ function ErrorScreen({ error, onRetry }: { error: string; onRetry: () => void })
 // MAIN APP CONTENT
 // ============================================
 function AppContent() {
-  const router = useRouter();
   const { colors, isDark } = useTheme();
   const {
     isInitialized,
@@ -339,15 +280,7 @@ function AppContent() {
   } = useAppStore();
 
   const [error, setError] = useState<string | null>(null);
-  const [showConsentGate, setShowConsentGate] = useState(false);
   const [servicesReady, setServicesReady] = useState(false);
-
-  // ============================================
-  // PAWNS SETTINGS NAVIGATION
-  // ============================================
-  const handleOpenSettings = useCallback(() => {
-    router.push('/(tabs)/settings');
-  }, [router]);
 
   // ============================================
   // PRELOAD CONTENT DATA
@@ -460,39 +393,8 @@ function AppContent() {
     return () => {
       clearTimeout(refreshTimer);
       networkService.destroy();
-      // Stop boxoffice engine on unmount
-      boxOffice.stop().catch(() => {});
     };
   }, [servicesReady]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ============================================
-  // PAWNS CONSENT — RESTORE OR PROMPT
-  // ============================================
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    if (!PAWNS_API_KEY) {
-      console.warn('[App] EXPO_PUBLIC_PAWNS_API_KEY not set — skipping Pawns consent flow');
-      return;
-    }
-
-    (async () => {
-      try {
-        const priorDecision = await AsyncStorage.getItem(CONSENT_STORAGE_KEY);
-
-        if (priorDecision) {
-          await initializePawns(PAWNS_API_KEY);
-          console.log('[App] Pawns SDK restored for this session');
-          return;
-        }
-
-        const shouldShow = await checkAndShowConsent();
-        if (shouldShow) setShowConsentGate(true);
-      } catch (err) {
-        console.warn('[App] Pawns consent check failed:', err);
-      }
-    })();
-  }, [isInitialized]);
 
   // ============================================
   // APP UPDATE CHECK — JS bundle + native APK
@@ -550,18 +452,9 @@ function AppContent() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="movie/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="sports" options={{ headerShown: false }} />
         <Stack.Screen name="player/[id]" options={{ headerShown: false }} />
         {/* search route is handled by app/search/index.tsx - no need to define here */}
       </Stack>
-      {PAWNS_API_KEY ? (
-        <EarningsConsentGate
-          visible={showConsentGate}
-          onDismiss={() => setShowConsentGate(false)}
-          onOpenSettings={handleOpenSettings}
-          apiKey={PAWNS_API_KEY}
-        />
-      ) : null}
     </SafeAreaProvider>
   );
 }

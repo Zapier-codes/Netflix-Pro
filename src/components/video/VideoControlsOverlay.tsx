@@ -40,7 +40,6 @@ const VideoControlsOverlay = ({
   onToggleMute,
   onSeekBackward,
   onSeekForward,
-  onOpenSourceModal,
   onToggleEpisodes,
   onToggleSubtitles,
   subtitlesEnabled,
@@ -82,16 +81,6 @@ const VideoControlsOverlay = ({
             </Text>
           </View>
           <View style={styles.topRightButtons}>
-            {!isLiveStream && (
-              <TouchableOpacity onPress={onOpenSourceModal} style={styles.controlButton} disabled={isInitialLoading || !videoUrl}>
-                {isChangingSource ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <Ionicons name="cloudy" size={24} color="white" />
-                )}
-              </TouchableOpacity>
-            )}
-
             {mediaType === 'tv' && !isLiveStream && (
               <TouchableOpacity onPress={onToggleEpisodes} style={styles.controlButton}>
                 <Ionicons name="albums-outline" size={24} color="white" />

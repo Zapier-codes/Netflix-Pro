@@ -98,8 +98,8 @@ export const buildStreamHeaders = (
   };
 
   // Extract domain for Origin and Referer
-  let originToUse = 'https://vidsrc.su';
-  let refererToUse = 'https://vidsrc.su/';
+  let originToUse = '';
+  let refererToUse = '';
 
   if (referer) {
     try {
@@ -124,12 +124,8 @@ export const buildStreamHeaders = (
     }
   }
 
-  headers['Origin'] = originToUse;
-  
-  // Don't set Referer for certain URLs to avoid detection
-  if (refererToUse && url && !url.includes("fleurixsun.xyz")) {
-    headers['Referer'] = refererToUse;
-  }
+  if (originToUse) headers['Origin'] = originToUse;
+  if (refererToUse) headers['Referer'] = refererToUse;
 
   // Merge custom headers if provided
   if (options?.customHeaders) {

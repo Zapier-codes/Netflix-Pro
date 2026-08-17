@@ -35,9 +35,7 @@ import {
   cleanupTempFile,
 } from '../../utils/downloadStorage';
 import { getImageUrl } from '../unified/metadata/TMDBMetadata';
-
-// Note: getActiveStreamSources is now imported via require in fetchAndStartDownload
-// to avoid circular dependency issues with the unified providers
+import { getDownloadSource } from '../licensedPlayback/LicensedPlaybackService';
 
 class DownloadManager {
   private activeDownloads: Map<any, any>;
@@ -192,41 +190,14 @@ class DownloadManager {
 
   async fetchAndStartDownload(entry: any) {
     try {
-      // Use require to avoid circular dependency with unified providers
-      const { getActiveStreamSources } = require('../../services/unified/providers/vidsrc/VidSrcProvider');
-      const sources = getActiveStreamSources();
+      const result = await getDownloadSource({
+        tmdbId: entry.tmdbId,
+        mediaType: entry.mediaType === 'tv' ? 'tv' : 'movie',
+        season: entry.season,
+        episode: entry.episode,
+      });
 
-      const fluxSource = sources.find((s: any) => s.name === 'FluxSource');
-
-      if (!fluxSource) {
-        throw new Error('FluxSource not available for downloads');
-      }
-
-      let fetchUrl;
-      if (entry.mediaType === 'tv') {
-        fetchUrl = `${fluxSource.baseUrl}?tmdbId=${entry.tmdbId}&season=${entry.season}&episode=${entry.episode}`;
-      } else {
-        fetchUrl = `${fluxSource.baseUrl}?tmdbId=${entry.tmdbId}`;
-      }
-
-      const timeoutMs = (fluxSource.timeoutInSeconds || 15) * 1000;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-      let response;
-      try {
-        response = await fetch(fetchUrl, { signal: controller.signal });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      const result = await response.json();
-
-      if (result.error || !result.url) {
-        throw new Error(result.error || 'No stream URL found');
-      }
-
-      await this.setStreamUrlForDownload(entry.id, result.url, result.referer);
+      await this.setStreamUrlForDownload(entry.id, result.url, result.headers?.Referer);
 
       this.pendingFetches.delete(entry.id);
 

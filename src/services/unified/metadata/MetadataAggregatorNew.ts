@@ -34,8 +34,6 @@
 import { IMetadataResult, SearchRequest, DiscoverFilters, ISeason } from '../../unified/types/MetadataTypes';
 import { TMDBMetadataAdapter } from './adapters/TMDBMetadataAdapter';
 import { KuryanaMetadataAdapter } from './adapters/KuryanaMetadataAdapter';
-import { MovieBoxMetadataAdapter } from './adapters/MovieBoxMetadataAdapter';
-import { ConsumetMetadataAdapter } from './adapters/ConsumetMetadataAdapter';
 import { TraktMetadataAdapter } from './adapters/TraktMetadataAdapter';
 
 // Sort option literal type
@@ -229,8 +227,6 @@ export class MetadataAggregatorNew {
     this.providers = [
       new TMDBMetadataAdapter(),      // Primary movie/TV metadata
       new KuryanaMetadataAdapter(),   // Asian dramas metadata
-      new MovieBoxMetadataAdapter(),  // MovieBox with Consumet search fallback
-      new ConsumetMetadataAdapter(),  // Anime and general content
       new TraktMetadataAdapter(),     // Social metadata, trending, recommendations
     ];
     console.log('[MetadataAggregator] Registered providers:', this.providers.map(p => p.name));
@@ -545,7 +541,7 @@ export class MetadataAggregatorNew {
     // until KuryanaMetadataAdapter/ConsumetMetadataAdapter's discover()
     // implementations are actually fixed; opting them back in here won't by
     // itself make their broken endpoints start returning results.
-    const DISCOVER_DISABLED_PROVIDER_IDS = new Set(['kuryana', 'moviebox', 'consumet', 'trakt']);
+    const DISCOVER_DISABLED_PROVIDER_IDS = new Set(['kuryana', 'trakt']);
     const requestedSources = (filters as DiscoverFilters & { sources?: string[] }).sources;
     const discoverProviders = requestedSources && requestedSources.length > 0
       ? this.providers.filter(p => requestedSources.includes(p.id))

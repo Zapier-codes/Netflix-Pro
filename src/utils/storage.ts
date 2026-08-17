@@ -11,28 +11,12 @@ const MAX_SEARCH_HISTORY_ITEMS = 15;
 const LAST_SUBTITLE_LANG_KEY = 'lastSubtitleLanguage';
 const SUBTITLES_ENABLED_KEY = 'subtitlesEnabled'; // New key for enabled state
 
-// --- Stream Source Order ---
-const STREAM_SOURCE_ORDER_KEY = 'streamSourceOrder';
-const STREAM_SOURCE_SIGNATURE_KEY = 'streamSourceSignature';
-
 export const STORAGE_KEYS = {
   DOWNLOADS_INDEX: 'downloads_index',
   DOWNLOAD_SETTINGS: 'download_settings',
-  STREAM_SOURCES_ORDER: 'stream_sources_order',
   CHECK_UPDATES: 'check_updates',
   LAST_UPDATE_CHECK: 'last_update_check',
 };
-
-export const FLUX_SOURCE_URL = 'https://streamprovider.byteful.me/';
-
-// Define default sources here, so it's accessible by other modules if needed
-// This should match the `name` property of the sources in vidsrcApi.js
-// Also include defaultBaseUrl which will be used by vidsrcApi.js if a source is newly added.
-export const DEFAULT_STREAM_SOURCES = [
-  { name: 'FluxSource', timeoutInSeconds: 15, type: 'direct', defaultBaseUrl: FLUX_SOURCE_URL },
-  // { name: 'hexa.su', timeoutInSeconds: 10, type: 'direct', defaultBaseUrl: 'https://hexa.su/watch' },
-  { name: 'cineby.gd', timeoutInSeconds: 10, type: 'direct', defaultBaseUrl: 'https://cineby.gd' },
-];
 
 // --- Downloads Directory / Content Path Helpers ---
 
@@ -404,70 +388,6 @@ export const getLastSelectedSubtitleLanguage = getSubtitleLanguagePreference;
 
 // --- End Subtitle Preference Functions ---
 
-export const saveStreamSourceOrder = async (sourceOrder: any[]) => {
-  // sourceOrder should be an array of objects like: { name: 'vidsrc.cc', timeoutInSeconds: 20 }
-  // We only really need to store the names and their order. Timeouts can be part of this object too.
-  try {
-    const storableOrder = sourceOrder.map(s => ({ name: s.name, timeoutInSeconds: s.timeoutInSeconds }));
-    await AsyncStorage.setItem(STREAM_SOURCE_ORDER_KEY, JSON.stringify(storableOrder));
-  } catch (error) {
-    console.error('Error saving stream source order:', error);
-  }
-};
-
-export const getStreamSourceOrder = async () => {
-  try {
-    // Create a signature of the current default sources to detect updates
-    const defaultSourceSignature = JSON.stringify(DEFAULT_STREAM_SOURCES.map(s => s.name));
-    const storedSignature = await AsyncStorage.getItem(STREAM_SOURCE_SIGNATURE_KEY);
-
-    let storedOrderJson = null;
-
-    // If the signature has changed, it means the default list was updated.
-    // In this case, we reset the user's stored order to the new defaults.
-    if (defaultSourceSignature !== storedSignature) {
-      await AsyncStorage.removeItem(STREAM_SOURCE_ORDER_KEY);
-      await AsyncStorage.setItem(STREAM_SOURCE_SIGNATURE_KEY, defaultSourceSignature);
-      // storedOrderJson remains null, so the logic below will use the new defaults.
-    } else {
-      // Signatures match, so we can safely load the user's custom order.
-      storedOrderJson = await AsyncStorage.getItem(STREAM_SOURCE_ORDER_KEY);
-    }
-
-    let effectiveOrder = [...DEFAULT_STREAM_SOURCES.map(s => ({ ...s }))]; // Start with a deep copy of defaults
-
-    if (storedOrderJson) {
-      const storedOrder = JSON.parse(storedOrderJson);
-      // Create a new array based on storedOrder, validating against DEFAULT_STREAM_SOURCES
-      const orderedFromStorage = storedOrder.map((storedSource: any) => {
-        const defaultDetail = DEFAULT_STREAM_SOURCES.find(ds => ds.name === storedSource.name);
-        if (defaultDetail) {
-          // Merge stored order with default details to ensure consistency
-          return {
-            ...defaultDetail, // Start with all default properties
-            name: storedSource.name, // The name is the key identifier
-          };
-        }
-        return null; // This source from storage is no longer in defaults
-      }).filter(Boolean); // Remove nulls
-
-      // Add any new default sources that weren't in the stored order
-      const newSources = DEFAULT_STREAM_SOURCES.filter((defaultSource: any) =>
-        !orderedFromStorage.some((os: any) => os.name === defaultSource.name)
-      );
-
-      effectiveOrder = [...orderedFromStorage, ...newSources.map((s: any) => ({ ...s }))];
-    }
-
-    return effectiveOrder;
-
-  } catch (error) {
-    console.error('Error getting stream source order:', error);
-    return [...DEFAULT_STREAM_SOURCES.map(s => ({ ...s }))]; // Return a deep copy on error
-  }
-};
-// --- End Stream Source Order ---
-
 export default {
   saveWatchProgress,
   getWatchProgress,
@@ -490,13 +410,8 @@ export default {
   getSubtitleLanguagePreference,
   saveLastSelectedSubtitleLanguage,
   getLastSelectedSubtitleLanguage,
-  // Stream Source Order
-  saveStreamSourceOrder,
-  getStreamSourceOrder,
-  DEFAULT_STREAM_SOURCES,
   // Downloads helpers
   STORAGE_KEYS,
-  FLUX_SOURCE_URL,
   getDownloadsDirectory,
   getContentDirectory,
   generateDownloadId,

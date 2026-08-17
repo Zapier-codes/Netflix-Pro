@@ -23,7 +23,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
 // Services
-import { notificationService, Notification, NotificationType } from '../../services/notification/NotificationService';
+import { notificationService, Notification, NotificationType } from '../../services/notifications/NotificationService';
 
 // Components
 import { AnimatedHeader } from '../../components/header/AnimatedHeader';
@@ -67,23 +67,23 @@ const formatNotificationBody = (notification: Notification): string => {
   
   switch (type) {
     case 'new_episode':
-      return `New episode of "${data?.showTitle || 'a show"}" is now available!`;
+      return `New episode of "${data?.showTitle || 'a show'}" is now available!`;
     case 'new_movie':
-      return `"${data?.movieTitle || 'A new movie"}" has been added to the catalog.`;
+      return `"${data?.movieTitle || 'A new movie'}" has been added to the catalog.`;
     case 'trending':
-      return `"${data?.title || 'A title"}" is trending in ${data?.category || 'your region'}.`;
+      return `"${data?.title || 'A title'}" is trending in ${data?.category || 'your region'}.`;
     case 'recommendation':
-      return `We think you'll love "${data?.title || 'this title"}' based on your watch history.`;
+      return `We think you'll love "${data?.title || 'this title'}" based on your watch history.`;
     case 'system':
       return data?.message || 'System notification';
     case 'update':
       return `App update available! Version ${data?.version || 'latest'} is ready.`;
     case 'reminder':
-      return `Don't forget to continue watching "${data?.title || 'your show"}'!`;
+      return `Don't forget to continue watching "${data?.title || 'your show'}"!`;
     case 'comment':
       return `${data?.username || 'Someone'} commented: "${data?.comment || '...'}"`;
     case 'like':
-      return `${data?.username || 'Someone'} liked your review of "${data?.title || 'a title"}'`;
+      return `${data?.username || 'Someone'} liked your review of "${data?.title || 'a title'}"`;
     case 'follow':
       return `${data?.username || 'Someone'} started following you!`;
     default:
