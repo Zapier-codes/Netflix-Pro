@@ -17,6 +17,7 @@ import { formatTime } from '../../utils/timeUtils';
 
 import { useVideoControls } from '../../hooks/useVideoControls';
 import { useBrightness } from '../../hooks/useBrightness';
+import { useVolume } from '../../hooks/useVolume';
 import { useBuffering } from '../../hooks/useBuffering';
 import { useSeekBar } from '../../hooks/useSeekBar';
 import { useGestures } from '../../hooks/useGestures';
@@ -314,7 +315,10 @@ const VideoPlayerScreen = () => {
   } = videoControls;
 
   const brightness = useBrightness(showControls);
-  const { brightnessLevel, hasBrightnessPermission, brightnessSliderRef, brightnessPanResponder } = brightness;
+  const { brightnessLevel, hasBrightnessPermission, brightnessSliderRef, brightnessPanResponder, handleBrightnessChange } = brightness;
+
+  const volume = useVolume(showControls);
+  const { volumeLevel, hasVolumePermission, volumeSliderRef, volumePanResponder, handleVolumeChange } = volume;
 
   const watchProgress = useWatchProgress({
     mediaId: String(mediaId || ''), mediaType: String(mediaType || 'movie'),
@@ -441,10 +445,15 @@ const VideoPlayerScreen = () => {
   });
   const {
     isSeeking, seekPreviewPosition, seekPreviewXPosition, progressBarRef, progressPanResponder,
+    beginExternalSeek, previewExternalSeek, commitExternalSeek, cancelExternalSeek,
   } = seekBar;
 
   const gestures = useGestures({
     player: activePlayer, isLiveStream, isPlaying, toggleControls, startControlsTimer,
+    duration, position,
+    beginExternalSeek, previewExternalSeek, commitExternalSeek, cancelExternalSeek,
+    handleBrightnessChange, brightnessLevel,
+    handleVolumeChange, volumeLevel,
   });
   const {
     isZoomed, screenDimensions, animatedScale, leftSeekAmount, rightSeekAmount,
@@ -971,6 +980,8 @@ const VideoPlayerScreen = () => {
               videoUrl={directStreamUrl || videoUrl || ''} player={activePlayer}
               brightnessLevel={brightnessLevel} hasBrightnessPermission={hasBrightnessPermission}
               brightnessSliderRef={brightnessSliderRef} brightnessPanResponder={brightnessPanResponder}
+              volumeLevel={volumeLevel} hasVolumePermission={hasVolumePermission}
+              volumeSliderRef={volumeSliderRef} volumePanResponder={volumePanResponder}
             />
             {!isLiveStream && isSeeking && seekPreviewPosition !== null && seekPreviewXPosition > 0 && (
               <View style={[styles.seekPreviewBox, { left: Math.max(10, Math.min(seekPreviewXPosition - 40, screenDimensions.width - 90)) }]}>

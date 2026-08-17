@@ -132,7 +132,7 @@ the last patch number you applied?" before generating yours.
 
 | Phase | Title | Status | Patch # | Session Date |
 |---|---|---|---|---|
-| 1 | Video player: gesture engine + volume/brightness/seek | 🔲 Not started | — | — |
+| 1 | Video player: gesture engine + volume/brightness/seek | ✅ Complete | 0015 | 2026-08-17 |
 | 2 | Video player: subtitle system (remote + local import) + modern controls UI | 🔲 Not started | — | — |
 | 3 | Video player: routing fix + full hook wiring (stream extraction, autoplay, episodes) | 🔲 Not started | — | — |
 | 4 | Design system foundation: design tokens, spacing, typography scale | 🔲 Not started | — | — |
@@ -165,7 +165,7 @@ the last patch number you applied?" before generating yours.
 
 Legend: 🔲 not started · 🟡 in progress / partially done · ✅ complete
 
-**➡️ NEXT SESSION STARTS AT: Phase 1**
+**➡️ NEXT SESSION STARTS AT: Phase 2**
 
 ---
 
@@ -822,6 +822,26 @@ entries, just add yours with your phase number and date.)*
   (TypeScript migration) may already be effectively done; next session
   on that phase should verify and, if so, just confirm/close it rather
   than hunt for files that aren't there.
+- **[Phase 1, 2026-08-17]** Implemented as scoped in Section 3A rather
+  than the original Phase 1 write-up: drag-to-seek and volume were
+  **added** to the existing `useGestures.ts`/`useSeekBar.ts`/
+  `useBrightness.ts`, not built as a brand-new isolated layer. New:
+  `src/hooks/useVolume.ts` (mirrors `useBrightness.ts`),
+  `src/components/video/VolumeSlider.tsx` (mirrors `BrightnessSlider.tsx`,
+  right-aligned). `useSeekBar.ts` gained `beginExternalSeek` /
+  `previewExternalSeek` / `commitExternalSeek` / `cancelExternalSeek` so
+  the new drag-anywhere-on-video seek reuses the *same* preview box and
+  commit logic as the existing progress-bar drag, instead of
+  duplicating it. `useGestures.ts` gained a single `Gesture.Pan` (in
+  `Gesture.Race` alongside the existing pinch/double-tap/tap gestures)
+  that resolves to seek/brightness/volume based on drag direction and
+  which half of the screen the drag started on, mirroring the
+  brightness slider's left-side convention for volume on the right.
+  **Not done, left for a later phase/pass:** this is unrun/unbuilt code
+  (no sandbox emulator, per Section 0) — the human should smoke-test on
+  device before relying on it, in particular the drag sensitivity
+  constants (`secondsPerScreenWidth`, the 200px brightness/volume
+  sweep) which are a first guess, not tuned against a real screen.
 
 ---
 

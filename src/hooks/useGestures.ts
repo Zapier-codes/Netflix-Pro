@@ -9,6 +9,16 @@ export const useGestures = ({
   isPlaying,
   toggleControls,
   startControlsTimer,
+  duration,
+  position,
+  beginExternalSeek,
+  previewExternalSeek,
+  commitExternalSeek,
+  cancelExternalSeek,
+  handleBrightnessChange,
+  brightnessLevel,
+  handleVolumeChange,
+  volumeLevel,
 }) => {
   const [isZoomed, setIsZoomed] = useState(false);
   const [screenDimensions, setScreenDimensions] = useState(Dimensions.get('window'));
@@ -215,9 +225,91 @@ export const useGestures = ({
       pinchScale.current = 1;
     }), [startControlsTimer]);
 
+  // --- Unified drag: horizontal = seek, vertical-left = brightness,
+  // vertical-right = volume. One responder so the three don't fight over
+  // the same touch (per Phase 1 scope in HANDOVER.md).
+  const dragModeRef = useRef(null); // 'seek' | 'brightness' | 'volume' | null
+  const dragStartPositionRef = useRef(0);
+  const dragStartLevelRef = useRef(0);
+
+  const handleDragBegin = useCallback((x, screenWidth) => {
+    dragModeRef.current = null;
+    dragStartPositionRef.current = position || 0;
+    // Snapshot whichever side of the screen the touch started on, since
+    // brightness/volume are picked by starting x, not current x.
+    dragStartLevelRef.current = x < screenWidth / 2 ? brightnessLevel : volumeLevel;
+  }, [position, brightnessLevel, volumeLevel]);
+
+  const handleDragUpdate = useCallback((x, screenWidth, translationX, translationY) => {
+    if (dragModeRef.current === null) {
+      const absX = Math.abs(translationX);
+      const absY = Math.abs(translationY);
+      if (Math.max(absX, absY) < 12) return; // ignore jitter before a direction is clear
+      dragModeRef.current = absX > absY ? 'seek' : (x < screenWidth / 2 ? 'brightness' : 'volume');
+      if (dragModeRef.current === 'seek' && !isLiveStream) {
+        beginExternalSeek();
+      }
+    }
+
+    if (dragModeRef.current === 'seek') {
+      if (isLiveStream || !duration) return;
+      const secondsPerScreenWidth = Math.max(60, duration * 0.5);
+      const deltaSeconds = (translationX / screenWidth) * secondsPerScreenWidth;
+      const target = Math.max(0, Math.min(duration, dragStartPositionRef.current + deltaSeconds));
+      previewExternalSeek(target);
+    } else if (dragModeRef.current === 'brightness') {
+      const delta = -translationY / 200; // ~200px drag = full 0-1 sweep
+      handleBrightnessChange(Math.max(0, Math.min(1, dragStartLevelRef.current + delta)));
+    } else if (dragModeRef.current === 'volume') {
+      const delta = -translationY / 200;
+      handleVolumeChange(Math.max(0, Math.min(1, dragStartLevelRef.current + delta)));
+    }
+  }, [isLiveStream, duration, beginExternalSeek, previewExternalSeek, handleBrightnessChange, handleVolumeChange]);
+
+  const handleDragEnd = useCallback(() => {
+    if (dragModeRef.current === 'seek') {
+      commitExternalSeek();
+    }
+    dragModeRef.current = null;
+  }, [commitExternalSeek]);
+
+  const handleDragCancel = useCallback(() => {
+    if (dragModeRef.current === 'seek') {
+      cancelExternalSeek();
+    }
+    dragModeRef.current = null;
+  }, [cancelExternalSeek]);
+
+  const videoAreaPan = useMemo(() => Gesture.Pan()
+    .minDistance(10)
+    .maxPointers(1)
+    .onBegin((event) => {
+      'worklet';
+      runOnJS(handleDragBegin)(event.x, screenDimensions.width);
+    })
+    .onUpdate((event) => {
+      'worklet';
+      runOnJS(handleDragUpdate)(event.x, screenDimensions.width, event.translationX, event.translationY);
+    })
+    .onEnd(() => {
+      'worklet';
+      runOnJS(handleDragEnd)();
+    })
+    .onFinalize((_event, success) => {
+      'worklet';
+      if (!success) {
+        runOnJS(handleDragCancel)();
+      }
+    }), [handleDragBegin, handleDragUpdate, handleDragEnd, handleDragCancel, screenDimensions.width]);
+
   const videoAreaGestures = useMemo(() =>
-    Gesture.Exclusive(pinchToZoom, doubleTapSeek, tapToToggleControls),
-    [pinchToZoom, doubleTapSeek, tapToToggleControls]);
+    Gesture.Race(
+      pinchToZoom,
+      doubleTapSeek,
+      tapToToggleControls,
+      videoAreaPan,
+    ),
+    [pinchToZoom, doubleTapSeek, tapToToggleControls, videoAreaPan]);
 
   const cleanup = useCallback(() => {
     if (leftSeekTimeoutRef.current) {

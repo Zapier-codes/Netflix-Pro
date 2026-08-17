@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { VideoAirPlayButton } from 'expo-video';
 import BrightnessSlider from './BrightnessSlider';
+import VolumeSlider from './VolumeSlider';
 import LiveIndicator from './LiveIndicator';
 import { formatTime } from '../../utils/timeUtils';
 
@@ -52,6 +53,10 @@ const VideoControlsOverlay = ({
   hasBrightnessPermission,
   brightnessSliderRef,
   brightnessPanResponder,
+  volumeLevel,
+  hasVolumePermission,
+  volumeSliderRef,
+  volumePanResponder,
 }) => {
   const displayPosition = isSeeking && seekPreviewPosition !== null ? seekPreviewPosition : position;
   const actualPosition = position;
@@ -119,6 +124,14 @@ const VideoControlsOverlay = ({
           hasBrightnessPermission={hasBrightnessPermission}
           brightnessSliderRef={brightnessSliderRef}
           brightnessPanResponder={brightnessPanResponder}
+          showControls={showControls}
+        />
+
+        <VolumeSlider
+          volumeLevel={volumeLevel}
+          hasVolumePermission={hasVolumePermission}
+          volumeSliderRef={volumeSliderRef}
+          volumePanResponder={volumePanResponder}
           showControls={showControls}
         />
 
