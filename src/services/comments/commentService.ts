@@ -207,14 +207,14 @@ export class CommentService {
     callback: (comment: Comment) => void
   ): (() => void) {
     const subscription = supabase
-      .channel(comments:)
+      .channel(`comments:${contentId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'comments',
-          filter: content_id=eq.,
+          filter: `content_id=eq.${contentId}`,
         },
         (payload) => {
           callback(payload.new as Comment);

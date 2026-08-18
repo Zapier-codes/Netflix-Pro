@@ -576,7 +576,6 @@ const SearchScreen = () => {
           movies, 
           tvShows,
           tvDetails: validTVDetails,
-          streams: validStreams,
         };
       } catch (error) {
         console.error('[Preloader] ❌ Failed to preload:', error);

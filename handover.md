@@ -267,6 +267,128 @@ Two distinct problems, both fixed:
 
 ---
 
+## Phase 3 — done in this session
+
+Started from "move to phase 3" after the person confirmed the Phase 2
+patch was already applied and pushed to `origin/termux` (verified by
+cloning fresh and comparing tree hashes — identical). Explicit
+instruction: **leave the keystore/history-scrub item and the other
+low-priority items alone for now.**
+
+1. **Fixed the 4 broken imports flagged (but not yet fixed) at the end
+   of Phase 2**, plus 2 more found while touching them:
+   - `src/components/search/SearchSuggestions.tsx` and
+     `AdvancedFilters.tsx`: wrong relative depth
+     (`../../../contexts/ThemeContext` → `../../contexts/ThemeContext`).
+   - `src/screens/notifications/NotificationsScreen.tsx`: wrong directory
+     name (`services/notification/` → `services/notifications/`, the
+     real dir is plural).
+   - Deleted `src/services/unified/MetadataAggregator.ts` (old,
+     non-"New" file — a dead re-export shim pointing at a deleted
+     `metadata/MetadataAggregator.ts`, zero importers anywhere).
+   - Deleted `src/store/rtk/store.ts` (an entire orphaned duplicate
+     Redux store, zero importers, itself importing a
+     `streamingApi.ts` that never existed in this repo).
+   - While in `NotificationsScreen.tsx`: found and fixed a genuine
+     pre-existing syntax bug unrelated to any of the above — several
+     `case` branches had a stray `"` inside single-quoted fallback
+     strings inside template literals (e.g. `'a show"}'`), which is a
+     parse error, not just a lint nit.
+
+2. **Fixed the app icon and splash screen.** This turned out to be two
+   separate bugs, not one:
+   - The native `android/app/src/main/res/mipmap-*/ic_launcher*.webp`
+     and `drawable-*/splashscreen_logo.png` files were still the app's
+     **old "FLUX" branding** (a starfield background with "FLUX" text) —
+     leftover from before this app was rebranded, never regenerated
+     after `assets/icon.png` was updated. This is a native-build
+     artifact issue, not an `app.config.ts` misconfiguration — the
+     config already pointed at the right source files.
+   - `assets/icon.png` and its 3 byte-identical copies (`icon-dev.png`,
+     `adaptive-icon.png`, `splash-icon.png`) had a light-gray
+     checkerboard pattern baked in as real opaque pixels instead of
+     true alpha (almost certainly an accidental flatten-and-export from
+     a design tool's transparency preview). Converted to real alpha
+     transparency in all 4 files using a grayness+brightness heuristic,
+     then regenerated every native Android icon (mdpi through xxxhdpi —
+     legacy `ic_launcher`, `ic_launcher_round`, adaptive
+     `ic_launcher_foreground`) and every `splashscreen_logo.png`
+     density from the corrected source, matching each file's existing
+     pixel dimensions exactly.
+   - Verified by rendering composites (foreground layer over the app's
+     `#141414` background color) and viewing them — confirmed showing
+     the red "N PRO" logo, not "FLUX", not a checkerboard box.
+
+3. **Ran a real build-verification pass** — this is new; Phase 1/2 only
+   had `@babel/parser` syntax checks and an import-resolution scan
+   available, no toolchain. This session actually got `npm install` and
+   `npx tsc --noEmit` running:
+   - `npm install` initially failed: `package.json` pinned
+     `react-native-volume-manager@^2.0.9`, which was never published
+     (latest on npm is 2.0.8). Fixed the pin. Had to use
+     `--legacy-peer-deps` for an unrelated react/react-dom peer version
+     mismatch (19.2.0 vs required ^19.2.8) — not fixed, just worked
+     around, since resolving it means picking a side in a pre-existing
+     version conflict without knowing which one the person wants.
+   - `tsc --noEmit` initially failed immediately on `tsconfig.json`
+     itself: it explicitly overrides `moduleResolution: "node"` and
+     `module: "commonjs"`, which conflict with `customConditions` and
+     `moduleResolution: "bundler"` inherited from the project's own
+     `expo/tsconfig.base`. Removed both overrides so the file cleanly
+     inherits the Expo base config's values instead.
+   - Real compilation then surfaced two more genuine parse errors,
+     unrelated to piracy removal, that `@babel/parser` had never been
+     asked to check because these files were never touched before now:
+     `src/components/comments/CommentItem.tsx` and
+     `src/services/comments/commentService.ts` both had template
+     literals missing their backticks entirely (e.g. `return ${x}m;`
+     instead of `` return `${x}m`; ``, and a Supabase channel/filter
+     string with the interpolated `contentId` variable name stripped
+     out: `` .channel(comments:) ``). Fixed both, reconstructing the
+     obviously-intended Supabase realtime channel/filter strings
+     (`comments:${contentId}`, `content_id=eq.${contentId}`).
+   - With all of the above fixed, `tsc --noEmit` actually runs end to
+     end now. It reports **~1056 pre-existing strict-mode errors**
+     (`noUnusedLocals`/`noUnusedParameters`/implicit-`any` mostly),
+     spread across ~60 files — the majority in files this project has
+     never touched (e.g. `HLSDownloader.ts` alone has 178,
+     `DownloadQueue.ts` 71, `MP4Downloader.ts` 69). This looks like a
+     codebase that has never been run through `tsc --noEmit` cleanly —
+     Metro/Babel transpile without enforcing types, so none of this
+     ever blocked `expo start`. **Left alone per instruction** — this
+     is the same category as the keystore/history item: real, but
+     pre-existing and out of scope for piracy-removal/licensed-backend
+     work. Two exceptions, both found and fixed because they were
+     regressions in code touched this session, not pre-existing debt:
+     - `src/store/api/contentApi.ts` had a genuine leftover duplicate
+       `export default contentApi` block (with dead
+       `useSearchMoviesQuery`/etc. re-exports) from an incomplete
+       Phase-2 edit — "a module cannot have multiple default exports."
+       Removed the duplicate block.
+     - `src/screens/search/SearchScreen.tsx` had a dangling reference
+       to `validStreams`, a variable removed during Phase 2's
+       stream-preload cleanup but left behind in a return statement.
+       Removed the reference.
+     - Also fixed one real type error in `MetadataService.ts` (built
+       this session): `type: type ? [type] : [...]` passed `'tv'`
+       through unchanged, but `SearchRequest.type` expects `'show'` not
+       `'tv'`. Now maps `'tv' → 'show'` explicitly.
+   - **Confirmed pre-existing, not a regression**: `SearchScreen.tsx`
+     has several `UnifiedMediaResult` vs `IMetadataResult` type
+     mismatches (`discover()`/`search()` return one, `getTrending()`
+     returns the other, then they get merged into one array/state slot
+     expecting a single type). Checked this against the original
+     deleted `UnifiedMediaService.ts` (recovered via `git show`) — it
+     had the exact same signature split
+     (`search`/`discover` → `Promise<UnifiedMediaResult[]>`,
+     `getTrending`/`getTrendingByCategory` → `Promise<IMetadataResult[]>`).
+     `MetadataService.ts` (this session's replacement) faithfully
+     reproduced that same pre-existing inconsistency rather than
+     silently picking one type and guessing which call sites need to
+     change. Left alone.
+
+---
+
 ## Next session — where to start
 
 1. **Get the real licensed backend URL/key and its actual response
@@ -279,37 +401,49 @@ Two distinct problems, both fixed:
      match the real API's request params and response JSON shape — what's
      there now is a reasonable guess (`/v1/playback`, `/v1/download`,
      `{url, type, headers?, expiresAt?}`), not a confirmed contract.
-2. **Do an actual build/run pass.** Everything in this session was
-   verified with static analysis only (parse checks via `@babel/parser`,
-   a full-repo import-resolution scan, and rendered image previews) —
-   this sandbox has no Expo/Android toolchain to actually build and run
-   the app. Before trusting any of this further:
-   - `npx expo prebuild` / build the Android APK and confirm it actually
-     compiles with real TypeScript type-checking (`tsc --noEmit`) and a
-     real Metro bundler pass, not just syntax-valid.
+2. **Finish the build/run pass.** `npm install` and `tsc --noEmit` now
+   run for real (see "Phase 3" above) — that's static verification
+   only. Still not done, and this sandbox has no Android/Expo toolchain
+   to do it:
+   - `npx expo prebuild` / build the Android APK — confirm a real Metro
+     bundler pass succeeds, not just `tsc`.
    - Install and confirm the launcher icon and splash screen render
-     correctly on a device — the fix was verified by compositing/viewing
-     the generated bitmaps, not by installing an actual APK.
+     correctly on a device — the fix was verified by
+     compositing/viewing the generated bitmaps, not an installed APK.
    - Exercise "Watch Now" and downloads end-to-end once the backend URL
-     is real, since `getPlaybackSource()`/`getDownloadSource()` have never
-     been called against a live server.
-3. **Still open from Phase 1, unrelated to the above**: `env.b64`,
-   `keystore.b64`, `android/keystore.properties` are still in git
-   **history**. Rotate whatever credentials/signing keys they contained,
-   scrub them from history with `git filter-repo` or BFG (not just
-   `git rm`), and add them to `.gitignore`. Independent of everything
-   else — matters regardless of what happens with playback.
-4. **Low-priority, found but intentionally not chased further**: a few
-   pre-existing issues that are real but were confirmed unreachable from
-   the running app, so weren't blocking and weren't "fixed" by guessing
-   intent:
-   - `src/screens/notifications/NotificationsScreen.tsx` compiles now but
-     has no route pointing to it anywhere in `app/`.
+     is real, since `getPlaybackSource()`/`getDownloadSource()` have
+     never been called against a live server.
+3. **Decide what to do with the ~1056 pre-existing `tsc --noEmit`
+   errors** found in Phase 3 (see above) — not blocking, not part of
+   piracy removal, but real. Concentrated in the download-manager
+   internals (`HLSDownloader.ts`, `DownloadQueue.ts`, `MP4Downloader.ts`,
+   `NetworkMonitor.ts`, `StorageManager.ts`) and several hooks/screens.
+   Mostly `noUnusedLocals`/`noUnusedParameters`/implicit-`any` noise,
+   plus the one confirmed pre-existing `UnifiedMediaResult`/
+   `IMetadataResult` type-contract split noted above.
+4. **Still open from Phase 1, explicitly deferred twice now (Phase 2
+   and Phase 3)**: `env.b64`, `keystore.b64`,
+   `android/keystore.properties` are still in git **history**. Rotate
+   whatever credentials/signing keys they contained, scrub them from
+   history with `git filter-repo` or BFG (not just `git rm`), and add
+   them to `.gitignore`. Independent of everything else — matters
+   regardless of what happens with playback. The person has said
+   explicitly to leave this for now; don't do it without them asking.
+5. **Low-priority, found but intentionally not chased further** (same
+   status as Phase 2 left them — still real, still unreachable, still
+   not "fixed" by guessing intent):
+   - `src/screens/notifications/NotificationsScreen.tsx` compiles now
+     (Phase 3 fixed its import path and a syntax bug) but still has no
+     route pointing to it anywhere in `app/`.
    - `src/hooks/search/useSearchSuggestions.ts` compiles but has zero
-     importers (SearchScreen.tsx calls `searchMedia()` directly instead).
-   These aren't bugs to "fix" so much as things to ask the user about —
-   were they meant to be wired in, or are they leftover from an earlier
-   version of the search/notifications UI?
+     importers (`SearchScreen.tsx` calls `searchMedia()` directly
+     instead).
+   - The `react`/`react-dom` peer-dependency version mismatch worked
+     around (not fixed) to get `npm install` running (see Phase 3
+     above) — `react@19.2.0` vs `react-dom` wanting `^19.2.8`.
+   These aren't bugs to "fix" so much as things to ask the person
+   about — were they meant to be wired in / resolved a specific way,
+   or are they leftover from an earlier version of the app?
 
 ---
 

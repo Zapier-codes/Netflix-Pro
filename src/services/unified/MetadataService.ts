@@ -82,7 +82,7 @@ export class MetadataService {
     const { query, type, year, limit = 20, ...filters } = options;
     const searchRequest: SearchRequest = {
       query: query || '',
-      type: type ? [type] : ['movie', 'show'],
+      type: type ? [type === 'tv' ? 'show' : 'movie'] : ['movie', 'show'],
       limit,
       page: filters.page || 1,
       languages: filters.language ? [filters.language] : undefined,

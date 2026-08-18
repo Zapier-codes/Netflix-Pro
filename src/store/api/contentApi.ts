@@ -91,10 +91,3 @@ export const {
 } = contentApi;
 
 export default contentApi;
-export const {
-  useSearchMoviesQuery,
-  useGetStreamLinksQuery,
-  useGetSubtitlesQuery,
-} = contentApi;
-
-export default contentApi;
