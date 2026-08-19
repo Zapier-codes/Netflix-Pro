@@ -94,41 +94,6 @@ interface Comment {
   id: string; username: string; text: string; timestamp: string; likes: number; rating?: number;
 }
 type EpisodeViewMode = 'grid' | 'list';
-interface SupabaseAdBanner {
-  id: string; image_url: string; link_url: string; cpm: number; click_count: number; is_active: boolean;
-}
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-async function fetchActiveAdBanner(): Promise<SupabaseAdBanner | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/ad_banners?select=*&is_active=eq.true&order=created_at.desc&limit=1`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
-    );
-    if (!response.ok) return null;
-    const rows: SupabaseAdBanner[] = await response.json();
-    return rows && rows.length > 0 ? rows[0] : null;
-  } catch (error) {
-    console.warn('[AdBanner] Fetch error:', error);
-    return null;
-  }
-}
-
-async function trackAdBannerClick(bannerId: string, currentClickCount: number): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/ad_banners?id=eq.${bannerId}`, {
-      method: 'PATCH',
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify({ click_count: currentClickCount + 1 }),
-    });
-  } catch (error) {
-    console.warn('[AdBanner] Click tracking error:', error);
-  }
-}
 
 const MAX_RECOMMENDATIONS = 12;
 const WATCHLIST_KEY = 'search_screen_watchlist_ids';
@@ -265,7 +230,6 @@ const DetailsScreenNew: React.FC = () => {
   const commentScrollY = useRef(new Animated.Value(0)).current;
   const commentLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const [showFullSynopsis, setShowFullSynopsis] = useState(false);
-  const [adBanner, setAdBanner] = useState<SupabaseAdBanner | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [isExtractingStream, setIsExtractingStream] = useState(false);
   const [watcherCount, setWatcherCount] = useState(0);
@@ -382,7 +346,6 @@ const DetailsScreenNew: React.FC = () => {
     return () => loop.stop();
   }, []);
 
-  useEffect(() => { let c = false; fetchActiveAdBanner().then(b => { if (!c) setAdBanner(b); }); return () => { c = true; }; }, []);
   useEffect(() => { const unsub = NetInfo.addEventListener((s) => setIsOffline(s.isConnected === false || s.isInternetReachable === false)); return () => unsub(); }, []);
   useEffect(() => {
     let c = false;
@@ -564,7 +527,8 @@ const DetailsScreenNew: React.FC = () => {
     try {
       const probeSession = await FFprobeKit.getMediaInformation(streamUrl);
       const mediaInfo = await probeSession.getMediaInformation();
-      const durationSec = mediaInfo ? parseFloat(mediaInfo.getDuration()) : NaN;
+      const durationVal = mediaInfo ? mediaInfo.getDuration() : NaN;
+      const durationSec = typeof durationVal === 'number' ? durationVal : parseFloat(String(durationVal));
       if (!Number.isNaN(durationSec) && durationSec > 0) totalDurationMs = durationSec * 1000;
     } catch (probeError) {
       console.warn('[Download] Could not probe duration, falling back to indeterminate progress:', probeError);
@@ -591,7 +555,7 @@ const DetailsScreenNew: React.FC = () => {
           resolveResult({ success: false, failLog });
         }
       },
-      (log) => { try { const message = log?.getMessage?.(); if (message) liveLogLines.push(message); } catch {} },
+      (log) => { try { const message = log?.getMessage?.(); if (message) liveLogLines.push(String(message)); } catch {} },
       (statistics) => { if (totalDurationMs > 0 && onProgress) onProgress(Math.min((statistics.getTime() / totalDurationMs) * 100, 100)); }
     );
     return { sessionId: session.getSessionId(), result };
@@ -1050,15 +1014,6 @@ const DetailsScreenNew: React.FC = () => {
     );
   };
 
-  const renderAdBanner = () => {
-    if (!adBanner) return null;
-    return (
-      <TouchableOpacity style={styles.adBannerContainer} onPress={async () => { trackAdBannerClick(adBanner.id, adBanner.click_count); try { await Linking.openURL(adBanner.link_url); } catch (e) { console.warn('[AdBanner] Failed to open link:', e); showToast('Unable to open ad link'); } }} activeOpacity={0.9}>
-        <Image source={{ uri: adBanner.image_url }} style={styles.adBannerImage} resizeMode="cover" />
-      </TouchableOpacity>
-    );
-  };
-
   const renderMetadata = () => {
     const hasSynopsis = displayOverview && displayOverview.length > 0;
     return (
@@ -1176,7 +1131,6 @@ const DetailsScreenNew: React.FC = () => {
         {renderEpisodesSection()}
 
         {renderRecommendations()}
-        {renderAdBanner()}
         <View style={styles.bottomSpacer} />
       </ScrollView>
       {renderCommentsOverlay()}
@@ -1328,8 +1282,6 @@ const styles = StyleSheet.create({
   hdBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
   bookmarkButton: { position: 'absolute', bottom: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' },
 
-  adBannerContainer: { marginHorizontal: 16, marginVertical: 12, height: 60, borderRadius: 8, overflow: 'hidden' },
-  adBannerImage: { width: '100%', height: '100%' },
 });
 
 export default DetailsScreenNew;

@@ -26,7 +26,6 @@ import { useQuery } from '@tanstack/react-query';
 // ─── Zustand Stores ───
 import { useAppStore } from '../../store/zustand';
 import { usePreloadedMediaStore } from '../../store/zustand';
-import { useSearchAggregation } from '../../hooks/supabase/useSearchAggregation';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAlert } from '../../contexts/AlertContext';
 
@@ -354,7 +353,6 @@ const SearchScreen = () => {
     hasPreloadedStreams,
   } = usePreloadedMediaStore();
 
-  const { recordSearch: recordSearchToSupabase } = useSearchAggregation();
 
   const [query, setQuery] = useState('');
 
@@ -891,7 +889,6 @@ const SearchScreen = () => {
         console.log(`[Search] 💾 Saving to search history: "${trimmedQuery}"`);
         await saveSearchQuery(trimmedQuery);
         loadSearchHistory();
-        recordSearchToSupabase(trimmedQuery);
       }
     } catch (error) {
       console.error('[Search] ❌ Error during search:', error);
@@ -911,7 +908,7 @@ const SearchScreen = () => {
         console.log(`[Search] 🔍 ===== SEARCH COMPLETE =====`);
       }
     }
-  }, [loadSearchHistory, recordSearchToSupabase, showToast, resetToDiscover]);
+  }, [loadSearchHistory, showToast, resetToDiscover]);
 
   // ─── Debounced search suggestions (TMDB multi-search) ───
   useEffect(() => {

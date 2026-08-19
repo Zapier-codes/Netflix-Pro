@@ -1,4 +1,4 @@
-﻿name: Android Dev Client APK
+name: Android Dev Client APK
 
 on:
   push:
@@ -55,19 +55,10 @@ jobs:
           done
           echo "✅ All releases deleted"
 
-  build-wheels:
-    uses: ./.github/workflows/build-android-wheels.yml
-    needs: cleanup
-    secrets: inherit
-    permissions:
-      contents: write
-    with:
-      release_tag: android-wheels-latest
-
   build-apk:
     name: Build Debug APK
     runs-on: ubuntu-latest
-    needs: [cleanup, build-wheels]
+    needs: cleanup
     permissions:
       contents: write
     steps:
@@ -92,7 +83,6 @@ jobs:
         run: |
           rm -rf ~/.gradle/caches ~/.gradle/wrapper node_modules .expo \
             ~/.npm/_cacache .cache .turbo
-          sudo rm -rf ~/.cargo ~/.rustup
 
       - name: Create LFS file list
         run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
@@ -124,18 +114,13 @@ jobs:
         run: |
           echo "ASSET_HASH=$(sha256sum ./assets/splash-icon.png ./assets/icon.png ./assets/adaptive-icon.png 2>/dev/null | sha256sum | cut -d' ' -f1)" >> $GITHUB_ENV
 
-      - name: Set up Python 3.13 for Chaquopy
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'modules/**/android/build.gradle') }}-${{ env.ASSET_HASH }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}-${{ env.ASSET_HASH }}
           restore-keys: |
             gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*') }}
             gradle-${{ runner.os }}-
@@ -183,41 +168,6 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> android/local.properties
 
-      - name: Download prebuilt Android wheels
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
-          mkdir -p "$WHEELS_DIR"
-          gh release download "android-wheels-latest" \
-            --repo "${{ github.repository }}" \
-            --pattern "*.whl" \
-            --dir "$WHEELS_DIR" \
-            --clobber
-
-      - name: Verify wheel compatibility
-        run: |
-          WHEELS_DIR="modules/boxoffice/android/src/main/python/wheels"
-          for whl in "$WHEELS_DIR"/*.whl; do
-            [ -f "$whl" ] || continue
-            name=$(basename "$whl")
-            # Only check native wheels for Python version; pure Python wheels are platform-independent
-            if [[ "$name" == *-android_* ]]; then
-              [[ "$name" == *cp313* ]] || { echo "❌ Wrong Python version: $name"; exit 1; }
-            fi
-          done
-          ls "$WHEELS_DIR"/pydantic_core*.whl 1>/dev/null 2>&1 || { echo "❌ Missing pydantic-core wheel!"; exit 1; }
-          ls "$WHEELS_DIR"/jiter*.whl 1>/dev/null 2>&1 || { echo "❌ Missing jiter wheel!"; exit 1; }
-          ls "$WHEELS_DIR"/movie_box_dl*.whl 1>/dev/null 2>&1 || { echo "❌ Missing movie-box-dl wheel!"; exit 1; }
-
-      - name: Cache Chaquopy Python packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            modules/boxoffice/android/build/python
-            modules/boxoffice/android/build/chaquopy
-          key: chaquopy-${{ runner.os }}-${{ hashFiles('modules/boxoffice/android/src/main/python/requirements.txt', 'modules/boxoffice/android/src/main/python/wheels/*.whl') }}
-
       - name: Generate debug keystore
         run: |
           keytool -genkeypair -v \
@@ -225,38 +175,6 @@ jobs:
             -storepass android -alias androiddebugkey -keypass android \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
-
-      - name: Cache ffmpeg-kit AAR
-        id: ffmpeg-cache
-        uses: actions/cache@v4
-        with:
-          path: android/libs/ffmpeg-kit-full-gpl.aar
-          key: ffmpeg-kit-aar-v1.0.0
-
-      - name: Download ffmpeg-kit AAR
-        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p android/libs
-          curl -L "https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar" \
-            -o android/libs/ffmpeg-kit-full-gpl.aar
-
-      - name: Set Chaquopy env vars
-        run: |
-          echo "CHAQUOPY_PYTHON_VERSION=3.13" >> $GITHUB_ENV
-          echo "CHAQUOPY_NO_LICENSE=DIALOG" >> $GITHUB_ENV
-
-      - name: Mirror pawns-sdk local AARs into android/libs
-        run: |
-          mkdir -p android/libs
-          cp modules/pawns/android/libs/internet-sharing-1.8.1.aar android/libs/
-          cp modules/pawns/android/libs/pawns-ndk-1.8.1.aar android/libs/
-
-      - name: Verify boxoffice module
-        run: |
-          test -f modules/boxoffice/android/build.gradle || exit 1
-          test -f modules/boxoffice/android/src/main/python/requirements.txt || exit 1
-          test -f modules/boxoffice/expo-module.config.json || exit 1
-          test -n "$(ls -A modules/boxoffice/android/src/main/python/wheels/*.whl 2>/dev/null)" || exit 1
 
       - name: Build Debug APK
         run: |
@@ -269,8 +187,6 @@ jobs:
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -Dorg.gradle.daemon=false"
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-          CHAQUOPY_PYTHON_VERSION: ${{ env.CHAQUOPY_PYTHON_VERSION }}
-          CHAQUOPY_NO_LICENSE: ${{ env.CHAQUOPY_NO_LICENSE }}
 
       - name: Get app version
         id: version

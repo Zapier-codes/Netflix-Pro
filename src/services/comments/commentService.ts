@@ -1,5 +1,15 @@
 // src/services/comments/commentService.ts
-import { supabase } from '../supabase/supabaseClient';
+//
+// Comments are stored entirely on-device (AsyncStorage) — no backend, no
+// cross-device sync. This replaces the previous Supabase-backed
+// implementation. Public method signatures are unchanged so
+// useComments.ts / useCommentRealtime.ts don't need to change.
+//
+// "Realtime" here means same-device, same-session only: an in-memory
+// event emitter notifies other mounted components when a comment is
+// posted locally. There is no cross-device realtime without a backend.
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deviceManager } from '../device/DeviceManager';
 
 export interface Comment {
@@ -23,8 +33,21 @@ export interface CommentInput {
   parentId?: string;
 }
 
+const STORAGE_PREFIX = '@comments:';
+
+function storageKeyForContent(contentId: string): string {
+  return `${STORAGE_PREFIX}${contentId}`;
+}
+
+function generateCommentId(): string {
+  return `c_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+type CommentListener = (comment: Comment) => void;
+
 export class CommentService {
   private static instance: CommentService;
+  private listeners: Map<string, Set<CommentListener>> = new Map();
 
   static getInstance(): CommentService {
     if (!CommentService.instance) {
@@ -34,35 +57,79 @@ export class CommentService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // INTERNAL STORAGE HELPERS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private async readAll(contentId: string): Promise<Comment[]> {
+    try {
+      const raw = await AsyncStorage.getItem(storageKeyForContent(contentId));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error('[CommentService] Failed to read comments:', error);
+      return [];
+    }
+  }
+
+  private async writeAll(contentId: string, comments: Comment[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(storageKeyForContent(contentId), JSON.stringify(comments));
+    } catch (error) {
+      console.error('[CommentService] Failed to write comments:', error);
+    }
+  }
+
+  private emit(contentId: string, comment: Comment): void {
+    const set = this.listeners.get(contentId);
+    if (!set) return;
+    set.forEach((listener) => {
+      try {
+        listener(comment);
+      } catch (error) {
+        console.error('[CommentService] Listener error:', error);
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // POST COMMENT
   // ─────────────────────────────────────────────────────────────────────────
 
   async postComment(input: CommentInput): Promise<Comment | null> {
     try {
       const device = await deviceManager.initialize();
-      
-      const commentData = {
+      const now = new Date().toISOString();
+
+      const comment: Comment = {
+        id: generateCommentId(),
         content_id: input.contentId,
         user_id: device.id,
         user_name: device.name,
         user_emoji: device.emoji,
         text: input.text.trim(),
-        parent_id: input.parentId || null,
+        created_at: now,
+        updated_at: now,
         likes: 0,
+        parent_id: input.parentId,
       };
 
-      const { data, error } = await supabase
-        .from('comments')
-        .insert(commentData)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[CommentService] Post error:', error);
-        return null;
+      if (input.parentId) {
+        // Reply: attach to the parent comment's `replies` array.
+        const all = await this.readAll(input.contentId);
+        const updated = all.map((c) =>
+          c.id === input.parentId
+            ? { ...c, replies: [...(c.replies || []), comment] }
+            : c
+        );
+        await this.writeAll(input.contentId, updated);
+      } else {
+        const all = await this.readAll(input.contentId);
+        await this.writeAll(input.contentId, [comment, ...all]);
       }
 
-      return data;
+      this.emit(input.contentId, comment);
+      return comment;
     } catch (error) {
       console.error('[CommentService] Error:', error);
       return null;
@@ -79,29 +146,16 @@ export class CommentService {
     order: 'newest' | 'oldest' | 'popular' = 'newest'
   ): Promise<Comment[]> {
     try {
-      let query = supabase
-        .from('comments')
-        .select('*')
-        .eq('content_id', contentId)
-        .is('parent_id', null)
-        .limit(limit);
+      const all = await this.readAll(contentId);
+      const topLevel = all.filter((c) => !c.parent_id);
 
-      if (order === 'newest') {
-        query = query.order('created_at', { ascending: false });
-      } else if (order === 'oldest') {
-        query = query.order('created_at', { ascending: true });
-      } else if (order === 'popular') {
-        query = query.order('likes', { ascending: false });
-      }
+      const sorted = [...topLevel].sort((a, b) => {
+        if (order === 'oldest') return a.created_at.localeCompare(b.created_at);
+        if (order === 'popular') return b.likes - a.likes;
+        return b.created_at.localeCompare(a.created_at); // newest
+      });
 
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('[CommentService] Get error:', error);
-        return [];
-      }
-
-      return data || [];
+      return sorted.slice(0, limit);
     } catch (error) {
       console.error('[CommentService] Error:', error);
       return [];
@@ -113,21 +167,25 @@ export class CommentService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async getReplies(commentId: string): Promise<Comment[]> {
+    // Replies are stored inline on the parent comment; find it by scanning
+    // every content bucket is impractical without the contentId, so callers
+    // that need this should read `comment.replies` directly from
+    // getComments() results instead. Kept for interface compatibility.
     try {
-      const { data, error } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('parent_id', commentId)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('[CommentService] Replies error:', error);
-        return [];
+      const keys = await AsyncStorage.getAllKeys();
+      const commentKeys = keys.filter((k) => k.startsWith(STORAGE_PREFIX));
+      for (const key of commentKeys) {
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) continue;
+        const all: Comment[] = JSON.parse(raw);
+        const parent = all.find((c) => c.id === commentId);
+        if (parent) {
+          return (parent.replies || []).sort((a, b) => a.created_at.localeCompare(b.created_at));
+        }
       }
-
-      return data || [];
+      return [];
     } catch (error) {
-      console.error('[CommentService] Error:', error);
+      console.error('[CommentService] Replies error:', error);
       return [];
     }
   }
@@ -136,36 +194,43 @@ export class CommentService {
   // LIKE / UNLIKE COMMENT
   // ─────────────────────────────────────────────────────────────────────────
 
-  async toggleLike(commentId: string, userId: string): Promise<number | null> {
+  async toggleLike(commentId: string, _userId: string): Promise<number | null> {
     try {
-      // Get current likes
-      const { data: comment, error: fetchError } = await supabase
-        .from('comments')
-        .select('likes')
-        .eq('id', commentId)
-        .single();
+      const keys = await AsyncStorage.getAllKeys();
+      const commentKeys = keys.filter((k) => k.startsWith(STORAGE_PREFIX));
 
-      if (fetchError) {
-        console.error('[CommentService] Fetch likes error:', fetchError);
-        return null;
+      for (const key of commentKeys) {
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) continue;
+        const all: Comment[] = JSON.parse(raw);
+
+        let newLikes: number | null = null;
+        const updated = all.map((c) => {
+          if (c.id === commentId) {
+            newLikes = c.likes + 1;
+            return { ...c, likes: newLikes, is_liked: true };
+          }
+          if (c.replies?.some((r) => r.id === commentId)) {
+            return {
+              ...c,
+              replies: c.replies.map((r) => {
+                if (r.id === commentId) {
+                  newLikes = r.likes + 1;
+                  return { ...r, likes: newLikes, is_liked: true };
+                }
+                return r;
+              }),
+            };
+          }
+          return c;
+        });
+
+        if (newLikes !== null) {
+          await AsyncStorage.setItem(key, JSON.stringify(updated));
+          return newLikes;
+        }
       }
-
-      const currentLikes = comment?.likes || 0;
-      const newLikes = currentLikes + 1;
-
-      const { data, error } = await supabase
-        .from('comments')
-        .update({ likes: newLikes })
-        .eq('id', commentId)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[CommentService] Like error:', error);
-        return null;
-      }
-
-      return data?.likes || null;
+      return null;
     } catch (error) {
       console.error('[CommentService] Error:', error);
       return null;
@@ -178,20 +243,31 @@ export class CommentService {
 
   async deleteComment(commentId: string, userId: string): Promise<boolean> {
     try {
-      // Only allow deletion if user is the author
-      const { data, error } = await supabase
-        .from('comments')
-        .delete()
-        .eq('id', commentId)
-        .eq('user_id', userId)
-        .select();
+      const keys = await AsyncStorage.getAllKeys();
+      const commentKeys = keys.filter((k) => k.startsWith(STORAGE_PREFIX));
 
-      if (error) {
-        console.error('[CommentService] Delete error:', error);
-        return false;
+      for (const key of commentKeys) {
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) continue;
+        const all: Comment[] = JSON.parse(raw);
+
+        const hasTarget = all.some(
+          (c) => (c.id === commentId && c.user_id === userId) ||
+                 c.replies?.some((r) => r.id === commentId && r.user_id === userId)
+        );
+        if (!hasTarget) continue;
+
+        const updated = all
+          .filter((c) => !(c.id === commentId && c.user_id === userId))
+          .map((c) => ({
+            ...c,
+            replies: c.replies?.filter((r) => !(r.id === commentId && r.user_id === userId)),
+          }));
+
+        await AsyncStorage.setItem(key, JSON.stringify(updated));
+        return true;
       }
-
-      return true;
+      return false;
     } catch (error) {
       console.error('[CommentService] Error:', error);
       return false;
@@ -199,31 +275,20 @@ export class CommentService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // REAL-TIME SUBSCRIPTION
+  // "REAL-TIME" SUBSCRIPTION — same-device, same-session only
   // ─────────────────────────────────────────────────────────────────────────
 
   subscribeToComments(
     contentId: string,
     callback: (comment: Comment) => void
   ): (() => void) {
-    const subscription = supabase
-      .channel(`comments:${contentId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'comments',
-          filter: `content_id=eq.${contentId}`,
-        },
-        (payload) => {
-          callback(payload.new as Comment);
-        }
-      )
-      .subscribe();
+    if (!this.listeners.has(contentId)) {
+      this.listeners.set(contentId, new Set());
+    }
+    this.listeners.get(contentId)!.add(callback);
 
     return () => {
-      supabase.removeChannel(subscription);
+      this.listeners.get(contentId)?.delete(callback);
     };
   }
 }
