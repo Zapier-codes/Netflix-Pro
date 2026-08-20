@@ -765,6 +765,39 @@ human wants to keep going.
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
 
+- **[CI fix, 2026-08-20]** `.github/workflows/android.yml` previously
+  only triggered on push to `main` (so pushes to `termux` never built
+  anything), and its cleanup step deleted **every** GitHub release on
+  every run, always publishing to a single shared tag
+  `android-apk-latest` — meaning a build on either branch would wipe
+  out whatever the other branch had just published. Fixed on both
+  branches (separate patches, since `main` and `termux` have diverged
+  and each needs its own copy patched): `termux`'s trigger now includes
+  `termux`; cleanup on both branches now only deletes that branch's own
+  previous release; release tag/name are branch-scoped
+  (`android-apk-main`, `android-apk-termux`); only `main`'s release gets
+  GitHub's "Latest" badge, `termux` still gets its own always-current
+  release without the badge. **If you add a third branch that needs its
+  own CI build, remember to add it to that branch's own copy of the
+  trigger list** — GitHub Actions reads the workflow file as it exists
+  on the branch/ref being pushed to, not from `main`.
+- **[Doc-staleness flag, 2026-08-20]** This file's Section 3/3A audit
+  and much of Phases 2–30 below were written against an earlier state
+  of `termux` and still reference files/services that the
+  "Phase 1–4: remove piracy streaming layer / wire licensed backend /
+  remove Supabase" commits (`3683dc6`..`f79fa43`) have since deleted or
+  replaced (e.g. `useStreamExtraction.ts`, VidSrc/Xyra/Consumet
+  adapters, `src/utils/streamExtractor.ts` no longer exist on
+  `termux`). Those four commits are **not reflected in the Section 2
+  status table at all** — they happened outside this doc's phase
+  numbering. Before running any further phase on `termux`, especially
+  anything touching playback/streaming (Phases 1–3) or state/services
+  (referenced in Known Issues above), **re-audit the actual current
+  file tree first** rather than trusting this doc's file paths — a full
+  reconciliation pass (re-numbering or explicitly absorbing the
+  piracy-removal work into the tracked phases, updating every stale
+  file reference) is still needed and hasn't been done yet.
+
 - **[Pre-Phase-1, discovery session]** `src/components/SourceSelectionModal.tsx`
   and `src/components/SubtitlesModal.tsx` exist at the top level of
   `src/components/` (not under `src/components/video/`) and appear
