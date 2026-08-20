@@ -41,19 +41,25 @@ jobs:
             page=$((page + 1))
           done
 
-      - name: Delete all releases
+      - name: Delete this branch's previous release only
+        # Scoped to this branch's own tag (android-apk-<branch>) so a build
+        # on one branch never touches another branch's release (e.g. the
+        # termux branch, which has its own copy of this workflow). Each
+        # branch gets exactly one rolling release, per-branch instead of
+        # repo-wide.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          TAG: android-apk-${{ github.ref_name }}
         run: |
-          gh api "repos/${REPO}/releases?per_page=100" | jq -c '.[]' | while read -r release; do
-            tag=$(echo "$release" | jq -r '.tag_name')
-            id=$(echo "$release" | jq -r '.id')
-            echo "🗑️  Deleting release '$tag'"
-            gh api -X DELETE "repos/${REPO}/releases/${id}" || true
-            gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag}" || true
-          done
-          echo "✅ All releases deleted"
+          release_id=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id' 2>/dev/null || true)
+          if [ -n "$release_id" ]; then
+            echo "🗑️  Deleting previous release '${TAG}' (id ${release_id})"
+            gh api -X DELETE "repos/${REPO}/releases/${release_id}" || true
+            gh api -X DELETE "repos/${REPO}/git/refs/tags/${TAG}" || true
+          else
+            echo "No existing '${TAG}' release to delete."
+          fi
 
   build-wheels:
     uses: ./.github/workflows/build-android-wheels.yml
@@ -281,13 +287,16 @@ jobs:
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-apk-latest
-          name: Android Debug APK
+          tag_name: android-apk-${{ github.ref_name }}
+          name: Android Debug APK (${{ github.ref_name }})
           files: android/app/build/outputs/apk/debug/*.apk
           body: |
-            Latest debug APK build.
+            Latest debug APK build for the `${{ github.ref_name }}` branch.
             **Version:** ${{ steps.version.outputs.version }}
             **Branch:** ${{ github.ref_name }} | **Commit:** ${{ github.sha }}
-          make_latest: true
+          # Only main's release gets the repo-wide "Latest" badge on GitHub;
+          # termux (and any future branch) still gets its own separate,
+          # always-up-to-date release, just without the badge.
+          make_latest: ${{ github.ref_name == 'main' && 'true' || 'false' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
