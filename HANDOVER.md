@@ -32,17 +32,18 @@ marked ✅. Do not silently expand scope into later phases.
   `git format-patch`-style `.patch` files applied via
   `git am <patch> && git push`.
 - **Stack:** Expo SDK 55, React Native, TypeScript, `expo-router`
-  (file-based routing), Supabase backend pieces, custom native modules
-  in `modules/` (`mavin-engine`, `pawns`, `boxoffice`, and an apparently
-  empty `python-scraper/` — see Known Issues). State management is
-  messier than "Zustand + some Redux" suggests: there are **three**
-  parallel systems (`src/store/zustand/*`, `src/store/store.ts`, and a
-  second, differently-configured `src/store/rtk/store.ts`) — see
-  Section 3A and Known Issues below before touching state in any phase.
+  (file-based routing). **As of 2026-08-20 (see §3B): no Supabase, no
+  custom native modules** — the app was rewired away from a
+  multi-source piracy streaming layer to a licensed-backend model
+  (`src/services/licensedPlayback/LicensedPlaybackService.ts`), and
+  `modules/` (which held `mavin-engine`, `boxoffice`, `pawns`) was
+  deleted outright. State management is down to **two** parallel
+  systems, not three: `src/store/store.ts` (RTK) and
+  `src/store/zustand/*` — see §3B before touching state in any phase.
 - **App identity:** Netflix-style streaming client. Movies/TV via TMDB
-  metadata, stream extraction from multiple sources (VidSrc, Xyra,
-  Consumet, StreamEast for live), subtitles via OpenSubtitles/SubDL,
-  downloads, continue-watching, live sports.
+  (and Trakt/Kuryana) metadata, playback via a licensed backend,
+  subtitles via OpenSubtitles/SubDL (+ local `.srt` import, once Phase
+  2 lands), downloads, continue-watching, live sports.
 
 ### Clone instructions (for every session)
 
@@ -133,8 +134,8 @@ the last patch number you applied?" before generating yours.
 | Phase | Title | Status | Patch # | Session Date |
 |---|---|---|---|---|
 | 1 | Video player: gesture engine + volume/brightness/seek | ✅ Complete | 0015 | 2026-08-17 |
-| 2 | Video player: subtitle system (remote + local import) + modern controls UI | 🔲 Not started | — | — |
-| 3 | Video player: routing fix + full hook wiring (stream extraction, autoplay, episodes) | 🔲 Not started | — | — |
+| 2 | Video player: local subtitle import + modern visual pass | 🔲 Not started (rescoped — see §3B) | — | — |
+| 3 | Video player: routing fix + full hook wiring | ✅ Complete (retroactive — see §3B) | unknown | pre-2026-08-20 |
 | 4 | Design system foundation: design tokens, spacing, typography scale | 🔲 Not started | — | — |
 | 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | 🔲 Not started | — | — |
 | 6 | Theming: apply glassmorphism to modals (Episodes, Subtitles, Source Selection, Buffering) | 🔲 Not started | — | — |
@@ -153,7 +154,7 @@ the last patch number you applied?" before generating yours.
 | 19 | Continue Watching panel redesign (progress rings, swipe-to-remove, glass) | 🔲 Not started | — | — |
 | 20 | Downloads UX pass (download queue UI, storage usage bar, pro-level manager) | 🔲 Not started | — | — |
 | 21 | Comments / social features UI pass (`src/components/comments`) | 🔲 Not started | — | — |
-| 22 | Watch-together / live features polish (check `modules/mavin-engine` usage) | 🔲 Not started | — | — |
+| 22 | Licensed backend integration audit (repurposed — see §3B, watch-together no longer exists) | 🔲 Not started | — | — |
 | 23 | Accessibility pass: dynamic text scaling, screen reader labels, contrast check | 🔲 Not started | — | — |
 | 24 | Performance pass: image caching/optimization, list virtualization audit, memo audit | 🔲 Not started | — | — |
 | 25 | Error boundary & crash resilience pass (`ErrorBoundary.tsx` and friends) | 🔲 Not started | — | — |
@@ -289,6 +290,97 @@ phase title the way this doc originally left them.
 
 ---
 
+## 3B. RE-AUDIT — 2026-08-20 (post piracy-removal reconciliation)
+
+This session also did **not** do numbered phase work — it re-cloned
+`termux`, found four commits (`3683dc6` "remove piracy streaming layer
+and Pawns bandwidth SDK", `42066cc` "wire playback to licensed
+backend", `c67be57` "fix remaining broken imports", `f79fa43` "remove
+Supabase, stop using EAS for releases, wire licensed backend to a
+working Render placeholder") that landed **after** the 2026-08-17
+audit above and were never reflected in this doc's status table or
+phase text. This section corrects that. **Read this before starting
+any phase**, especially 1–3 and 22.
+
+**The piracy/multi-source streaming layer is completely gone.** Confirmed
+deleted: `useStreamExtraction.ts`, `src/utils/streamExtractor.ts`, the
+VidSrc/Xyra/Consumet adapters, `SourceSelectionModal.tsx`. Every
+reference to any of these anywhere in this doc (Section 3, old Phase
+2/3 text, Quick Reference) is now historical context only, not current
+file paths — the rewritten Phase 2/3 sections above reflect the actual
+current state; don't trust older text in this doc that still names
+these files.
+
+**Playback is now routed through a licensed backend.**
+`src/hooks/useLicensedPlaybackSource.ts` and
+`src/services/licensedPlayback/LicensedPlaybackService.ts` are the new
+core of playback. Per the Phase 4 commit message this is currently "a
+working Render placeholder" — not yet audited for what that actually
+means in practice. See the repurposed Phase 22 above.
+
+**All three custom native modules are gone.** `modules/` (which
+contained `mavin-engine`, `boxoffice`, and `pawns`) **does not exist at
+all** on `termux` anymore — confirmed via a fresh clone, not just a
+stale note. This resolves what would have been Phase 6 in the original
+plan (there's nothing left to "audit" — the modules were removed
+outright as part of the piracy-layer cleanup, which is a reasonable
+outcome, not a gap). However:
+
+- **`package.json` still lists two dependencies pointing at the deleted
+  folder**: `"mavin-engine": "file:./modules/mavin-engine"` and
+  `"pawns": "file:./modules/pawns"`. This would make `npm ci`/`npm
+  install` fail outright on a clean clone. **Fixed as part of this same
+  reconciliation pass** (see the commit this patch is attached to) —
+  both lines removed from `package.json`. If a future session finds
+  they've reappeared (e.g. from a merge), remove them again; they have
+  no valid target.
+- `react-native-nitro-modules` and `nitrogen` remain in `package.json`
+  — these are general-purpose libraries (not specific to the deleted
+  `boxoffice` module) and may still be legitimately used elsewhere;
+  **not removed**, but worth a `grep -r "nitro" src app` check in
+  whichever phase next touches dependencies, in case they're now also
+  unused.
+- No lingering plugin/module references were found in `app.config.ts`
+  for any of the three — that side was already clean.
+
+**State management duplication is down to two systems, not three.**
+The 2026-08-17 audit found `store/store.ts` + `store/rtk/store.ts`
+(two separate RTK stores) + `store/zustand/*`. As of this audit,
+`store/rtk/store.ts` no longer exists — `src/store/index.ts` is now a
+plain re-export barrel for the Zustand hooks
+(`useDownloads`, `useNotifications`, `useContinueWatching`,
+`useAppStore`, `useSettings`, `usePlayer`, `useUI`), and
+`src/store/store.ts` remains as the one real RTK store (`contentApi`/
+`downloadsApi` + `settingsSlice`/`downloadsSlice`/`playerSlice`/
+`cacheSlice`). So it's now **RTK (`store/store.ts`) vs. Zustand
+(`store/zustand/*`)** — still needs the same consolidation decision as
+before, just one fewer contender. Update any phase text that still
+says "three parallel systems" mentally to "two."
+
+**Service duplication partially resolved itself.** Top-level
+`src/services/DownloadManager.ts` and `CleanupService.ts` no longer
+exist — only the `src/services/downloadManager/` subfolder versions
+remain, which resolves that part of the duplication Known Issues used
+to flag. **Still duplicated as of this audit:**
+`src/services/NetworkMonitor.ts` vs.
+`src/services/downloadManager/NetworkMonitor.ts`, and
+`src/services/cacheService.ts` vs. `src/services/cache/CacheManager.ts`.
+Whichever phase covers service-layer dedup should scope to just these
+two pairs now, not the longer original list.
+
+**`CCControls.tsx` confirmed dead code, not just "appears unused."**
+`grep -r "CCControls" src app` (excluding its own file) returns
+nothing — it's genuinely never imported. Addressed in the rewritten
+Phase 2 above (decide: wire it in or flag for Phase 29 cleanup).
+
+**Volume gesture (Phase 1) is genuinely done, not just partially.**
+Confirmed `src/hooks/useVolume.ts` and
+`src/components/video/VolumeSlider.tsx` both exist, matching the
+Phase 1 ✅ status already recorded — this audit found no reason to
+dispute that completion, just confirming it holds.
+
+---
+
 ## 4. PHASE DETAILS
 
 Each phase below has: **Goal**, **Scope / files likely touched**,
@@ -338,115 +430,87 @@ what's needed for the volume slider to visually match brightness.
 
 ---
 
-### Phase 2 — Video player: subtitle system (remote + local import) + modern controls UI
+### Phase 2 — Video player: local subtitle import + modern visual pass
 
-**Goal:** Finish the subtitle experience and give the player controls a
-modern visual pass (this is the "old fashioned" complaint from the
-original ask — dated-looking bars/buttons should become something with
-proper spacing, rounded glass-like surfaces, better iconography weight,
-smooth fades).
+> **Rescoped 2026-08-20** — see §3B. The routing/hook-wiring half of
+> the original combined Phase 2/3 write-up is done (that's now Phase
+> 3's retroactive ✅). `SourceSelectionModal.tsx` no longer exists (no
+> multi-source switching needed with a single licensed backend) — drop
+> any reference to it. `SubtitlesModal.tsx` still exists and is already
+> wired into `VideoPlayerScreen.tsx`, but has **no local-file-import
+> option** — that's this phase's real remaining scope, alongside the
+> visual modernization that was always part of Phase 2.
+
+**Goal:** Add local `.srt` import to the subtitle picker, and give the
+player controls a modern visual pass (the "old fashioned" complaint
+from the original ask — dated-looking bars/buttons should become
+something with proper spacing, rounded glass-like surfaces, better
+iconography weight, smooth fades).
 
 **Scope:**
-- **Check first:** `src/components/SubtitlesModal.tsx` and
-  `src/components/SourceSelectionModal.tsx` already exist at the
-  top-level of `src/components/` (not in `src/components/video/`).
-  Inspect them fully before writing anything new — they may already be
-  90% of what's needed; wiring them in may be all that's required.
 - Extend `src/hooks/useSubtitles.tsx` with a `loadLocalSubtitle(uri,
   fileName)` method: read the file with
-  `import * as LegacyFileSystem from 'expo-file-system/legacy'`
-  (this matches the pattern already used in `useStreamExtraction.ts` —
-  SDK 55's new `expo-file-system` API differs, use the legacy import for
-  consistency), parse with the existing `parse-srt` package (same as the
-  rest of the hook), and feed into the same `parsedSubtitles` /
-  `subtitlesEnabled` state so the existing `updateCurrentSubtitle` timing
-  logic "just works" for local files too. Support `.srt` only for now;
-  show a clear error (via `useAlert`'s `showAlert`) for unsupported
-  formats.
-- Wire an "Import from device" action into the subtitle picker
-  (`SubtitlesModal.tsx` if reused, using `expo-document-picker`'s
-  `getDocumentAsync`).
+  `import * as LegacyFileSystem from 'expo-file-system/legacy'` (SDK
+  55's new `expo-file-system` API differs — check whether any other
+  current hook still uses this legacy-import pattern now that
+  `useStreamExtraction.ts` is gone; if none do, verify the legacy
+  import still works under SDK 55 before relying on it), parse with the
+  existing `parse-srt` package, feed into the same
+  `parsedSubtitles`/`subtitlesEnabled` state so existing timing logic
+  "just works" for local files too. Support `.srt` only for now; show a
+  clear error (via `useAlert`'s `showAlert`) for unsupported formats.
+- Add `expo-document-picker` to `package.json` if it isn't already
+  there (check first — an earlier session may have added it; if not,
+  add it matching the SDK 55 version range, e.g. `~55.0.x`).
+- Wire an "Import from device" action into `SubtitlesModal.tsx`.
 - Visual pass on `VideoControlsOverlay.tsx`, `BrightnessSlider.tsx`,
-  new `VolumeSlider.tsx`, `SeekIndicators.tsx`, `SubtitleOverlay.tsx`:
+  `VolumeSlider.tsx`, `SeekIndicators.tsx`, `SubtitleOverlay.tsx`:
   modernize spacing/typography/icon sizing, add subtle blur/translucency
-  behind control bars (use `expo-blur` if not already a dependency —
-  check `package.json` first, add if missing), smoother
-  show/hide transitions. Keep all existing prop APIs intact unless you
-  update every call site in the same patch.
+  behind control bars (`expo-blur` is not currently a dependency —
+  confirmed absent as of the 2026-08-20 audit, add it). Keep all
+  existing prop APIs intact unless you update every call site in the
+  same patch.
+- Decide what to do with `src/components/player/CCControls.tsx` —
+  confirmed unused/dead as of the 2026-08-20 audit (not imported
+  anywhere). Either wire it in if it does something
+  `SubtitlesModal`/`SubtitleOverlay` don't, or flag it clearly for
+  Phase 29's cleanup pass rather than leaving it silently dead.
 
 **Acceptance criteria:**
 - Subtitle language selection + local import both feed into the same
-  rendering path (`SubtitleOverlay`).
-- Controls look visibly more modern than the current flat black-bar
-  style, but functionality (play/pause, seek buttons, progress bar,
-  episodes button, source button, subtitles button, live indicator) is
-  unchanged in behavior.
+  `SubtitleOverlay` rendering path.
+- Controls look visibly more modern than the current flat style, but
+  functionality (play/pause, seek, episodes, subtitles, live indicator)
+  is unchanged in behavior.
 
-**Do not:** change the stream-extraction logic, change routing.
+**Do not:** change licensed-backend playback logic, change routing.
 
 ---
 
 ### Phase 3 — Video player: routing fix + full hook wiring
 
-**Goal:** Make the player screen actually work end-to-end: real
-navigation params, and every existing hook (`useStreamExtraction`,
-`useVideoControls`, `useBrightness`, `useVolume` from Phase 1,
-`useSubtitles`, `useAutoPlay`, `useGestureControls` from Phase 1) plus
-every component assembled into `VideoPlayerScreen.tsx`.
+> **Retroactively complete as of 2026-08-20 — do not redo this phase.**
+> This was finished as part of the "remove piracy streaming layer /
+> wire licensed backend" work (commits `3683dc6`..`f79fa43`), without a
+> dedicated patch number recorded against this phase. Confirmed during
+> the 2026-08-20 audit: `app/player/index.tsx` exists and handles
+> query-param navigation; `DetailsScreenNew.tsx` (not `DetailsScreen.tsx`
+> — see Known Issues) calls `router.push({ pathname: '/player', params:
+> {...} })` using the object form, not template-literal query strings;
+> `VideoPlayerScreen.tsx` (968 lines) wires `useVideoControls`,
+> `useBrightness`, `useVolume`, `useBuffering`, `useSeekBar`,
+> `useGestures`, `useWatchProgress`, `useSubtitles`, `useAutoPlay`,
+> `useEpisodeNavigation`, and `useLicensedPlaybackSource` together. If a
+> future session finds this is actually broken/incomplete in some
+> specific way, treat that as a **bug report against working code**,
+> not a reason to rebuild — scope a narrow fix, don't redo the whole
+> phase.
 
-**Scope:**
-- Fix routing:
-  - Add `app/player/index.tsx` handling query-param navigation
-    (`useLocalSearchParams` → `id`, `mediaType`, `title`, `poster_path`,
-    `season`, `episode`, `episodeTitle`).
-  - Keep `app/player/[id].tsx` working too (segment-based), for
-    robustness / deep links — both should render the same
-    `VideoPlayerScreen`.
-  - Fix the 3 `router.push('/player?...')` call sites in
-    `src/screens/details/DetailsScreen.tsx` (around lines ~394, ~396,
-    ~416 as of the discovery session — re-check line numbers, the file
-    may have moved) to pass `id`/`mediaType` and to use expo-router's
-    object form (`router.push({ pathname: '/player', params: {...} })`)
-    instead of raw template-literal query strings, to avoid encoding
-    bugs with special characters in titles.
-- Rewrite `src/screens/player/VideoPlayerScreen.tsx` to orchestrate
-  everything: `useVideoPlayer`/`VideoView` from `expo-video`,
-  `useStreamExtraction`, `useVideoControls`, `useBrightness`, the new
-  `useVolume`/`useGestureControls` from Phase 1, `useSubtitles` (+
-  local import from Phase 2), `useAutoPlay`, `EpisodesModal`,
-  `NextEpisodeButton`, `LoadingOverlay`, `ErrorOverlay`,
-  `BufferingAlertModal`, `SourceSelectionModal`.
-  - `useAutoPlay`'s `playNextEpisode` calls
-    `navigation.replace('VideoPlayer', nextDetails)` — this is a
-    leftover React Navigation call from before the expo-router
-    migration (see `TYPESCRIPT-MIGRATION.md`). Either update
-    `useAutoPlay.ts` to call `router.replace` directly, or pass a small
-    navigation-shim object with a `.replace(routeName, params)` method
-    that builds the query and calls `router.replace('/player', ...)`
-    — pick whichever is cleaner, but don't leave the dead React
-    Navigation call in place.
-  - Progress saving: use `saveWatchProgress` /
-    `saveEpisodeWatchProgress` from `src/utils/storage.ts` and
-    `useContinueWatching`'s `updateProgress(id, progress, currentTime,
-    duration)` from `src/store/zustand/continueWatching.ts` — save
-    periodically (e.g. every 10–15s) and on unmount/back.
-  - Episode switching from `EpisodesModal`: simplest robust approach is
-    `router.replace` to the player route with new season/episode params
-    (screen re-initializes from params) rather than complex in-place
-    state surgery — document whichever approach you pick.
+Original goal/scope preserved below for historical context only:
 
-**Acceptance criteria:**
-- From `DetailsScreen`, tapping Play (movie) or an episode (TV) lands on
-  a player that receives the correct TMDB id/media type and begins
-  stream extraction.
-- Gestures from Phase 1, subtitles from Phase 2, episode switching,
-  next-episode autoplay, and progress persistence all function together
-  without prop-mismatch errors (read every prop the screen passes to
-  each child component/hook against that component/hook's actual
-  signature before finishing).
-
-**Do not:** start on app-wide theming yet — that's Phase 4+. Keep the
-player's visual language consistent with Phase 2's pass, nothing more.
+**Goal (historical):** Make the player screen actually work end-to-end:
+real navigation params, and every hook plus every component assembled
+into `VideoPlayerScreen.tsx`.
 
 ---
 
@@ -492,10 +556,10 @@ under `app/` gated behind dev-only access (optional).
 
 ### Phase 6 — Apply glassmorphism to existing modals
 
-**Goal:** Retrofit `EpisodesModal`, `SubtitlesModal`,
-`SourceSelectionModal`, `BufferingAlertModal` (and any others found) to
-use the Phase 5 primitives instead of flat `#141414`/`#282828` solid
-backgrounds.
+**Goal:** Retrofit `EpisodesModal`, `SubtitlesModal`, `BufferingAlertModal`
+(and any others found — `SourceSelectionModal` no longer exists, see §3B,
+don't look for it) to use the Phase 5 primitives instead of flat
+`#141414`/`#282828` solid backgrounds.
 
 **Scope/acceptance:** visual only, no behavior changes; every modal's
 existing props/callbacks stay identical.
@@ -662,16 +726,36 @@ human before assuming it's a pure visual pass.
 
 ---
 
-### Phase 22 — Watch-together / live features polish
+### Phase 22 — Licensed backend integration audit
 
-**Goal:** Investigate `modules/mavin-engine` usage across the app
-(earlier project history notes two parallel "Together" systems —
-`listentogether.*` protobuf-based and `together.*` JSON-based —
-requiring a consolidation decision; check if that's still true and
-whether it's in scope here or a separate effort. If genuinely
-out-of-scope for a UI-polish pass, document it clearly in "Known
-Issues" below and skip functional consolidation — do visual/UX polish
-only on whichever system is actually wired to the UI.)
+> **Repurposed 2026-08-20** — this phase originally covered
+> "watch-together" polish keyed off `modules/mavin-engine`. That native
+> module (and all of `modules/`) no longer exists — it was removed in
+> the "remove piracy streaming layer" commits (see §3B). No
+> `listentogether.*`/`together.*` watch-together code was found either;
+> the feature appears to not exist in the current app at all. Rather
+> than leave this phase orphaned, it now covers the thing that actually
+> replaced that architecture and has never been audited: the licensed
+> playback backend.
+
+**Goal:** Review `src/services/licensedPlayback/LicensedPlaybackService.ts`
+and `src/hooks/useLicensedPlaybackSource.ts` in full. As of this audit
+the backend is described (in the Phase 4 piracy-removal commit message)
+as "a working Render placeholder" — confirm what that means concretely:
+is it a real, deployed licensed-content backend, a stub returning fake
+URLs for development, or something in between? Check error handling
+(network failure, no-source-available, expired-license responses),
+check whether the Render URL is hardcoded or environment-configured,
+and document the actual current playback flow end-to-end (Details
+screen → `useLicensedPlaybackSource` → `LicensedPlaybackService` →
+`VideoPlayerScreen`) so future phases touching playback aren't
+guessing. If the backend is genuinely just a placeholder, say so
+plainly and flag what a real integration would need — don't imply it's
+production-ready if it isn't.
+
+**Do not:** change the backend's actual behavior/contract unless a
+clear bug is found — this phase is primarily an audit + documentation
+pass, matching the "polish"-level effort the original phase intended.
 
 ---
 
@@ -764,6 +848,38 @@ human wants to keep going.
 
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
+
+- **[Doc reconciliation, 2026-08-20]** Full reconciliation pass against
+  the piracy-removal/licensed-backend commits — see §3B for the
+  complete write-up. Summary of what changed in this same patch:
+  - `package.json`: removed the two orphaned dependencies
+    `"mavin-engine": "file:./modules/mavin-engine"` and
+    `"pawns": "file:./modules/pawns"` — both pointed at a folder
+    (`modules/`) that no longer exists, which would have made `npm ci`
+    fail outright on a clean clone. If you ever see these reappear
+    (e.g. from a merge with an old branch/commit), remove them again.
+  - Status table: Phase 2 rescoped (local subtitle import + visual
+    pass only — remote subtitles/routing already work), Phase 3 marked
+    ✅ retroactively complete, Phase 22 repurposed from "watch-together
+    polish" (feature doesn't exist) to a licensed-backend audit.
+  - Phase 2/3 detail sections rewritten to drop references to deleted
+    files (`useStreamExtraction.ts`, `SourceSelectionModal.tsx`, VidSrc/
+    Xyra/Consumet adapters).
+  - Confirmed `react-native-nitro-modules`/`nitrogen` remain in
+    `package.json` and were **not** removed — they're general-purpose,
+    not specific to the deleted `boxoffice` module — but flagged for a
+    `grep -r "nitro" src app` check whenever a phase next touches
+    dependencies, in case they've also gone unused.
+  - Checked, still broken: `useAutoPlay.ts` line ~103 still calls
+    `navigation.replace('VideoPlayer', nextDetails)` — dead React
+    Navigation API, never migrated to expo-router's `router.replace`.
+    This means **autoplay-next-episode is likely non-functional** right
+    now (the `navigation` object it receives probably doesn't have a
+    React-Navigation-style `.replace(routeName, params)` method in an
+    expo-router app). Not fixed in this pass since it's a functional
+    change beyond doc reconciliation — flagged here as a concrete bug
+    for whichever phase next touches the player (Phase 2, or its own
+    quick fix if the human wants it sooner).
 
 - **[CI fix, 2026-08-20]** `.github/workflows/android.yml` previously
   only triggered on push to `main` (so pushes to `termux` never built
@@ -880,13 +996,15 @@ entries, just add yours with your phase number and date.)*
 
 ## 6. QUICK REFERENCE — key files a new session will likely need
 
-- Player hooks: `src/hooks/useStreamExtraction.ts`,
-  `useVideoControls.ts`, `useBrightness.ts`, `useSubtitles.tsx`,
-  `useAutoPlay.ts`, and (found in the 2026-08-17 audit, see Section 3A)
-  `useBuffering.ts`, `useSeekBar.ts`, `useGestures.ts`,
-  `useWatchProgress.ts`, `useEpisodeNavigation.ts`
-- Player screen: `src/screens/player/VideoPlayerScreen.tsx` (1,114
-  lines — already wires all the hooks above, see Section 3A)
+- Player hooks: `useVideoControls.ts`, `useBrightness.ts`,
+  `useVolume.ts`, `useBuffering.ts`, `useSeekBar.ts`, `useGestures.ts`,
+  `useWatchProgress.ts`, `useEpisodeNavigation.ts`, `useSubtitles.tsx`,
+  `useAutoPlay.ts`, `useLicensedPlaybackSource.ts` (replaces the old,
+  now-deleted `useStreamExtraction.ts` — see §3B)
+- Player screen: `src/screens/player/VideoPlayerScreen.tsx` (968 lines
+  as of 2026-08-20 — already wires all the hooks above, see §3B)
+- Licensed playback: `src/services/licensedPlayback/LicensedPlaybackService.ts`
+  (see repurposed Phase 22)
 - Player components: `src/components/video/*`
 - Theme: `src/contexts/ThemeContext.tsx`
 - Alerts: `src/contexts/AlertContext.tsx` (`useAlert().showAlert(...)`)
@@ -895,7 +1013,8 @@ entries, just add yours with your phase number and date.)*
   `getContinueWatchingList`, `getAutoPlaySetting`)
 - Continue watching store: `src/store/zustand/continueWatching.ts`
   (`useContinueWatching`) — Zustand is the store actually wired into the
-  live app; see Known Issues re: two unused parallel Redux stores
+  live app; see §3B re: the one remaining unused parallel RTK store
+  (`src/store/store.ts`)
 - Details screen: `src/screens/details/DetailsScreenNew.tsx` (**not**
   `DetailsScreen.tsx` — see Known Issues)
 - TMDB metadata: `src/services/unified/metadata/TMDBMetadata.ts`
