@@ -3,7 +3,45 @@ import { searchSubtitles, downloadSubtitle } from '../services/unified/subtitles
 import { getLanguageName } from '../utils/languageUtils';
 import { saveSubtitleLanguagePreference, getSubtitleLanguagePreference } from '../utils/storage';
 import { timeToSeconds } from '../utils/timeUtils';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 import parseSrt from 'parse-srt';
+
+// WebVTT uses dot-separated milliseconds (00:00:01.000) and an optional
+// "WEBVTT" header + cue-identifier lines that parse-srt (built for the
+// comma-separated SRT format) doesn't expect. Licensed-backend subtitle
+// tracks and some local files come as .vtt, so we parse those ourselves
+// and normalize timestamps to the same {start, end, startSeconds,
+// endSeconds, text} shape parse-srt produces for .srt.
+const parseVttContent = (content) => {
+  const body = content.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const blocks = body.split('\n\n').map(b => b.trim()).filter(Boolean);
+  const cues = [];
+
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const timingLineIndex = lines.findIndex(l => l.includes('-->'));
+    if (timingLineIndex === -1) continue; // skip "WEBVTT" header / NOTE blocks / pure cue-id lines
+
+    const timingLine = lines[timingLineIndex];
+    const match = timingLine.match(/([\d:.]+)\s*-->\s*([\d:.]+)/);
+    if (!match) continue;
+
+    const toSrtTime = (t) => {
+      const parts = t.trim().split(':');
+      const normalized = parts.length === 2 ? `00:${t.trim()}` : t.trim();
+      return normalized.replace('.', ',');
+    };
+
+    const start = toSrtTime(match[1]);
+    const end = toSrtTime(match[2]);
+    const text = lines.slice(timingLineIndex + 1).join('\n').trim();
+    if (!text) continue;
+
+    cues.push({ start, end, text });
+  }
+
+  return cues;
+};
 
 export const useSubtitles = (mediaId, mediaType, season, episode) => {
   const [availableLanguages, setAvailableLanguages] = useState({});
@@ -12,6 +50,7 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
   const [currentSubtitleText, setCurrentSubtitleText] = useState('');
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
   const [loadingSubtitles, setLoadingSubtitles] = useState(false);
+  const [localSubtitleName, setLocalSubtitleName] = useState(null);
 
   const lastSubtitleIndexRef = useRef(0);
   const preferredSubtitleLanguageLoadedRef = useRef(null);
@@ -171,6 +210,91 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
     }
   }, [selectedLanguage, availableLanguages]);
 
+  // Loads a subtitle track URL supplied directly (e.g. by the licensed
+  // playback backend) rather than found via OpenSubtitles search.
+  // Detects .srt vs .vtt by content/extension and feeds the same
+  // parsedSubtitles pipeline the rest of the hook already drives.
+  const loadTrackSubtitle = useCallback(async (url, label) => {
+    if (!url) return { success: false, error: 'No subtitle URL provided.' };
+    setLoadingSubtitles(true);
+    setParsedSubtitles([]);
+    setCurrentSubtitleText('');
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch subtitle (${response.status})`);
+      const content = await response.text();
+
+      const isVtt = /^\uFEFF?WEBVTT/i.test(content) || /\.vtt(\?|$)/i.test(url);
+      const rawCues = isVtt ? parseVttContent(content) : parseSrt(content);
+
+      const parsedWithSeconds = rawCues.map(line => ({
+        ...line,
+        startSeconds: timeToSeconds(line.start),
+        endSeconds: timeToSeconds(line.end),
+      }));
+
+      if (parsedWithSeconds.length === 0) {
+        setSubtitlesEnabled(false);
+        return { success: false, error: 'Subtitle file contained no readable cues.' };
+      }
+
+      const code = `track:${label || 'default'}`;
+      setParsedSubtitles(parsedWithSeconds);
+      lastSubtitleIndexRef.current = 0;
+      setSelectedLanguage(code);
+      setSubtitlesEnabled(true);
+      return { success: true, code };
+    } catch (err) {
+      console.error('Error loading track subtitle:', err);
+      setSubtitlesEnabled(false);
+      return { success: false, error: err instanceof Error ? err.message : 'Failed to load subtitle.' };
+    } finally {
+      setLoadingSubtitles(false);
+    }
+  }, []);
+
+  // Imports a .srt file the user already has on their device (via
+  // expo-document-picker on the screen side) and feeds it into the same
+  // rendering pipeline as remote/track subtitles.
+  const loadLocalSubtitle = useCallback(async (uri, fileName) => {
+    if (!uri) return { success: false, error: 'No file selected.' };
+    if (!/\.srt$/i.test(fileName || uri)) {
+      return { success: false, error: 'Unsupported subtitle format — only .srt files are supported right now.' };
+    }
+
+    setLoadingSubtitles(true);
+    setParsedSubtitles([]);
+    setCurrentSubtitleText('');
+    try {
+      const content = await LegacyFileSystem.readAsStringAsync(uri);
+      const rawCues = parseSrt(content);
+      const parsedWithSeconds = rawCues.map(line => ({
+        ...line,
+        startSeconds: timeToSeconds(line.start),
+        endSeconds: timeToSeconds(line.end),
+      }));
+
+      if (parsedWithSeconds.length === 0) {
+        setSubtitlesEnabled(false);
+        return { success: false, error: 'Subtitle file contained no readable cues.' };
+      }
+
+      const code = `local:${fileName || 'imported'}`;
+      setParsedSubtitles(parsedWithSeconds);
+      lastSubtitleIndexRef.current = 0;
+      setSelectedLanguage(code);
+      setSubtitlesEnabled(true);
+      setLocalSubtitleName(fileName || 'Imported subtitle');
+      return { success: true, code };
+    } catch (err) {
+      console.error('Error loading local subtitle:', err);
+      setSubtitlesEnabled(false);
+      return { success: false, error: err instanceof Error ? err.message : 'Failed to read subtitle file.' };
+    } finally {
+      setLoadingSubtitles(false);
+    }
+  }, []);
+
   const updateCurrentSubtitle = useCallback((currentPositionSeconds) => {
     if (!subtitlesEnabled || parsedSubtitles.length === 0) {
       if (currentSubtitleText !== '') setCurrentSubtitleText('');
@@ -234,12 +358,15 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
     currentSubtitleText,
     subtitlesEnabled,
     loadingSubtitles,
+    localSubtitleName,
     preferredSubtitleLanguageLoadedRef,
     initialSubtitlePreferenceAppliedRef,
     setSubtitlesEnabled,
     loadSubtitlePreference,
     findSubtitles,
     selectSubtitle,
+    loadTrackSubtitle,
+    loadLocalSubtitle,
     updateCurrentSubtitle,
   };
 };

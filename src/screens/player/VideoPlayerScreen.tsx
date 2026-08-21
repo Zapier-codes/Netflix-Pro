@@ -10,6 +10,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { StatusBar } from 'expo-status-bar';
 import { useEventListener } from 'expo';
 import { GestureHandlerRootView, GestureDetector } from 'react-native-gesture-handler';
+import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { getLanguageName } from '../../utils/languageUtils';
 import { formatTime } from '../../utils/timeUtils';
@@ -226,7 +227,6 @@ const VideoPlayerScreen = () => {
   const [isLoadingStream, setIsLoadingStream] = useState(false);
   const [subtitleTracks, setSubtitleTracks] = useState<any[]>([]);
   const [selectedSubtitleTrack, setSelectedSubtitleTrack] = useState<any>(null);
-  const [currentSubtitleText, setCurrentSubtitleText] = useState('');
 
   useEffect(() => {
     const lockLandscape = async () => {
@@ -269,23 +269,6 @@ const VideoPlayerScreen = () => {
     }
   }, [subtitlesParam]);
 
-  const loadSubtitleContent = useCallback(async (subtitle: any) => {
-    if (!subtitle?.file) return;
-    try {
-      logDebug('Loading subtitle:', subtitle.file);
-      const response = await fetch(subtitle.file);
-      if (!response.ok) throw new Error('Failed to fetch subtitle');
-      const content = await response.text();
-      setCurrentSubtitleText('Subtitle loaded');
-      (global as any).__subtitleContent = content;
-      (global as any).__subtitleTracks = subtitleTracks;
-    } catch (e) { logError('Failed to load subtitle', e); }
-  }, [subtitleTracks]);
-
-  useEffect(() => {
-    if (selectedSubtitleTrack) loadSubtitleContent(selectedSubtitleTrack);
-  }, [selectedSubtitleTrack, loadSubtitleContent]);
-
   const videoControls = useVideoControls(activePlayer);
   const {
     showControls, isPlaying, isMuted, opacityAnim, setShowControls, setIsPlaying,
@@ -318,7 +301,48 @@ const VideoPlayerScreen = () => {
   const {
     availableLanguages, selectedLanguage, loadingSubtitles, setSubtitlesEnabled,
     loadSubtitlePreference, findSubtitles, selectSubtitle,
+    subtitlesEnabled, currentSubtitleText: hookSubtitleText,
+    updateCurrentSubtitle, loadTrackSubtitle, loadLocalSubtitle, localSubtitleName,
   } = subtitles;
+
+  // Loads a licensed-backend-supplied subtitle track (from subtitlesParam,
+  // parsed into subtitleTracks above) through the same real parsing/timing
+  // pipeline useSubtitles already drives for OpenSubtitles/local files —
+  // this previously just fetched the file and set a permanent placeholder
+  // string instead of ever showing real timed subtitle text.
+  const loadSubtitleContent = useCallback(async (subtitle: any) => {
+    if (!subtitle?.file) return;
+    const result = await loadTrackSubtitle(subtitle.file, subtitle.label || subtitle.lang);
+    if (!result.success) {
+      logError('Failed to load subtitle track', result.error);
+    }
+  }, [loadTrackSubtitle]);
+
+  useEffect(() => {
+    if (selectedSubtitleTrack) loadSubtitleContent(selectedSubtitleTrack);
+  }, [selectedSubtitleTrack, loadSubtitleContent]);
+
+  // Lets the user pick a .srt file already on their device (their own
+  // downloaded subtitles) instead of relying only on OpenSubtitles search
+  // or whatever the licensed backend happens to supply.
+  const handleImportLocalSubtitle = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/plain', 'application/x-subrip', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const outcome = await loadLocalSubtitle(asset.uri, asset.name);
+      if (!outcome.success) {
+        Alert.alert('Subtitle import failed', outcome.error || 'Could not read that file.');
+      }
+    } catch (e) {
+      logError('Subtitle import failed', e);
+      Alert.alert('Subtitle import failed', 'Something went wrong picking that file.');
+    }
+  }, [loadLocalSubtitle]);
 
   const handleReload = useCallback(async () => {
     logInfo('handleReload called', { retryAttempts: retryAttempts + 1 });
@@ -616,11 +640,12 @@ const VideoPlayerScreen = () => {
           const dur = activePlayer.duration || 0;
           setPosition(pos);
           if (dur > 0) setDuration(dur);
+          updateCurrentSubtitle(pos);
         } catch {}
       }, 250);
     }
     return () => { if (interval) clearInterval(interval); };
-  }, [isNativeMode, playerReadyRef.current]);
+  }, [isNativeMode, playerReadyRef.current, updateCurrentSubtitle]);
 
   useEffect(() => {
     if (!isNativeMode) return;
@@ -684,6 +709,17 @@ const VideoPlayerScreen = () => {
     const loadPref = async () => { try { await loadSubtitlePreference(); } catch (e) {} };
     loadPref();
   }, [loadSubtitlePreference]);
+
+  useEffect(() => {
+    // findSubtitles was previously imported but never called, so the
+    // OpenSubtitles language list was always empty. Only run it if the
+    // licensed backend hasn't already supplied its own subtitle track(s)
+    // for this title (subtitleTracks, populated below from subtitlesParam).
+    if (mediaId && subtitleTracks.length === 0) {
+      findSubtitles();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaId]);
 
   useEffect(() => {
     if (isPlaying && isBufferingVideo) {
@@ -812,7 +848,7 @@ const VideoPlayerScreen = () => {
               leftSeekOpacity={leftSeekOpacity} rightSeekOpacity={rightSeekOpacity}
               leftArrowTranslate={leftArrowTranslate} rightArrowTranslate={rightArrowTranslate}
             />
-            <SubtitleOverlay subtitlesEnabled={true} currentSubtitleText={currentSubtitleText} />
+            <SubtitleOverlay subtitlesEnabled={subtitlesEnabled} currentSubtitleText={hookSubtitleText} />
             {isBufferingVideo && !isInitialLoading && (
               <View style={styles.bufferingIndicatorContainer}>
                 <ActivityIndicator size="large" color="#FFF" />
@@ -830,7 +866,7 @@ const VideoPlayerScreen = () => {
               onTogglePlayPause={() => { if (isPlaying) activePlayer.pause(); else activePlayer.play(); }}
               onToggleMute={toggleMute} onSeekBackward={seekBackward} onSeekForward={seekForward}
               onToggleEpisodes={toggleEpisodesModal} onToggleSubtitles={toggleSubtitlesModal}
-              subtitlesEnabled={true} selectedLanguage={selectedLanguage || 'en'}
+              subtitlesEnabled={subtitlesEnabled} selectedLanguage={selectedLanguage || 'en'}
               isChangingSource={isChangingSource} isInitialLoading={isInitialLoading}
               videoUrl={directStreamUrl || videoUrl || ''} player={activePlayer}
               brightnessLevel={brightnessLevel} hasBrightnessPermission={hasBrightnessPermission}
@@ -890,12 +926,22 @@ const VideoPlayerScreen = () => {
               availableLanguages={[
                 ...Object.values(availableLanguages || {}).map((langInfo: any) => ({ code: langInfo.language, name: getLanguageName(langInfo.language) })),
                 ...subtitleTracks.map((track) => ({ code: track.lang || 'en', name: track.label || track.lang || 'English' })),
+                ...(localSubtitleName ? [{ code: selectedLanguage, name: `📁 ${localSubtitleName}` }] : []),
+                { code: '__import_local__', name: '📁 Import subtitle from device…' },
               ]}
               selectedLanguage={selectedLanguage || 'en'}
               onSelectLanguage={(langCode) => {
+                if (langCode === '__import_local__') {
+                  handleImportLocalSubtitle();
+                  return;
+                }
                 const track = subtitleTracks.find((t: any) => (t.lang || 'en') === langCode);
-                if (track) { setSelectedSubtitleTrack(track); loadSubtitleContent(track); }
-                selectSubtitle(langCode);
+                if (track) {
+                  setSelectedSubtitleTrack(track);
+                  loadSubtitleContent(track);
+                } else if (!langCode.startsWith('local:')) {
+                  selectSubtitle(langCode);
+                }
                 setShowSubtitlesModal(false);
               }}
               loading={loadingSubtitles}

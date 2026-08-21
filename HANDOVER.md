@@ -134,7 +134,7 @@ the last patch number you applied?" before generating yours.
 | Phase | Title | Status | Patch # | Session Date |
 |---|---|---|---|---|
 | 1 | Video player: gesture engine + volume/brightness/seek | ✅ Complete | 0015 | 2026-08-17 |
-| 2 | Video player: local subtitle import + modern visual pass | 🔲 Not started (rescoped — see §3B) | — | — |
+| 2 | Video player: local subtitle import + modern visual pass | 🟡 Partial — see §3B/Known Issues | 0018 | 2026-08-20 |
 | 3 | Video player: routing fix + full hook wiring | ✅ Complete (retroactive — see §3B) | unknown | pre-2026-08-20 |
 | 4 | Design system foundation: design tokens, spacing, typography scale | 🔲 Not started | — | — |
 | 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | 🔲 Not started | — | — |
@@ -848,6 +848,34 @@ human wants to keep going.
 
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
+
+- **[Phase 2, partial, 2026-08-20]** Fixed the actual subtitle
+  rendering bug (this is what the original "video page isn't showing
+  subtitles" complaint was about): both subtitle systems
+  (OpenSubtitles search via `useSubtitles.tsx`, and licensed-backend
+  `subtitleTracks`) were previously non-functional — `findSubtitles()`
+  was never called, and the licensed-backend path just set the on-screen
+  text to the literal string `'Subtitle loaded'` forever instead of
+  parsing real timed cues. Both now feed one real pipeline; added
+  `loadTrackSubtitle()` (handles `.srt`/`.vtt`) and `loadLocalSubtitle()`
+  (device `.srt` import via `expo-document-picker`) to
+  `useSubtitles.tsx`; wired local import into `SubtitlesModal.tsx` as a
+  new list entry; gave `SubtitlesModal.tsx` a glass/blur visual pass
+  (`expo-blur` added to `package.json`).
+  **Still not done from this phase's original scope:** the visual pass
+  on `VideoControlsOverlay.tsx`, `BrightnessSlider.tsx`,
+  `VolumeSlider.tsx`, `SeekIndicators.tsx` — only `SubtitlesModal.tsx`
+  got modernized so far. Whoever picks this up next should do that
+  visual pass, not redo the subtitle-pipeline fix (that part is
+  genuinely done — verify by reading `VideoPlayerScreen.tsx`'s subtitle
+  wiring before assuming it's still broken).
+  Also worth double-checking: `DetailsScreenNew.tsx` still doesn't
+  populate `subtitlesParam` at all (confirmed via `grep -i subtitle` on
+  that file returning nothing) — so the licensed-backend track path,
+  while now functional in the player, has no current source feeding it.
+  Whether that's in scope for a future session or intentionally
+  deferred (relying on OpenSubtitles + local import only) is an open
+  question, not a bug in what was fixed here.
 
 - **[Doc reconciliation, 2026-08-20]** Full reconciliation pass against
   the piracy-removal/licensed-backend commits — see §3B for the
