@@ -136,7 +136,7 @@ the last patch number you applied?" before generating yours.
 | 1 | Video player: gesture engine + volume/brightness/seek | ✅ Complete | 0015 | 2026-08-17 |
 | 2 | Video player: local subtitle import + modern visual pass | ✅ Complete | 0019 | 2026-08-20 |
 | 3 | Video player: routing fix + full hook wiring | ✅ Complete (retroactive — see §3B) | unknown | pre-2026-08-20 |
-| 4 | Design system foundation: design tokens, spacing, typography scale | 🔲 Not started | — | — |
+| 4 | Design system foundation: design tokens, spacing, typography scale | ✅ Complete | 0020 | 2026-08-21 |
 | 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | 🔲 Not started | — | — |
 | 6 | Theming: apply glassmorphism to modals (Episodes, Subtitles, Source Selection, Buffering) | 🔲 Not started | — | — |
 | 7 | Home screen redesign: hero section, modern row layout, parallax/scroll polish | 🔲 Not started | — | — |
@@ -166,8 +166,7 @@ the last patch number you applied?" before generating yours.
 
 Legend: 🔲 not started · 🟡 in progress / partially done · ✅ complete
 
-**➡️ NEXT SESSION STARTS AT: Phase 4** (Phase 3 already retroactively
-complete per §3B — Phases 1, 2, 3 are now all ✅)
+**➡️ NEXT SESSION STARTS AT: Phase 5** (Phases 1–4 all ✅)
 
 ---
 
@@ -849,6 +848,24 @@ human wants to keep going.
 
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
+
+- **[Phase 4, complete, 2026-08-21]** Added `src/theme/tokens.ts` +
+  `src/theme/README.md`. Tokens-and-docs only, exactly per scope — no
+  screen visuals touched, `ThemeContext.tsx`'s colors/logic untouched.
+  Note for Phase 5 (glass primitives): `getGlassTokens(colors, isDark,
+  overrideTint?)` defaults `tint` to follow `isDark` (for general
+  app-UI glass — cards/modals/headers should blend into the current
+  theme mode), and only forces `tint: 'dark'` when you explicitly pass
+  `overrideTint: 'dark'` (intended for glass over video/media content
+  specifically, like the Phase 2 player controls, which stayed
+  hardcoded `tint="dark"` in-place rather than being retrofitted onto
+  these tokens in this pass — Phase 2 was already ✅ before Phase 4
+  existed, and retrofitting it wasn't in Phase 4's scope; a later phase
+  can migrate it to use `getGlassTokens(..., overrideTint: 'dark')` for
+  consistency if desired, but it isn't required — it already works).
+  Phase 5 should import `SPACING`/`RADIUS`/`TYPOGRAPHY`/`getElevation`/
+  `getGlassTokens` from `src/theme/tokens.ts` rather than re-deriving
+  its own numbers, per the README.
 
 - **[Phase 2, complete, 2026-08-20]** Finished the remaining Phase 2
   scope from the previous partial session:
