@@ -15,7 +15,7 @@ export const useAutoPlay = ({
   duration,
   isLiveStream,
   player,
-  navigation,
+  router,
   handleGoBack,
   setIsUnmounting,
 }) => {
@@ -100,11 +100,31 @@ export const useAutoPlay = ({
     if (nextDetails) {
       setIsUnmounting(true);
       if (player) player.pause();
-      navigation.replace('VideoPlayer', nextDetails);
+      // `navigation.replace('VideoPlayer', ...)` (React Navigation API)
+      // never worked here — expo-router's useNavigation() doesn't have a
+      // screen literally named 'VideoPlayer' (routes are file-based), so
+      // this silently failed to navigate anywhere. Use expo-router's own
+      // router.replace with the same param shape the player route already
+      // expects (see app/player/index.tsx / VideoPlayerScreen's own
+      // destructure of mediaId/mediaType/title/episodeTitle/poster_path/
+      // season/episode) — streamUrl isn't needed, the new screen instance
+      // fetches its own stream via useLicensedPlaybackSource.
+      router.replace({
+        pathname: '/player',
+        params: {
+          mediaId: String(nextDetails.mediaId),
+          mediaType: nextDetails.mediaType,
+          title: nextDetails.title,
+          episodeTitle: nextDetails.episodeTitle,
+          poster_path: nextDetails.poster_path,
+          season: String(nextDetails.season),
+          episode: String(nextDetails.episode),
+        },
+      });
     } else {
       handleGoBack(true);
     }
-  }, [navigation, player, handleGoBack, setIsUnmounting]);
+  }, [router, player, handleGoBack, setIsUnmounting]);
 
   useEffect(() => {
     if (isLiveStream) return;

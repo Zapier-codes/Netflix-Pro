@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   Animated,
-  ActivityIndicator,
   Platform,
   StyleSheet,
 } from 'react-native';
@@ -12,6 +11,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { VideoAirPlayButton } from 'expo-video';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import BrightnessSlider from './BrightnessSlider';
 import VolumeSlider from './VolumeSlider';
 import LiveIndicator from './LiveIndicator';
@@ -64,33 +65,41 @@ const VideoControlsOverlay = ({
 
   return (
     <>
-      <Animated.View style={[styles.overlayBackground, { opacity: opacityAnim }]} pointerEvents="none" />
+      {/* Soft gradient scrims top/bottom instead of a single flat overlay —
+          keeps the center of the screen clear for the video while the
+          control clusters at top/bottom still read clearly. */}
+      <Animated.View style={[styles.topScrim, { opacity: opacityAnim }]} pointerEvents="none">
+        <LinearGradient colors={['rgba(0,0,0,0.65)', 'rgba(0,0,0,0)']} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+      <Animated.View style={[styles.bottomScrim, { opacity: opacityAnim }]} pointerEvents="none">
+        <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFill} />
+      </Animated.View>
 
       <Animated.View style={[styles.controlsWrapper, { opacity: opacityAnim, pointerEvents: showControls ? 'box-none' : 'none' }]}>
         <SafeAreaView style={styles.controlsContainer}>
-          <TouchableOpacity onPress={onGoBack} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="white" />
+          <TouchableOpacity onPress={onGoBack} style={styles.iconGlassButton} activeOpacity={0.7}>
+            <Ionicons name="arrow-back" size={22} color="white" />
           </TouchableOpacity>
           <View style={styles.titleContainer}>
             <Text style={styles.titleText} numberOfLines={1}>
               {title}
-              {mediaType === 'tv' && episodeTitle ? ` - ${episodeTitle}` : ''}
+              {mediaType === 'tv' && episodeTitle ? ` · ${episodeTitle}` : ''}
               {mediaType === 'tv' && (
-                <Text style={styles.seasonEpisodeText}>{` (S${season}:E${episode})`}</Text>
+                <Text style={styles.seasonEpisodeText}>{`  S${season}:E${episode}`}</Text>
               )}
             </Text>
           </View>
           <View style={styles.topRightButtons}>
             {mediaType === 'tv' && !isLiveStream && (
-              <TouchableOpacity onPress={onToggleEpisodes} style={styles.controlButton}>
-                <Ionicons name="albums-outline" size={24} color="white" />
+              <TouchableOpacity onPress={onToggleEpisodes} style={styles.iconGlassButton} activeOpacity={0.7}>
+                <Ionicons name="albums-outline" size={20} color="white" />
               </TouchableOpacity>
             )}
             {!isLiveStream && (
-              <TouchableOpacity onPress={onToggleSubtitles} style={styles.controlButton}>
+              <TouchableOpacity onPress={onToggleSubtitles} style={styles.iconGlassButton} activeOpacity={0.7}>
                 <Ionicons
                   name="logo-closed-captioning"
-                  size={24}
+                  size={20}
                   color={subtitlesEnabled && selectedLanguage ? '#E50914' : 'white'}
                 />
               </TouchableOpacity>
@@ -126,27 +135,30 @@ const VideoControlsOverlay = ({
 
         {!isLiveStream && (
           <View style={styles.centerControls} pointerEvents={showControls ? 'box-none' : 'none'}>
-            <TouchableOpacity style={styles.seekButton} onPress={onSeekBackward}>
-              <MaterialIcons name="replay-10" size={48} color="white" />
+            <TouchableOpacity style={styles.seekGlassButton} onPress={onSeekBackward} activeOpacity={0.75}>
+              <MaterialIcons name="replay-10" size={30} color="white" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.playPauseButton} onPress={onTogglePlayPause}>
-              <Ionicons name={isPlaying ? "pause" : "play"} size={60} color="white" />
+            <TouchableOpacity style={styles.playGlassButton} onPress={onTogglePlayPause} activeOpacity={0.8}>
+              <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+              <Ionicons name={isPlaying ? "pause" : "play"} size={40} color="white" style={!isPlaying && styles.playIconOffset} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.seekButton} onPress={onSeekForward}>
-              <MaterialIcons name="forward-10" size={48} color="white" />
+            <TouchableOpacity style={styles.seekGlassButton} onPress={onSeekForward} activeOpacity={0.75}>
+              <MaterialIcons name="forward-10" size={30} color="white" />
             </TouchableOpacity>
           </View>
         )}
 
         {isLiveStream && (
           <View style={styles.centerControls} pointerEvents={showControls ? 'box-none' : 'none'}>
-            <TouchableOpacity style={styles.playPauseButton} onPress={onToggleMute}>
-              <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={60} color="white" />
+            <TouchableOpacity style={styles.playGlassButton} onPress={onToggleMute} activeOpacity={0.8}>
+              <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+              <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={36} color="white" />
             </TouchableOpacity>
           </View>
         )}
 
-        <SafeAreaView style={styles.bottomControls}>
+        <SafeAreaView style={styles.bottomControls} edges={['bottom']}>
+          <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
           {isLiveStream ? (
             <>
               <View style={styles.timeText} />
@@ -174,9 +186,20 @@ const VideoControlsOverlay = ({
 };
 
 const styles = StyleSheet.create({
-  overlayBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  topScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 140,
+    zIndex: 4,
+  },
+  bottomScrim: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 160,
     zIndex: 4,
   },
   controlsWrapper: {
@@ -189,36 +212,41 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     flexDirection: 'row',
-    padding: 10,
+    padding: 12,
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  backButton: {
-    padding: 8,
-  },
   titleContainer: {
     flex: 1,
-    marginLeft: 10,
-    marginRight: 10,
+    marginLeft: 12,
+    marginRight: 12,
     justifyContent: 'center',
   },
   titleText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   seasonEpisodeText: {
-    color: '#bbb',
-    fontSize: 14,
-    fontWeight: 'normal',
-    marginLeft: 4,
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontSize: 13,
+    fontWeight: '400',
   },
   topRightButtons: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
-  controlButton: {
-    padding: 8,
+  iconGlassButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   airPlayButtonContainer: {
     marginLeft: 8,
@@ -240,16 +268,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 30,
+    gap: 36,
   },
-  playPauseButton: {
-    borderRadius: 50,
-    padding: 12,
-    marginHorizontal: 30,
+  playGlassButton: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  seekButton: {
-    borderRadius: 40,
-    padding: 8,
+  playIconOffset: {
+    marginLeft: 4,
+  },
+  seekGlassButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bottomControls: {
     position: 'absolute',
@@ -258,15 +297,18 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: -10,
-    paddingVertical: 20,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 20,
+    gap: 12,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
   },
   progressBar: {
     flex: 1,
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    marginHorizontal: 8,
+    height: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
     borderRadius: 3,
     overflow: 'visible',
   },
@@ -277,32 +319,17 @@ const styles = StyleSheet.create({
   },
   progressThumb: {
     position: 'absolute',
-    top: -9,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    top: -7,
+    width: 19,
+    height: 19,
+    borderRadius: 10,
     backgroundColor: '#E50914',
-    transform: [{ translateX: -12 }],
+    transform: [{ translateX: -10 }],
     zIndex: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  seekThumb: {
-    position: 'absolute',
-    top: -9,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#E50914',
-    transform: [{ translateX: -13 }],
-    zIndex: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
+    shadowColor: '#E50914',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
     elevation: 5,
   },
   progressTouchArea: {
@@ -314,8 +341,9 @@ const styles = StyleSheet.create({
     zIndex: 4,
   },
   timeText: {
-    color: '#fff',
-    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 14,
+    fontWeight: '500',
     minWidth: 45,
     textAlign: 'center',
   },

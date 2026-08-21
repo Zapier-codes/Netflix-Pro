@@ -134,7 +134,7 @@ the last patch number you applied?" before generating yours.
 | Phase | Title | Status | Patch # | Session Date |
 |---|---|---|---|---|
 | 1 | Video player: gesture engine + volume/brightness/seek | ✅ Complete | 0015 | 2026-08-17 |
-| 2 | Video player: local subtitle import + modern visual pass | 🟡 Partial — see §3B/Known Issues | 0018 | 2026-08-20 |
+| 2 | Video player: local subtitle import + modern visual pass | ✅ Complete | 0019 | 2026-08-20 |
 | 3 | Video player: routing fix + full hook wiring | ✅ Complete (retroactive — see §3B) | unknown | pre-2026-08-20 |
 | 4 | Design system foundation: design tokens, spacing, typography scale | 🔲 Not started | — | — |
 | 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | 🔲 Not started | — | — |
@@ -166,7 +166,8 @@ the last patch number you applied?" before generating yours.
 
 Legend: 🔲 not started · 🟡 in progress / partially done · ✅ complete
 
-**➡️ NEXT SESSION STARTS AT: Phase 2**
+**➡️ NEXT SESSION STARTS AT: Phase 4** (Phase 3 already retroactively
+complete per §3B — Phases 1, 2, 3 are now all ✅)
 
 ---
 
@@ -848,6 +849,56 @@ human wants to keep going.
 
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
+
+- **[Phase 2, complete, 2026-08-20]** Finished the remaining Phase 2
+  scope from the previous partial session:
+  - `useAutoPlay.ts`'s `playNextEpisode` no longer calls the dead
+    `navigation.replace('VideoPlayer', ...)` React Navigation API —
+    confirmed via `useNavigation()` that expo-router's navigation
+    object has no screen literally named `'VideoPlayer'` (routes are
+    file-based), so this silently did nothing. Switched to
+    `router.replace({ pathname: '/player', params: {...} })`, matching
+    the same param shape (`mediaId`, `mediaType`, `title`,
+    `episodeTitle`, `poster_path`, `season`, `episode`) already used by
+    `DetailsScreenNew.tsx` and the `EpisodesModal` episode-select
+    handler in `VideoPlayerScreen.tsx`. Removed the now-fully-unused
+    `useNavigation` import/`navigation`/`navigationRef` from
+    `VideoPlayerScreen.tsx` as a direct consequence, not a separate
+    cleanup pass.
+  - Checked (not fixed): `DetailsScreenNew.tsx` not populating a
+    `subtitles` route param is **not a frontend bug** — grepped
+    `LicensedPlaybackService.ts` and `useLicensedPlaybackSource.ts` for
+    any mention of subtitles and found none. The licensed backend
+    (still "a working Render placeholder" per the Phase 4 commit) does
+    not return subtitle track data at all right now, so there's
+    nothing to wire through on the frontend side. This belongs to
+    Phase 22's licensed-backend audit, not Phase 2 — don't attempt to
+    fix this in the player/details screens without first confirming
+    the backend can actually supply subtitle URLs.
+  - Modern visual pass done on `VideoControlsOverlay.tsx`,
+    `BrightnessSlider.tsx`, `VolumeSlider.tsx`, `SeekIndicators.tsx`:
+    glass/blur capsules (`expo-blur`) for the brightness/volume
+    sliders and seek indicators, gradient scrims (`expo-linear-gradient`,
+    already a dependency) replacing the old flat black overlay,
+    circular glass buttons for play/pause/mute, glass bottom bar with
+    rounded top corners, refined progress-bar thumb (smaller, glowing).
+    Diffed every change against the previous file before committing —
+    all prop names/callbacks are unchanged, confirmed against exactly
+    how `VideoPlayerScreen.tsx` calls `<VideoControlsOverlay ... />`
+    (nothing dropped; a couple of props/styles that verifiably weren't
+    referenced anywhere in the original JSX either, like `seekThumb`
+    and the `isChangingSource`/`isInitialLoading`/`videoUrl` props,
+    were the only things not carried forward as dead code).
+    `SubtitlesModal.tsx` was NOT touched in this pass (already
+    modernized in the prior partial session per patch `0018`).
+  - Not touched, still open for a future phase/session:
+    `src/components/player/CCControls.tsx` remains confirmed dead code
+    (still not imported anywhere) — the rewritten Phase 2 text gave two
+    options (wire it in or flag for Phase 29); this session flagged it
+    rather than wiring it in, since it wasn't clear it does anything
+    `SubtitlesModal` doesn't already cover, and guessing at reviving
+    dead code without understanding its original intent seemed riskier
+    than leaving it for the dedicated cleanup phase.
 
 - **[Phase 2, partial, 2026-08-20]** Fixed the actual subtitle
   rendering bug (this is what the original "video page isn't showing

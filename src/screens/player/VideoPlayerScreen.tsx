@@ -4,7 +4,7 @@ import {
   View, Text, Alert, StyleSheet, ActivityIndicator, BackHandler,
   Animated, TouchableOpacity, Platform,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { StatusBar } from 'expo-status-bar';
@@ -159,8 +159,6 @@ const getStreamHeaders = (url: string, strategyIndex: number = 0): Record<string
 
 const VideoPlayerScreen = () => {
   const router = useRouter();
-  const navigation = useNavigation();
-  const navigationRef = useRef(navigation);
   const routerRef = useRef(router);
 
   const params = useLocalSearchParams();
@@ -413,7 +411,7 @@ const VideoPlayerScreen = () => {
     mediaId: String(mediaId || ''), mediaType: String(mediaType || 'movie'),
     season: season ? Number(season) : undefined, episode: episode ? Number(episode) : undefined,
     title: String(title || ''), poster_path: String(poster_path || ''),
-    position, duration, isLiveStream: false, player: activePlayer, navigation,
+    position, duration, isLiveStream: false, player: activePlayer, router,
     handleGoBack, setIsUnmounting,
   });
   const {
