@@ -11,7 +11,11 @@ import {
 } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { formatRuntime, isFutureDate } from '../../utils/timeUtils';
+import { useTheme } from '../../contexts/ThemeContext';
+import { SPACING, RADIUS, TYPOGRAPHY, getGlassTokens } from '../../theme/tokens';
+import { GlassPanel, GlassButton } from '../glass';
 
 const EpisodesModal = ({
   visible,
@@ -30,6 +34,9 @@ const EpisodesModal = ({
   mediaId,
   poster_path,
 }) => {
+  const { colors, isDark } = useTheme();
+  const glass = getGlassTokens(colors, isDark);
+
   const renderEpisodeItem = ({ item: episodeData }) => {
     const progress = episodeData.watchProgress;
     let progressPercent = 0;
@@ -48,7 +55,8 @@ const EpisodesModal = ({
       <TouchableOpacity
         style={[
           styles.episodeItemHorizontal,
-          isCurrentEpisode && styles.currentEpisodeItemHorizontal
+          { borderColor: glass.surfaceBorder },
+          isCurrentEpisode && { borderColor: 'rgba(229, 9, 20, 0.5)', borderWidth: 1.5 },
         ]}
         onPress={() => {
           if (isCurrentEpisode) {
@@ -66,7 +74,10 @@ const EpisodesModal = ({
             air_date: episodeData.air_date,
           });
         }}
+        activeOpacity={0.85}
       >
+        <BlurView intensity={glass.blurIntensity.light} tint={glass.tint} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.surface }]} />
         <View style={styles.episodeThumbnailContainerHorizontal}>
           {episodePoster ? (
             <Image source={{ uri: episodePoster }} style={styles.episodeThumbnailHorizontal} />
@@ -94,10 +105,10 @@ const EpisodesModal = ({
           )}
         </View>
         <View style={styles.episodeDetailsHorizontal}>
-          <Text style={styles.episodeTitleTextHorizontal} numberOfLines={2}>
+          <Text style={[TYPOGRAPHY.bodyStrong, { color: colors.text }]} numberOfLines={2}>
             {`E${episodeData.episode_number}: ${episodeData.name || `Episode ${episodeData.episode_number}`}`}
           </Text>
-          <Text style={styles.episodeOverviewTextHorizontal} numberOfLines={3}>
+          <Text style={[TYPOGRAPHY.caption, { color: colors.textSub, marginTop: 4 }]} numberOfLines={3}>
             {episodeData.overview || 'No overview available.'}
           </Text>
         </View>
@@ -126,12 +137,14 @@ const EpisodesModal = ({
       }}
     >
       <View style={styles.episodesModalOverlay}>
-        <View style={styles.episodesModalContent}>
-          <View style={styles.episodesModalHeader}>
-            <Text style={styles.episodesModalTitle}>{title} - Episodes</Text>
-            <TouchableOpacity onPress={onClose} style={styles.episodesModalCloseButton}>
-              <Ionicons name="close" size={28} color="white" />
-            </TouchableOpacity>
+        <GlassPanel style={styles.episodesModalContent} elevationLevel={4} radius={RADIUS.lg} bordered={false}>
+          <View style={[styles.episodesModalHeader, { borderBottomColor: glass.surfaceBorder }]}>
+            <Text style={[TYPOGRAPHY.h2, { color: colors.text }]}>{title} - Episodes</Text>
+            <GlassButton
+              icon={<Ionicons name="close" size={22} color={colors.text} />}
+              onPress={onClose}
+              size={40}
+            />
           </View>
 
           {isLoadingModalEpisodes && !allSeasonsData.length ? (
@@ -139,24 +152,29 @@ const EpisodesModal = ({
           ) : (
             <>
               {allSeasonsData.length > 1 && (
-                <View style={styles.seasonSelectorContainer}>
+                <View style={[styles.seasonSelectorContainer, { borderBottomColor: glass.surfaceBorder }]}>
                   <FlatList
                     ref={seasonListRef}
                     horizontal
                     data={allSeasonsData.sort((a, b) => a.season_number - b.season_number)}
-                    renderItem={({ item: seasonItem }) => (
-                      <TouchableOpacity
-                        style={[
-                          styles.seasonTab,
-                          selectedSeasonForModal === seasonItem.season_number && styles.seasonTabSelected,
-                        ]}
-                        onPress={() => onSelectSeason(seasonItem.season_number)}
-                      >
-                        <Text style={styles.seasonTabText}>
-                          {seasonItem.name || `Season ${seasonItem.season_number}`}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                    renderItem={({ item: seasonItem }) => {
+                      const isSelected = selectedSeasonForModal === seasonItem.season_number;
+                      return (
+                        <TouchableOpacity
+                          style={[
+                            styles.seasonTab,
+                            { backgroundColor: glass.surface, borderColor: glass.surfaceBorder },
+                            isSelected && styles.seasonTabSelected,
+                          ]}
+                          onPress={() => onSelectSeason(seasonItem.season_number)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[TYPOGRAPHY.bodyStrong, { color: colors.text }]}>
+                            {seasonItem.name || `Season ${seasonItem.season_number}`}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    }}
                     keyExtractor={(item) => `season-tab-${item.id || item.season_number}`}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.seasonTabContentContainer}
@@ -210,12 +228,14 @@ const EpisodesModal = ({
                 />
               ) : (
                 <View style={styles.centeredMessage}>
-                  <Text style={styles.noEpisodesText}>No episodes found for this season.</Text>
+                  <Text style={[TYPOGRAPHY.body, { color: colors.textMuted }]}>
+                    No episodes found for this season.
+                  </Text>
                 </View>
               )}
             </>
           )}
-        </View>
+        </GlassPanel>
       </View>
     </Modal>
   );
@@ -229,90 +249,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   episodesModalContent: {
-    backgroundColor: '#141414',
     width: '95%',
     height: '90%',
     maxHeight: 380,
-    borderRadius: 8,
     paddingTop: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.8,
-    shadowRadius: 15,
-    elevation: 30,
-    overflow: 'hidden',
   },
   episodesModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md + 3,
     borderBottomWidth: 1,
-    borderBottomColor: '#282828',
-    backgroundColor: '#141414',
-  },
-  episodesModalTitle: {
-    color: 'white',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  episodesModalCloseButton: {
-    padding: 5,
   },
   seasonSelectorContainer: {
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.sm + 2,
     borderBottomWidth: 1,
-    borderBottomColor: '#282828',
-    backgroundColor: '#141414',
   },
   seasonTabContentContainer: {
-    paddingHorizontal: 10,
+    paddingHorizontal: SPACING.sm + 2,
   },
   seasonTab: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    backgroundColor: '#333',
-    marginRight: 10,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg - 1,
+    borderRadius: RADIUS.sm,
+    marginRight: SPACING.sm + 2,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
   },
   seasonTabSelected: {
-    backgroundColor: '#E50914',
-  },
-  seasonTabText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
+    backgroundColor: 'rgba(229, 9, 20, 0.85)',
+    borderColor: '#E50914',
   },
   episodesListContentHorizontal: {
-    paddingVertical: 15,
-    paddingLeft: 20,
-    paddingRight: 10,
+    paddingVertical: SPACING.md + 3,
+    paddingLeft: SPACING.xl,
+    paddingRight: SPACING.sm,
   },
   episodeItemHorizontal: {
     flexDirection: 'column',
-    backgroundColor: '#1C1C1C',
-    borderRadius: 8,
-    marginRight: 15,
-    padding: 10,
+    borderRadius: RADIUS.sm,
+    marginRight: SPACING.lg - 1,
+    padding: SPACING.sm + 2,
     width: 180,
     height: 220,
     justifyContent: 'flex-start',
-  },
-  currentEpisodeItemHorizontal: {
-    backgroundColor: 'rgb(46, 46, 46)'
+    overflow: 'hidden',
+    borderWidth: 1,
   },
   episodeThumbnailContainerHorizontal: {
     width: '100%',
     height: 100,
-    borderRadius: 5,
+    borderRadius: RADIUS.xs,
     overflow: 'hidden',
     backgroundColor: '#333',
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
   },
   episodeThumbnailHorizontal: {
     width: '100%',
@@ -344,22 +338,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 5,
+    borderRadius: RADIUS.xs,
   },
   episodeDetailsHorizontal: {
-    paddingTop: 5
-  },
-  episodeTitleTextHorizontal: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  episodeOverviewTextHorizontal: {
-    color: '#B0B0B0',
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 4,
+    paddingTop: 5,
   },
   unreleasedBadgeContainer: {
     position: 'absolute',
@@ -389,12 +371,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-  },
-  noEpisodesText: {
-    color: '#888',
-    fontSize: 16,
-    textAlign: 'center',
+    padding: SPACING.xl,
   },
 });
 

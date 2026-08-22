@@ -138,7 +138,7 @@ the last patch number you applied?" before generating yours.
 | 3 | Video player: routing fix + full hook wiring | ✅ Complete (retroactive — see §3B) | unknown | pre-2026-08-20 |
 | 4 | Design system foundation: design tokens, spacing, typography scale | ✅ Complete | 0020 | 2026-08-21 |
 | 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | ✅ Complete | 0021 | 2026-08-21 |
-| 6 | Theming: apply glassmorphism to modals (Episodes, Subtitles, Source Selection, Buffering) | 🔲 Not started | — | — |
+| 6 | Theming: apply glassmorphism to modals (Episodes, Subtitles, Buffering) | ✅ Complete | 0022 | 2026-08-22 |
 | 7 | Home screen redesign: hero section, modern row layout, parallax/scroll polish | 🔲 Not started | — | — |
 | 8 | MediaCard / MediaRow visual overhaul (hover-like press states, shimmer skeletons) | 🔲 Not started | — | — |
 | 9 | Details screen redesign: modern hero, glass action bar, animated tab sections | 🔲 Not started | — | — |
@@ -166,7 +166,7 @@ the last patch number you applied?" before generating yours.
 
 Legend: 🔲 not started · 🟡 in progress / partially done · ✅ complete
 
-**➡️ NEXT SESSION STARTS AT: Phase 6** (Phases 1–5 all ✅)
+**➡️ NEXT SESSION STARTS AT: Phase 7** (Phases 1–6 all ✅)
 
 ---
 
@@ -848,6 +848,52 @@ human wants to keep going.
 
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
+
+- **[Phase 6, complete, 2026-08-22]** Retrofitted `BufferingAlertModal.tsx`,
+  `SubtitlesModal.tsx`, and `EpisodesModal.tsx` (video's `SourceSelectionModal`
+  no longer exists, per §3B — nothing to do there) onto the Phase 5 glass
+  primitives (`GlassPanel`/`GlassButton`). Confirmed every prop each modal
+  destructures still matches exactly what `VideoPlayerScreen.tsx` passes
+  in before committing (diffed the destructure list against git HEAD,
+  then grepped the actual `<EpisodesModal .../>`/`<SubtitlesModal .../>`/
+  `<BufferingAlertModal .../>` call sites) — no behavior changes, visual
+  only, per this phase's scope.
+  - Found and fixed a real bug while touching `SubtitlesModal.tsx`: it
+    had a **duplicate `export default SubtitlesModal;`** at the end of
+    the file (two identical export lines), which would fail to
+    compile/bundle. Not something Phase 6 was asked to look for, but it
+    was sitting right there in the file this phase already needed to
+    touch, so fixed it in the same pass rather than leaving a broken
+    file for whoever hit it next.
+  - Found, deliberately NOT fixed (out of scope for a visual-only
+    phase): `EpisodesModal`'s `onSelectEpisode` callback, in
+    `VideoPlayerScreen.tsx`, builds its navigation URL with
+    `new URLSearchParams({...}).toString()` +
+    `router.push(`/player?${queryParams}`)` — the same
+    template-literal-query-string pattern that Phase 2/3 already fixed
+    elsewhere (`useAutoPlay.ts`, `DetailsScreenNew.tsx`) in favor of
+    `router.push({ pathname, params })` object form. This one manually
+    `encodeURIComponent`s each value so it's less broken than the
+    original `DetailsScreen` bug was, but it's still inconsistent with
+    the object-form pattern established elsewhere, and worth
+    normalizing in whichever phase next touches `VideoPlayerScreen.tsx`'s
+    episode-selection logic — did not touch it here since it's
+    functional, not visual, and this phase's acceptance criteria is
+    explicitly "no behavior changes."
+  - Also noticed in that same callback: it already passes a `subtitles`
+    param built from `JSON.stringify(subtitleTracks)` on episode switch.
+    This doesn't contradict the Phase 2 finding that the **licensed
+    backend** has no subtitle data of its own — `subtitleTracks` here is
+    local hook state (OpenSubtitles results / locally-imported tracks
+    already loaded into `useSubtitles`), not something the backend
+    response provides. Phase 22's backend audit is still the right place
+    to confirm whether the backend itself could ever supply tracks.
+  - `GlassButton` has no built-in way to accent/color an individual
+    button's label (e.g. a "destructive" or "primary" action) — worked
+    around this in `BufferingAlertModal` with a border-color tint
+    instead. If a future phase wants a proper `labelColor`/`variant`
+    prop on `GlassButton`, that's a small additive change to a Phase-5
+    file, not a Phase-6 concern.
 
 - **[Phase 5, complete, 2026-08-21]** Added `src/components/glass/`:
   `GlassPanel.tsx` (base — BlurView + translucent border + optional

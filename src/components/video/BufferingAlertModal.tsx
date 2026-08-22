@@ -1,7 +1,12 @@
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useTheme } from '../../contexts/ThemeContext';
+import { SPACING, RADIUS, TYPOGRAPHY } from '../../theme/tokens';
+import { GlassPanel, GlassButton } from '../glass';
 
 const BufferingAlertModal = ({ visible, onKeepBuffering, onRetryExtraction }) => {
+  const { colors } = useTheme();
+
   return (
     <Modal
       animationType="fade"
@@ -11,20 +16,22 @@ const BufferingAlertModal = ({ visible, onKeepBuffering, onRetryExtraction }) =>
       onRequestClose={onKeepBuffering}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.bufferingAlertModalContent}>
-          <Text style={styles.modalTitle}>Still Buffering?</Text>
-          <Text style={styles.bufferingAlertText}>
+        <GlassPanel style={styles.content} elevationLevel={4} radius={RADIUS.xl}>
+          <Text style={[TYPOGRAPHY.h3, { color: colors.text, marginBottom: SPACING.md }]}>
+            Still Buffering?
+          </Text>
+          <Text style={[TYPOGRAPHY.body, { color: colors.textSub, textAlign: 'center', marginBottom: SPACING.xl }]}>
             The video has been buffering for a while.
           </Text>
-          <View style={styles.bufferingAlertActions}>
-            <TouchableOpacity style={[styles.bufferingAlertButton, styles.bufferingAlertKeepButton]} onPress={onKeepBuffering}>
-              <Text style={styles.bufferingAlertButtonText}>Keep Buffering</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.bufferingAlertButton, styles.bufferingAlertRetryButton]} onPress={onRetryExtraction}>
-              <Text style={styles.bufferingAlertButtonText}>Try Re-Extract</Text>
-            </TouchableOpacity>
+          <View style={styles.actions}>
+            <GlassButton label="Keep Buffering" onPress={onKeepBuffering} style={styles.actionButton} />
+            <GlassButton
+              label="Try Re-Extract"
+              onPress={onRetryExtraction}
+              style={[styles.actionButton, { borderColor: 'rgba(229, 9, 20, 0.4)' }]}
+            />
           </View>
-        </View>
+        </GlassPanel>
       </View>
     </Modal>
   );
@@ -37,55 +44,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
-  bufferingAlertModalContent: {
+  content: {
     width: '85%',
     maxWidth: 400,
-    backgroundColor: '#282828',
-    borderRadius: 12,
-    padding: 25,
+    padding: SPACING.xxl,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 15,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 15,
-  },
-  bufferingAlertText: {
-    color: '#E0E0E0',
-    fontSize: 15,
-    textAlign: 'center',
-    marginBottom: 25,
-    lineHeight: 22,
-  },
-  bufferingAlertActions: {
+  actions: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
+    gap: SPACING.md,
   },
-  bufferingAlertButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    minWidth: 120,
-    alignItems: 'center',
-    marginHorizontal: 10,
-  },
-  bufferingAlertKeepButton: {
-    backgroundColor: '#4A4A4A',
-  },
-  bufferingAlertRetryButton: {
-    backgroundColor: '#E50914',
-  },
-  bufferingAlertButtonText: {
-    color: 'white',
-    fontSize: 15,
-    fontWeight: 'bold',
+  actionButton: {
+    flex: 1,
   },
 });
 
