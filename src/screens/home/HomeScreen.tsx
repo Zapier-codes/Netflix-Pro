@@ -550,7 +550,7 @@ const HomeScreen = () => {
 
       if (directPlay) {
         router.push({
-          pathname: '/video-player',
+          pathname: '/player',
           params: cleanParams({
             mediaId,
             mediaType,
@@ -756,6 +756,7 @@ const HomeScreen = () => {
               item={featuredContent}
               onPlay={() => handleMediaPress(featuredContent, true)}
               onInfoPress={() => handleMediaPress(featuredContent, false)}
+              scrollY={scrollY}
             />
           );
         case 'thriller-grid':
@@ -783,6 +784,7 @@ const HomeScreen = () => {
       handleMediaPress,
       renderSkeletonRow,
       renderRow,
+      scrollY,
     ]
   );
 

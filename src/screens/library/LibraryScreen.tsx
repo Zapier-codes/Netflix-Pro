@@ -248,7 +248,7 @@ const LibraryScreen = () => {
 
       const offlinePath = basePath.startsWith('file://') ? basePath : `file://${cleanPath}`;
       router.push({
-        pathname: '/video-player',
+        pathname: '/player',
         params: {
           mediaId: item.tmdbId,
           mediaType: item.mediaType,
@@ -280,7 +280,7 @@ const LibraryScreen = () => {
 
   const handleContinuePress = useCallback((item: any) => {
     router.push({
-      pathname: '/video-player',
+      pathname: '/player',
       params: {
         mediaId: item.tmdbId,
         mediaType: item.mediaType,

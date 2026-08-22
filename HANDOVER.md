@@ -139,7 +139,7 @@ the last patch number you applied?" before generating yours.
 | 4 | Design system foundation: design tokens, spacing, typography scale | ✅ Complete | 0020 | 2026-08-21 |
 | 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | ✅ Complete | 0021 | 2026-08-21 |
 | 6 | Theming: apply glassmorphism to modals (Episodes, Subtitles, Buffering) | ✅ Complete | 0022 | 2026-08-22 |
-| 7 | Home screen redesign: hero section, modern row layout, parallax/scroll polish | 🔲 Not started | — | — |
+| 7 | Home screen redesign: hero section, modern row layout, parallax/scroll polish | ✅ Complete | 0024 | 2026-08-22 |
 | 8 | MediaCard / MediaRow visual overhaul (hover-like press states, shimmer skeletons) | 🔲 Not started | — | — |
 | 9 | Details screen redesign: modern hero, glass action bar, animated tab sections | 🔲 Not started | — | — |
 | 10 | Search screen redesign: live results, modern filter chips, empty/error states | 🔲 Not started | — | — |
@@ -166,7 +166,7 @@ the last patch number you applied?" before generating yours.
 
 Legend: 🔲 not started · 🟡 in progress / partially done · ✅ complete
 
-**➡️ NEXT SESSION STARTS AT: Phase 7** (Phases 1–6 all ✅)
+**➡️ NEXT SESSION STARTS AT: Phase 8** (Phases 1–7 all ✅)
 
 ---
 
@@ -848,6 +848,73 @@ human wants to keep going.
 
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
+
+- **[Phase 7, complete, 2026-08-22]** Found and fixed a real,
+  functional bug that isn't visual at all, but was directly in the
+  hero's Play button I was already touching: **`router.push({
+  pathname: '/video-player', ... })` doesn't go anywhere** — only
+  `/player` exists as a route (`app/player/index.tsx`). This route
+  string appeared in **three places**: `HomeScreen.tsx`'s
+  `handleMediaPress` (direct-play from the hero), and **twice** in
+  `src/screens/library/LibraryScreen.tsx` (`handlePlayPress` and
+  `handleContinuePress`, both offline/downloaded-content playback).
+  All three passed the correct param shape
+  (`mediaId`/`mediaType`/`title`/`season`/`episode`/`episodeTitle`/
+  `poster_path`, plus `isOffline`/`offlineFilePath` for the Library
+  cases) — confirmed `VideoPlayerScreen.tsx` genuinely reads
+  `isOffline`/`offlineFilePath` correctly before fixing this, so it
+  really was just the route string, not a deeper mismatch. Fixed all
+  three to `pathname: '/player'`. Before this fix, **tapping Play on
+  the Home hero or on any downloaded item in Library silently did
+  nothing** (expo-router has no matching route, so `router.push`
+  either no-ops or lands on an unmatched-route screen depending on
+  config) — this was broken before Phase 7 touched it, not something
+  this phase's own changes caused.
+  - Also found: `HomeScreen.tsx` was passing an `onInfoPress` prop into
+    `<FeaturedContent>`, but `FeaturedContent.tsx`'s props interface only
+    declared `onPlay` — `onInfoPress` was silently dropped by React
+    (unknown prop, no error), meaning the hero had **no "More Info"
+    button at all**, despite the parent already correctly wiring
+    `onInfoPress={() => handleMediaPress(featuredContent, false)}`.
+    Added an Info button to `FeaturedContent`'s button row (only renders
+    if `onInfoPress` is passed, so it stays backward-compatible for any
+    other future caller that doesn't need it).
+  - Added optional hero parallax via a `scrollY?: SharedValue<number>`
+    prop on `FeaturedContent`, wired from `HomeScreen.tsx`'s existing
+    `scrollY` shared value (already used for the header fade — this
+    just also passes it down to the hero). Deliberately **only** does a
+    gentle overscroll-bounce zoom (scale up when `scrollY` goes
+    negative, i.e. pull-past-top), not a scroll-past drift effect — the
+    hero is a normal item inside `HomeScreen`'s `FlatList` (not a
+    pinned/sticky header), so a drift-while-scrolling effect would fight
+    the list's own motion and risk revealing gaps at the image's edges
+    (it's sized exactly to its container with no overflow buffer for
+    that). The overscroll-only version is safe because scaling up only
+    ever grows the image beyond its frame.
+  - Fixed `ContinueWatchingRow.tsx`'s `scrollEnabled={false}` — the
+    carousel could only auto-advance every 4s, users couldn't manually
+    swipe through it at all. Now scrollable, with the auto-advance
+    interval paused while the user is dragging plus a 3s grace period
+    after they let go (so a deliberate manual browse isn't immediately
+    yanked back by the timer), and `currentIndex` re-synced to wherever
+    the user's manual scroll actually lands so the next auto-advance
+    continues from there instead of snapping to a stale position.
+  - Removed a dead `backdropFilter: Platform.OS === 'ios' ? 'blur(20px)' : undefined`
+    style from `FeaturedContent.tsx`'s container — `backdropFilter` isn't
+    supported by React Native's `StyleSheet` on native iOS/Android (only
+    react-native-web), so this was always a silent no-op. Not a visual
+    regression to remove it: the card's actual "glass" look comes from
+    the `LinearGradient` overlay + rgba tinting already layered on top of
+    the image within the same component, not from blurring anything
+    behind it — so nothing was actually relying on this line working.
+  - Did **not** retrofit `FeaturedContent.tsx`'s bespoke Play button
+    (the pill-with-notches-and-reflection look) onto Phase 5's
+    `GlassButton` — it has a distinctive, clearly intentional custom
+    shape that `GlassButton`'s generic pill styling would flatten out.
+    Left as bespoke, the same kind of call Phase 6 made about leaving
+    `BufferingAlertModal`'s accent button as a plain border-tint rather
+    than forcing every button in the app through one identical
+    primitive.
 
 - **[Phase 6, complete, 2026-08-22]** Retrofitted `BufferingAlertModal.tsx`,
   `SubtitlesModal.tsx`, and `EpisodesModal.tsx` (video's `SourceSelectionModal`

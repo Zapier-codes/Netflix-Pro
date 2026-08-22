@@ -7,8 +7,8 @@ import {
   Image,
   TouchableOpacity,
   Dimensions,
-  Platform,
 } from 'react-native';
+import Animated, { useAnimatedStyle, interpolate, Extrapolation, SharedValue } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -30,11 +30,21 @@ interface FeaturedContentProps {
     media_type?: 'movie' | 'tv';
   };
   onPlay: () => void;
+  onInfoPress?: () => void;
+  // Optional — pass the parent list's Reanimated scroll shared value (in
+  // px) to get a subtle parallax/zoom effect on the hero image: the image
+  // drifts slightly slower than the scroll while scrolling down, and
+  // scales up slightly on iOS-style rubber-band overscroll at the top.
+  // Omit entirely for a static hero (e.g. if used somewhere without a
+  // Reanimated-driven scroll container).
+  scrollY?: SharedValue<number>;
 }
 
 const FeaturedContent: React.FC<FeaturedContentProps> = ({
   item,
   onPlay,
+  onInfoPress,
+  scrollY,
 }) => {
   const { colors, isDark } = useTheme();
 
@@ -57,6 +67,30 @@ const FeaturedContent: React.FC<FeaturedContentProps> = ({
     ? 'rgba(255,255,255,0.1)'
     : 'rgba(255,255,255,0.3)';
 
+  const infoButtonGlass = isDark
+    ? 'rgba(255,255,255,0.08)'
+    : 'rgba(255,255,255,0.25)';
+
+  // ─── Parallax: only active when the parent hands us its scroll shared
+  //     value. FeaturedContent is a normal scrolling item inside
+  //     HomeScreen's FlatList (not a pinned/sticky hero), so a
+  //     scroll-past drift effect would fight the list's own motion and
+  //     risk revealing gaps at the image's edges (it's sized exactly to
+  //     its container, with no overflow buffer for that). The one
+  //     effect that's both safe and correct here is a gentle zoom on
+  //     iOS-style overscroll bounce at the very top of the list
+  //     (scrollY goes negative) — scaling up only ever grows the image
+  //     beyond its frame, never reveals empty space, and reads as a
+  //     nice "elastic" touch other Netflix-style heroes use. ───
+  const parallaxStyle = useAnimatedStyle(() => {
+    if (!scrollY) return {};
+    return {
+      transform: [
+        { scale: interpolate(scrollY.value, [-BANNER_HEIGHT, 0], [1.15, 1], Extrapolation.CLAMP) },
+      ],
+    };
+  }, [scrollY]);
+
   return (
     <TouchableOpacity
       activeOpacity={0.95}
@@ -76,9 +110,9 @@ const FeaturedContent: React.FC<FeaturedContentProps> = ({
       {/* ─── Background Image ─── */}
       <View style={styles.imageContainer}>
         {imageUrl ? (
-          <Image
+          <Animated.Image
             source={{ uri: imageUrl }}
-            style={styles.image}
+            style={[styles.image, parallaxStyle]}
             resizeMode="cover"
           />
         ) : (
@@ -156,7 +190,7 @@ const FeaturedContent: React.FC<FeaturedContentProps> = ({
           </Text>
         )}
 
-        {/* ─── Play Button ─── */}
+        {/* ─── Play + Info Buttons ─── */}
         <View style={styles.buttonRow}>
           <TouchableOpacity
             style={[
@@ -180,6 +214,30 @@ const FeaturedContent: React.FC<FeaturedContentProps> = ({
             <Text style={[styles.playButtonText, { color: colors.gold }]}>PLAY</Text>
             <View style={[styles.playButtonNotch, { backgroundColor: colors.gold }]} />
           </TouchableOpacity>
+
+          {onInfoPress && (
+            <TouchableOpacity
+              style={[
+                styles.infoButton,
+                {
+                  backgroundColor: infoButtonGlass,
+                  borderColor: playButtonBorder,
+                }
+              ]}
+              onPress={onInfoPress}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="information-circle-outline"
+                size={15}
+                color={isDark ? '#FFFFFF' : '#1A2A3A'}
+                style={styles.infoIcon}
+              />
+              <Text style={[styles.infoButtonText, { color: isDark ? '#FFFFFF' : '#1A2A3A' }]}>
+                INFO
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -197,8 +255,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
-    // Glass effect
-    backdropFilter: Platform.OS === 'ios' ? 'blur(20px)' : undefined,
   },
   imageContainer: {
     position: 'absolute',
@@ -308,6 +364,23 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 1,
     opacity: 0.6,
+  },
+  infoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    gap: 5,
+  },
+  infoButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  infoIcon: {
+    marginLeft: -1,
   },
 });
 

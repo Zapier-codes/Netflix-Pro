@@ -41,6 +41,12 @@ export function ContinueWatchingRow({
   const { colors } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  // Pauses the auto-advance interval while the user is actively dragging
+  // the list, and for a short grace period after they let go — otherwise
+  // the auto-advance would immediately yank the list back to wherever
+  // the interval next fires, fighting the user's own scroll gesture.
+  const isUserInteractingRef = useRef(false);
+  const resumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Safety net: the row is only ever meant to show up to 8 cards, even if a
   // caller passes more. Ordering (latest-first) is the caller's job — this
@@ -65,6 +71,7 @@ export function ContinueWatchingRow({
   useEffect(() => {
     if (displayItems.length > 1) {
       const interval = setInterval(() => {
+        if (isUserInteractingRef.current) return; // paused — see handlers below
         setCurrentIndex((prevIndex) => (prevIndex + 1) % displayItems.length);
       }, 4000);
 
@@ -74,7 +81,7 @@ export function ContinueWatchingRow({
 
   // ─── Scroll to current index (smooth slide, not a full-page jump) ───
   useEffect(() => {
-    if (flatListRef.current && displayItems.length > 0) {
+    if (flatListRef.current && displayItems.length > 0 && !isUserInteractingRef.current) {
       // Looping back to the first card snaps instantly (a long animated
       // scroll backwards would look like a glitch); every other advance
       // slides smoothly to the next card's offset.
@@ -85,9 +92,33 @@ export function ContinueWatchingRow({
     }
   }, [currentIndex, displayItems.length]);
 
+  useEffect(() => {
+    return () => {
+      if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current);
+    };
+  }, []);
+
   if (loading || displayItems.length === 0) {
     return null;
   }
+
+  // ─── User manually scrolling: pause auto-advance, and sync
+  //     currentIndex to wherever they land so the next auto-advance
+  //     continues from there instead of snapping back. ───
+  const handleScrollBeginDrag = () => {
+    isUserInteractingRef.current = true;
+    if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current);
+  };
+
+  const handleMomentumScrollEnd = (e: any) => {
+    const index = Math.round(e.nativeEvent.contentOffset.x / ITEM_WIDTH);
+    setCurrentIndex(Math.max(0, Math.min(index, displayItems.length - 1)));
+    // Grace period before auto-advance resumes, so a deliberate manual
+    // browse isn't immediately overridden.
+    resumeTimeoutRef.current = setTimeout(() => {
+      isUserInteractingRef.current = false;
+    }, 3000);
+  };
 
   const renderItem = ({ item }: { item: ContinueWatchingItem }) => {
     const progressPercent = Math.round(item.progress * 100);
@@ -170,7 +201,9 @@ export function ContinueWatchingRow({
           keyExtractor={(item) => item.id}
           horizontal
           showsHorizontalScrollIndicator={false}
-          scrollEnabled={false}
+          scrollEnabled={true}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
           getItemLayout={(data, index) => ({
             length: ITEM_WIDTH,
             offset: ITEM_WIDTH * index,
