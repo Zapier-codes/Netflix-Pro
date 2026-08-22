@@ -26,8 +26,14 @@ import { useSubtitles } from '../../hooks/useSubtitles';
 import { useAutoPlay } from '../../hooks/useAutoPlay';
 import { useEpisodeNavigation } from '../../hooks/useEpisodeNavigation';
 import { useLicensedPlaybackSource } from '../../hooks/useLicensedPlaybackSource';
+import { usePlaybackSpeed } from '../../hooks/usePlaybackSpeed';
+import { useAspectRatio } from '../../hooks/useAspectRatio';
+import { useScreenLock } from '../../hooks/useScreenLock';
 
 import SubtitlesModal from '../../components/SubtitlesModal';
+import PlaybackSpeedModal from '../../components/video/PlaybackSpeedModal';
+import SubtitleSettingsModal from '../../components/video/SubtitleSettingsModal';
+import LockScreenOverlay from '../../components/video/LockScreenOverlay';
 import {
   SubtitleOverlay, SeekIndicators, LoadingOverlay, ErrorOverlay,
   BufferingAlertModal, NextEpisodeButton, EpisodesModal, VideoControlsOverlay,
@@ -301,6 +307,7 @@ const VideoPlayerScreen = () => {
     loadSubtitlePreference, findSubtitles, selectSubtitle,
     subtitlesEnabled, currentSubtitleText: hookSubtitleText,
     updateCurrentSubtitle, loadTrackSubtitle, loadLocalSubtitle, localSubtitleName,
+    stylePrefs: subtitleStylePrefs, updateStylePrefs: updateSubtitleStylePrefs, resetStylePrefs: resetSubtitleStylePrefs,
   } = subtitles;
 
   // Loads a licensed-backend-supplied subtitle track (from subtitlesParam,
@@ -341,6 +348,13 @@ const VideoPlayerScreen = () => {
       Alert.alert('Subtitle import failed', 'Something went wrong picking that file.');
     }
   }, [loadLocalSubtitle]);
+
+  const { playbackSpeed, speedModalVisible, openSpeedModal, closeSpeedModal, setPlaybackSpeed } = usePlaybackSpeed(activePlayer);
+  const { aspectRatioMode, cycleAspectRatio, aspectRatioLabel, labelVisible: aspectLabelVisible, labelOpacity: aspectLabelOpacity } = useAspectRatio();
+  const { isLocked, toggleLock, showUnlockHint, hintOpacity: lockHintOpacity, handleLockedScreenTap, unlock } = useScreenLock(
+    useCallback((locked: boolean) => { if (locked) setShowControls(false); }, [setShowControls])
+  );
+  const [subtitleSettingsVisible, setSubtitleSettingsVisible] = useState(false);
 
   const handleReload = useCallback(async () => {
     logInfo('handleReload called', { retryAttempts: retryAttempts + 1 });
@@ -803,7 +817,7 @@ const VideoPlayerScreen = () => {
               player={activePlayer} style={StyleSheet.absoluteFill}
               nativeControls={false} allowsPictureInPicture={true}
               startsPictureInPictureAutomatically={true}
-              contentFit={isZoomed ? 'cover' : 'contain'}
+              contentFit={aspectRatioMode !== 'auto' ? aspectRatioMode : (isZoomed ? 'cover' : 'contain')}
               pointerEvents="none"
             />
           </Animated.View>
@@ -846,7 +860,12 @@ const VideoPlayerScreen = () => {
               leftSeekOpacity={leftSeekOpacity} rightSeekOpacity={rightSeekOpacity}
               leftArrowTranslate={leftArrowTranslate} rightArrowTranslate={rightArrowTranslate}
             />
-            <SubtitleOverlay subtitlesEnabled={subtitlesEnabled} currentSubtitleText={hookSubtitleText} />
+            <SubtitleOverlay
+              subtitlesEnabled={subtitlesEnabled}
+              currentSubtitleText={hookSubtitleText}
+              fontScale={subtitleStylePrefs.fontScale}
+              backgroundOpacity={subtitleStylePrefs.backgroundOpacity}
+            />
             {isBufferingVideo && !isInitialLoading && (
               <View style={styles.bufferingIndicatorContainer}>
                 <ActivityIndicator size="large" color="#FFF" />
@@ -871,7 +890,36 @@ const VideoPlayerScreen = () => {
               brightnessSliderRef={brightnessSliderRef} brightnessPanResponder={brightnessPanResponder}
               volumeLevel={volumeLevel} hasVolumePermission={hasVolumePermission}
               volumeSliderRef={volumeSliderRef} volumePanResponder={volumePanResponder}
+              playbackSpeed={playbackSpeed} onCycleSpeed={openSpeedModal}
+              aspectRatioLabel={aspectRatioLabel} onCycleAspectRatio={cycleAspectRatio}
+              onOpenSubtitleSettings={() => setSubtitleSettingsVisible(true)}
+              onLock={toggleLock}
             />
+            <LockScreenOverlay
+              visible={isLocked}
+              showUnlockHint={showUnlockHint}
+              hintOpacity={lockHintOpacity}
+              onScreenTap={handleLockedScreenTap}
+              onUnlock={unlock}
+            />
+            <PlaybackSpeedModal
+              visible={speedModalVisible}
+              onClose={closeSpeedModal}
+              currentSpeed={playbackSpeed}
+              onSelectSpeed={setPlaybackSpeed}
+            />
+            <SubtitleSettingsModal
+              visible={subtitleSettingsVisible}
+              onClose={() => setSubtitleSettingsVisible(false)}
+              prefs={subtitleStylePrefs}
+              onChange={updateSubtitleStylePrefs}
+              onReset={resetSubtitleStylePrefs}
+            />
+            {aspectLabelVisible && (
+              <Animated.View style={[styles.aspectRatioLabelBox, { opacity: aspectLabelOpacity }]} pointerEvents="none">
+                <Text style={styles.seekPreviewText}>{aspectRatioLabel}</Text>
+              </Animated.View>
+            )}
             {!isLiveStream && isSeeking && seekPreviewPosition !== null && seekPreviewXPosition > 0 && (
               <View style={[styles.seekPreviewBox, { left: Math.max(10, Math.min(seekPreviewXPosition - 40, screenDimensions.width - 90)) }]}>
                 <Text style={styles.seekPreviewText}>{formatTime(seekPreviewPosition)}</Text>
@@ -978,6 +1026,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5, shadowRadius: 4, elevation: 5,
   },
   seekPreviewText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  aspectRatioLabelBox: {
+    position: 'absolute', top: '45%', alignSelf: 'center', backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    paddingVertical: 8, paddingHorizontal: 20, borderRadius: 8, zIndex: 100,
+  },
   torrentContainer: { flex: 1, backgroundColor: '#000', position: 'relative' },
   embedContainer: { flex: 1, backgroundColor: '#000', position: 'relative' },
   webview: { flex: 1, backgroundColor: '#000' },

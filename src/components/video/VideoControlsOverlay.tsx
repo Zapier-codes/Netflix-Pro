@@ -57,6 +57,12 @@ const VideoControlsOverlay = ({
   hasVolumePermission,
   volumeSliderRef,
   volumePanResponder,
+  playbackSpeed,
+  onCycleSpeed,
+  aspectRatioLabel,
+  onCycleAspectRatio,
+  onOpenSubtitleSettings,
+  onLock,
 }) => {
   const displayPosition = isSeeking && seekPreviewPosition !== null ? seekPreviewPosition : position;
   const actualPosition = position;
@@ -90,6 +96,21 @@ const VideoControlsOverlay = ({
             </Text>
           </View>
           <View style={styles.topRightButtons}>
+            {onLock && (
+              <TouchableOpacity onPress={onLock} style={styles.iconGlassButton} activeOpacity={0.7}>
+                <Ionicons name="lock-open-outline" size={18} color="white" />
+              </TouchableOpacity>
+            )}
+            {!isLiveStream && onCycleAspectRatio && (
+              <TouchableOpacity onPress={onCycleAspectRatio} style={styles.iconGlassButton} activeOpacity={0.7}>
+                <MaterialIcons name="aspect-ratio" size={18} color="white" />
+              </TouchableOpacity>
+            )}
+            {!isLiveStream && onCycleSpeed && (
+              <TouchableOpacity onPress={onCycleSpeed} style={styles.speedGlassButton} activeOpacity={0.7}>
+                <Text style={styles.speedGlassButtonText}>{playbackSpeed === 1 ? '1x' : `${playbackSpeed}x`}</Text>
+              </TouchableOpacity>
+            )}
             {mediaType === 'tv' && !isLiveStream && (
               <TouchableOpacity onPress={onToggleEpisodes} style={styles.iconGlassButton} activeOpacity={0.7}>
                 <Ionicons name="albums-outline" size={20} color="white" />
@@ -102,6 +123,11 @@ const VideoControlsOverlay = ({
                   size={20}
                   color={subtitlesEnabled && selectedLanguage ? '#E50914' : 'white'}
                 />
+              </TouchableOpacity>
+            )}
+            {!isLiveStream && subtitlesEnabled && selectedLanguage && onOpenSubtitleSettings && (
+              <TouchableOpacity onPress={onOpenSubtitleSettings} style={styles.iconGlassButton} activeOpacity={0.7}>
+                <Ionicons name="settings-outline" size={17} color="white" />
               </TouchableOpacity>
             )}
             {Platform.OS === 'ios' && (
@@ -247,6 +273,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  speedGlassButton: {
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 19,
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  speedGlassButtonText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
   },
   airPlayButtonContainer: {
     marginLeft: 8,

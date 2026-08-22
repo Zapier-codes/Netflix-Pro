@@ -388,6 +388,69 @@ export const getLastSelectedSubtitleLanguage = getSubtitleLanguagePreference;
 
 // --- End Subtitle Preference Functions ---
 
+// --- Subtitle Style/Delay Preferences (MX-Player-style customization) ---
+const SUBTITLE_STYLE_KEY = 'subtitleStylePrefs';
+
+export interface SubtitleStylePrefs {
+  fontScale: number; // multiplier applied to the base font size, e.g. 0.8-1.6
+  delaySeconds: number; // positive = subtitles appear later, negative = earlier
+  backgroundOpacity: number; // 0 (transparent) - 1 (solid)
+}
+
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStylePrefs = {
+  fontScale: 1.0,
+  delaySeconds: 0,
+  backgroundOpacity: 0.65,
+};
+
+export const saveSubtitleStylePrefs = async (prefs: SubtitleStylePrefs) => {
+  try {
+    await AsyncStorage.setItem(SUBTITLE_STYLE_KEY, JSON.stringify(prefs));
+    return true;
+  } catch (error) {
+    console.error('Error saving subtitle style prefs:', error);
+    return false;
+  }
+};
+
+export const getSubtitleStylePrefs = async (): Promise<SubtitleStylePrefs> => {
+  try {
+    const raw = await AsyncStorage.getItem(SUBTITLE_STYLE_KEY);
+    if (!raw) return { ...DEFAULT_SUBTITLE_STYLE };
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_SUBTITLE_STYLE, ...parsed };
+  } catch (error) {
+    console.error('Error getting subtitle style prefs:', error);
+    return { ...DEFAULT_SUBTITLE_STYLE };
+  }
+};
+// --- End Subtitle Style/Delay Preferences ---
+
+// --- Playback Speed Preference ---
+const PLAYBACK_SPEED_KEY = 'playbackSpeedPreference';
+
+export const savePlaybackSpeedPreference = async (speed: number) => {
+  try {
+    await AsyncStorage.setItem(PLAYBACK_SPEED_KEY, String(speed));
+    return true;
+  } catch (error) {
+    console.error('Error saving playback speed preference:', error);
+    return false;
+  }
+};
+
+export const getPlaybackSpeedPreference = async (): Promise<number> => {
+  try {
+    const raw = await AsyncStorage.getItem(PLAYBACK_SPEED_KEY);
+    const parsed = raw ? parseFloat(raw) : 1.0;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1.0;
+  } catch (error) {
+    console.error('Error getting playback speed preference:', error);
+    return 1.0;
+  }
+};
+// --- End Playback Speed Preference ---
+
 export default {
   saveWatchProgress,
   getWatchProgress,

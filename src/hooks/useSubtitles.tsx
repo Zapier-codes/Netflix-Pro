@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { searchSubtitles, downloadSubtitle } from '../services/unified/subtitles/OpenSubtitlesProvider';
 import { getLanguageName } from '../utils/languageUtils';
-import { saveSubtitleLanguagePreference, getSubtitleLanguagePreference } from '../utils/storage';
+import { saveSubtitleLanguagePreference, getSubtitleLanguagePreference, saveSubtitleStylePrefs, getSubtitleStylePrefs, DEFAULT_SUBTITLE_STYLE, SubtitleStylePrefs } from '../utils/storage';
 import { timeToSeconds } from '../utils/timeUtils';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
 import parseSrt from 'parse-srt';
@@ -51,10 +51,25 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
   const [loadingSubtitles, setLoadingSubtitles] = useState(false);
   const [localSubtitleName, setLocalSubtitleName] = useState(null);
+  const [stylePrefs, setStylePrefs] = useState<SubtitleStylePrefs>(DEFAULT_SUBTITLE_STYLE);
 
   const lastSubtitleIndexRef = useRef(0);
   const preferredSubtitleLanguageLoadedRef = useRef(null);
   const initialSubtitlePreferenceAppliedRef = useRef(false);
+
+  useEffect(() => {
+    getSubtitleStylePrefs().then(setStylePrefs);
+  }, []);
+
+  const updateStylePrefs = useCallback((next: SubtitleStylePrefs) => {
+    setStylePrefs(next);
+    saveSubtitleStylePrefs(next);
+  }, []);
+
+  const resetStylePrefs = useCallback(() => {
+    setStylePrefs(DEFAULT_SUBTITLE_STYLE);
+    saveSubtitleStylePrefs(DEFAULT_SUBTITLE_STYLE);
+  }, []);
 
   const loadSubtitlePreference = useCallback(async () => {
     const savedLangPref = await getSubtitleLanguagePreference();
@@ -303,15 +318,19 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
 
     let currentSub = null;
     const lastIdx = lastSubtitleIndexRef.current;
+    // Apply user-configured sync delay: positive delay = subtitles should
+    // appear later, which we achieve by looking up an *earlier* position
+    // in the track (i.e. subtract the delay from the current time).
+    const adjustedPosition = currentPositionSeconds - (stylePrefs.delaySeconds || 0);
 
     if (lastIdx < parsedSubtitles.length &&
-      currentPositionSeconds >= parsedSubtitles[lastIdx].startSeconds &&
-      currentPositionSeconds <= parsedSubtitles[lastIdx].endSeconds) {
+      adjustedPosition >= parsedSubtitles[lastIdx].startSeconds &&
+      adjustedPosition <= parsedSubtitles[lastIdx].endSeconds) {
       currentSub = parsedSubtitles[lastIdx];
     } else {
       for (let i = Math.max(0, lastIdx - 2); i < Math.min(parsedSubtitles.length, lastIdx + 10); i++) {
-        if (currentPositionSeconds >= parsedSubtitles[i].startSeconds &&
-          currentPositionSeconds <= parsedSubtitles[i].endSeconds) {
+        if (adjustedPosition >= parsedSubtitles[i].startSeconds &&
+          adjustedPosition <= parsedSubtitles[i].endSeconds) {
           currentSub = parsedSubtitles[i];
           lastSubtitleIndexRef.current = i;
           break;
@@ -325,11 +344,11 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
           const mid = Math.floor((low + high) / 2);
           const sub = parsedSubtitles[mid];
 
-          if (currentPositionSeconds >= sub.startSeconds && currentPositionSeconds <= sub.endSeconds) {
+          if (adjustedPosition >= sub.startSeconds && adjustedPosition <= sub.endSeconds) {
             currentSub = sub;
             lastSubtitleIndexRef.current = mid;
             break;
-          } else if (currentPositionSeconds < sub.startSeconds) {
+          } else if (adjustedPosition < sub.startSeconds) {
             high = mid - 1;
           } else {
             low = mid + 1;
@@ -349,7 +368,7 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
     if (newText !== currentSubtitleText) {
       setCurrentSubtitleText(newText);
     }
-  }, [subtitlesEnabled, parsedSubtitles, currentSubtitleText]);
+  }, [subtitlesEnabled, parsedSubtitles, currentSubtitleText, stylePrefs.delaySeconds]);
 
   return {
     availableLanguages,
@@ -368,6 +387,9 @@ export const useSubtitles = (mediaId, mediaType, season, episode) => {
     loadTrackSubtitle,
     loadLocalSubtitle,
     updateCurrentSubtitle,
+    stylePrefs,
+    updateStylePrefs,
+    resetStylePrefs,
   };
 };
 

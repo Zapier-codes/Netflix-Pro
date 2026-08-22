@@ -16,6 +16,7 @@ ru: 'Русский (Russian)',
 
 export const getLanguageName = (code) => {
 if (!code) return 'Unknown';
+if (code.startsWith('local:')) return code.slice('local:'.length);
 return languageMap[code.toLowerCase()] || code.toUpperCase();
 };
 
