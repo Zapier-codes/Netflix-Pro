@@ -137,7 +137,7 @@ the last patch number you applied?" before generating yours.
 | 2 | Video player: local subtitle import + modern visual pass | ✅ Complete | 0019 | 2026-08-20 |
 | 3 | Video player: routing fix + full hook wiring | ✅ Complete (retroactive — see §3B) | unknown | pre-2026-08-20 |
 | 4 | Design system foundation: design tokens, spacing, typography scale | ✅ Complete | 0020 | 2026-08-21 |
-| 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | 🔲 Not started | — | — |
+| 5 | Theming: glassmorphism component primitives (GlassCard, GlassPanel, BlurHeader) | ✅ Complete | 0021 | 2026-08-21 |
 | 6 | Theming: apply glassmorphism to modals (Episodes, Subtitles, Source Selection, Buffering) | 🔲 Not started | — | — |
 | 7 | Home screen redesign: hero section, modern row layout, parallax/scroll polish | 🔲 Not started | — | — |
 | 8 | MediaCard / MediaRow visual overhaul (hover-like press states, shimmer skeletons) | 🔲 Not started | — | — |
@@ -166,7 +166,7 @@ the last patch number you applied?" before generating yours.
 
 Legend: 🔲 not started · 🟡 in progress / partially done · ✅ complete
 
-**➡️ NEXT SESSION STARTS AT: Phase 5** (Phases 1–4 all ✅)
+**➡️ NEXT SESSION STARTS AT: Phase 6** (Phases 1–5 all ✅)
 
 ---
 
@@ -848,6 +848,33 @@ human wants to keep going.
 
 *(Each session should append findings here — don't delete prior
 entries, just add yours with your phase number and date.)*
+
+- **[Phase 5, complete, 2026-08-21]** Added `src/components/glass/`:
+  `GlassPanel.tsx` (base — BlurView + translucent border + optional
+  elevation), `GlassCard.tsx` (GlassPanel + card padding + optional
+  `onPress`), `BlurHeader.tsx` (safe-area-aware header bar, left/
+  center/right slots), `GlassButton.tsx` (icon-only circular or
+  icon+label pill button), plus an `index.ts` barrel. All four consume
+  `src/theme/tokens.ts`'s `getGlassTokens`/`getElevation`/`SPACING`/
+  `RADIUS`/`TYPOGRAPHY` from Phase 4 rather than hardcoding their own
+  numbers, and read colors via `useTheme()` so they follow light/dark
+  mode automatically. Verified `ThemeColors`/`ThemeContextValue`'s
+  actual shape in `ThemeContext.tsx` directly before writing the
+  `{ colors, isDark }` destructuring used throughout, rather than
+  assuming it matched Phase 4's tokens file usage example.
+  - Each component's usage example lives in its own top-of-file
+    comment block (satisfies the "at least one usage example... in
+    comments" acceptance criterion). Did **not** add the optional
+    dev-only demo screen under `app/` — the phase text marked it
+    optional, and adding a new route felt like unnecessary risk for a
+    components-only phase where nothing renders on screen yet anyway
+    (nothing consumes these components until Phase 6+ retrofits the
+    existing modals). If a future session wants a visual sanity-check
+    screen before Phase 6 starts wiring things in, that's still open.
+  - Not yet wired into anything — per Phase 5's own scope, retrofitting
+    existing modals onto these primitives is Phase 6's job, not this
+    one. Nothing to functionally test/break in this phase since no
+    existing screen imports from `src/components/glass/` yet.
 
 - **[Phase 4, complete, 2026-08-21]** Added `src/theme/tokens.ts` +
   `src/theme/README.md`. Tokens-and-docs only, exactly per scope — no
